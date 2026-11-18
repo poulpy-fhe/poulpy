@@ -613,20 +613,6 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
-            fn ckks_ci_encoding_determinism_f64() {
-                $crate::test_suite::determinism::encoding_fixtures::<$backend, f64, ConjugateInvariant>(
-                    &Module::<$backend>::new(2048),
-                );
-            }
-            #[test]
-            fn ckks_ci_encoding_determinism_quad() {
-                $crate::test_suite::determinism::encoding_fixtures::<$backend, $crate::Quad, ConjugateInvariant>(&Module::<
-                    $backend,
-                >::new(
-                    2048
-                ));
-            }
-            #[test]
             fn ckks_ci_ring_map() {
                 let params = $params;
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_map(
@@ -643,6 +629,14 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                     Module::<$backend>::new(params.n as u64),
                     Module::<$backend>::new((4 * params.n) as u64),
                 );
+            }
+            #[test]
+            fn ckks_ci_replicated_bootstrap() -> anyhow::Result<()> {
+                let params = $params;
+                $crate::test_suite::replicated::test_replicated_ci_bootstrap::<$backend>(
+                    params,
+                    &Module::<$backend>::new((2 * params.n) as u64),
+                )
             }
             #[test]
             fn ckks_ci_fold() {
@@ -703,6 +697,9 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_polynomials_are_shaped);
             run_replicated!(test_replicated_polynomial_fallback_is_shaped);
             run_replicated!(test_replicated_eval_mod_is_shaped);
+            run_replicated!(test_replicated_conversions_round_trip);
+            run_replicated!(test_replicated_conversions_round_trip_factored);
+            run_replicated!(test_replicated_transforms_apply_matrices);
             #[test]
             fn ckks_ci_round_error_is_shaped() {
                 let params = $params;
@@ -933,7 +930,7 @@ where
     }
 
     let mut extended = alloc_ct(&standard_params, &standard, params.k);
-    with_scratch::<BE, _>(standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key), |s| {
+    with_scratch::<BE, _>(standard.ckks_ci_embed_tmp_bytes(&extended, &ct, &embed_key), |s| {
         standard.ckks_ci_embed(&mut extended, &ct, &embed_key, s)
     })
     .unwrap();
@@ -1074,13 +1071,24 @@ where
     let wide = fixture_ciphertext(&ci, &ci_layout(past_key, base2k), 63);
     let err = embed_refused("past the key", &standard_layout(past_key, base2k), &wide, 0);
     invalid("past the key", &err, "ckks_ci_embed");
-    // The key switch rounds plainly, so a replicated source is refused.
+    // A replicated source switches at its shaping depth: a key short of it, or an arena below the query of a
+    // replicated source, is refused before any write.
     let replicated = crate::SlotLayout::Replicated(crate::shaping::ShapingUnit::U16_20.layout(1).unwrap());
     let mut replicated_ct = ct.clone();
     crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_ct, replicated);
-    let err = embed_refused("replicated", &standard_layout(k, base2k), &replicated_ct, 0);
-    invalid("replicated", &err, "ckks_ci_embed");
-    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key);
+    let lambda = crate::shaping::product_depth(replicated, replicated_ct.log_delta()).unwrap();
+    let key_covers = |key_k: usize, k: usize| key_k >= k + lambda;
+    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &replicated_ct, &embed_key);
+    let err = embed_refused("replicated", &standard_layout(k, base2k), &replicated_ct, bytes - 1);
+    if key_covers(
+        embed_key.gglwe_layout().max_input_k().as_usize(),
+        replicated_ct.k().as_usize(),
+    ) {
+        assert_ckks_internal("replicated", &err, "ckks_ci_embed: scratch below its query");
+    } else {
+        invalid("replicated", &err, "ckks_ci_embed");
+    }
+    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &ct, &embed_key);
     let err = embed_refused("short arena", &standard_layout(k, base2k), &ct, bytes - 1);
     assert_ckks_internal("short arena", &err, "ckks_ci_embed: scratch below its query");
 
@@ -1095,8 +1103,16 @@ where
     invalid("past the key", &err, "ckks_ci_trace");
     let mut replicated_extended = extended.clone();
     crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_extended, replicated);
-    let err = trace_refused("replicated", &ci_layout(k - 1, base2k), &replicated_extended, 0);
-    invalid("replicated", &err, "ckks_ci_trace");
+    let bytes = standard.ckks_ci_trace_tmp_bytes(&back, &replicated_extended, &trace_key);
+    let err = trace_refused("replicated", &ci_layout(k - 1, base2k), &replicated_extended, bytes - 1);
+    if key_covers(
+        trace_key.gglwe_layout().max_input_k().as_usize(),
+        replicated_extended.k().as_usize(),
+    ) {
+        assert_ckks_internal("replicated", &err, "ckks_ci_trace: scratch below its query");
+    } else {
+        invalid("replicated", &err, "ckks_ci_trace");
+    }
     let spent = fixture_ciphertext(&standard, &standard_layout(ct.log_delta(), base2k), 65);
     let err = trace_refused("no budget", &ci_layout(k - 1, base2k), &spent, 0);
     assert!(

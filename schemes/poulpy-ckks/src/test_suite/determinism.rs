@@ -22,7 +22,7 @@ use std::{
 use poulpy_core::layouts::{Base2K, LWEInfos, TorusPrecision};
 use poulpy_hal::{
     api::ModuleNew,
-    layouts::{Backend, Module, Ring, Standard, ZnxView},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, Standard, ZnxView},
 };
 
 use crate::{
@@ -319,6 +319,18 @@ where
     setup_fixtures::<BE, F, Standard>(&module);
 }
 
+/// Suite entry point on the conjugate-invariant ring: encoding fixtures at
+/// degree 2048, registered by
+/// [`conjugate_invariant_determinism_test_suite!`](crate::conjugate_invariant_determinism_test_suite).
+pub fn test_conjugate_invariant_encoding_determinism<BE, F>()
+where
+    BE: Backend<ZnxWord = i64>,
+    F: TestScalar,
+    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, F, ConjugateInvariant>,
+{
+    encoding_fixtures::<BE, F, ConjugateInvariant>(&Module::<BE>::new(2048));
+}
+
 /// Registers the standard-ring determinism fixtures of one backend type, in
 /// `f64` and in [`Quad`](crate::Quad): `encoding_determinism_f64` and
 /// `encoding_determinism_quad` run
@@ -327,9 +339,9 @@ where
 /// A backend type with an `f32` encoding transform adds `, f32` after `backend = <type>`, which also
 /// registers `encoding_determinism_f32`.
 ///
-/// Every backend type implementing CKKS registers it; the conjugate-invariant
-/// encoding fixtures run in
-/// [`conjugate_invariant_ckks_test_suite!`](crate::conjugate_invariant_ckks_test_suite).
+/// Every backend type implementing CKKS registers it. A CPU backend type with the
+/// conjugate-invariant ring also registers
+/// [`conjugate_invariant_determinism_test_suite!`](crate::conjugate_invariant_determinism_test_suite).
 #[macro_export]
 macro_rules! ckks_determinism_test_suite {
     (mod $modname:ident, backend = $backend:ty $(,)?) => {
@@ -360,6 +372,27 @@ macro_rules! ckks_determinism_test_suite {
             #[test]
             fn encoding_determinism_quad() {
                 $crate::test_suite::determinism::test_encoding_determinism::<$backend, $crate::Quad>();
+            }
+        }
+    };
+}
+
+/// Registers the conjugate-invariant determinism fixtures of one backend type,
+/// in `f64` and in [`Quad`](crate::Quad): `encoding_determinism_f64` and
+/// `encoding_determinism_quad` run
+/// [`test_conjugate_invariant_encoding_determinism`](crate::test_suite::determinism::test_conjugate_invariant_encoding_determinism).
+#[macro_export]
+macro_rules! conjugate_invariant_determinism_test_suite {
+    (mod $modname:ident, backend = $backend:ty $(,)?) => {
+        mod $modname {
+            #[test]
+            fn encoding_determinism_f64() {
+                $crate::test_suite::determinism::test_conjugate_invariant_encoding_determinism::<$backend, f64>();
+            }
+
+            #[test]
+            fn encoding_determinism_quad() {
+                $crate::test_suite::determinism::test_conjugate_invariant_encoding_determinism::<$backend, $crate::Quad>();
             }
         }
     };

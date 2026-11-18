@@ -365,6 +365,7 @@ macro_rules! impl_ckks {
         impl_add_cached_one!($be);
         impl_sub_cached_one!($be);
         ::poulpy_ckks::impl_ckks_round_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_replicated_derived_full!($be);
         ::poulpy_ckks::impl_ckks_encryption_reference_full!($be);
         ::poulpy_ckks::impl_ckks_neg_reference_full!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference_full!($be);

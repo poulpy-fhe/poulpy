@@ -1,15 +1,3 @@
-use poulpy_ckks::ckks_determinism_test_suite;
-
-ckks_determinism_test_suite!(mod ckks_determinism_fft64neon, backend = crate::FFT64Neon, f32);
-
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neon, backend = crate::NTT4x30Neon, f32);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_fft64neonrayon, backend = crate::FFT64NeonRayon, f32);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neonrayon, backend = crate::NTT4x30NeonRayon, f32);
-
 #[test]
 fn ntt4x30_neon_bootstrapping_plan_keys_match_context() {
     poulpy_ckks::test_suite::presets::bootstrapping_plan_keys_match_context::<crate::NTT4x30Neon>();
@@ -124,6 +112,30 @@ mod bootstrapping_presets {
     #[ignore = "full logN16 bootstrapping presets"]
     fn ntt4x30_neon_rayon() {
         bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>();
+    }
+}
+
+/// Full logN14 to logN16 replicated bootstraps per preset: slow, so opt in with `--ignored`.
+mod replicated_bootstrapping_presets {
+    #[cfg(feature = "enable-rayon")]
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision_with_client;
+    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
+
+    /// Keys and ciphertexts come from another backend and reach the evaluated one by transfer.
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets with a portable client"]
+    fn ntt4x30_neon_with_portable_client() {
+        replicated_bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30Neon, poulpy_cpu_portable::NTT4x30Portable>(
+            52,
+        );
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ntt4x30_neon_rayon() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
     }
 }
 

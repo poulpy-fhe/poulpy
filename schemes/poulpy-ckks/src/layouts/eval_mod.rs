@@ -575,6 +575,18 @@ pub trait CKKSEvalModInfos<BE: Backend, F> {
         lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         a_k: usize,
     ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>>;
+
+    /// The replicated route of a run, `None` on the full layout: the step then evaluates
+    /// [`Self::eval_mod_replicated`] on the parts of its input, as [`ReplicatedRoute`](crate::layouts::ReplicatedRoute)
+    /// says.
+    fn replicated_stage(&self) -> Option<crate::layouts::ReplicatedStage<'_>> {
+        None
+    }
+
+    /// EvalMod with masked constants of a replicated run.
+    fn eval_mod_replicated(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
+        None
+    }
 }
 
 impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<BE>> {

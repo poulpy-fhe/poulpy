@@ -16,9 +16,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSCIRingMapImpl: Backend {
     /// Scratch bound of [`Self::ckks_ci_embed`]; may report less than the reference, never less than the body takes.
-    fn ckks_ci_embed_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, key_infos: &K) -> usize
+    fn ckks_ci_embed_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Reproduces [`ckks_ci_embed_reference`](crate::reference::ring_map::CKKSCIRingMapReference::ckks_ci_embed_reference)
@@ -41,7 +42,7 @@ pub unsafe trait CKKSCIRingMapImpl: Backend {
     fn ckks_ci_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Reproduces [`ckks_ci_trace_reference`](crate::reference::ring_map::CKKSCIRingMapReference::ckks_ci_trace_reference)
@@ -66,13 +67,19 @@ pub unsafe trait CKKSCIRingMapImpl: Backend {
 macro_rules! impl_ckks_ci_ring_map_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSCIRingMapImpl for $be {
-            fn ckks_ci_embed_tmp_bytes<R, K>(module: &::poulpy_hal::layouts::Module<Self>, res_infos: &R, key_infos: &K) -> usize
+            fn ckks_ci_embed_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+            ) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
+                A: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::ring_map::CKKSCIRingMapReference::ckks_ci_embed_tmp_bytes_reference(
-                    module, res_infos, key_infos,
+                    module, res_infos, a_infos, key_infos,
                 )
             }
 
@@ -109,7 +116,7 @@ macro_rules! impl_ckks_ci_ring_map_reference_full {
             ) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEInfos,
+                A: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::ring_map::CKKSCIRingMapReference::ckks_ci_trace_tmp_bytes_reference(

@@ -35,6 +35,7 @@
 //! | --- | ---: | ---: |
 //! | `2^16` | 1707 | 345 |
 //! | `2^15` | 851 | 162 |
+//! | `2^14` | 424 | 77 |
 //!
 //! The tool estimates the primal hybrid attack with a meet-in-the-middle search
 //! over rotations of the secret ([ePrint 2026/279](https://eprint.iacr.org/2026/279)),
@@ -92,30 +93,40 @@ struct EvalModSpec {
 /// A secret of a preset: its Hamming weight and the largest modulus, in bits, an
 /// object under it may use (see [Security](self#security)).
 #[derive(Clone, Copy, Debug)]
-struct SecretBound {
-    hamming_weight: usize,
-    max_log_modulus: usize,
+pub(super) struct SecretBound {
+    pub(super) hamming_weight: usize,
+    pub(super) max_log_modulus: usize,
 }
 
 /// The dense secret of the logN16 presets.
-const N16_DENSE_SECRET: SecretBound = SecretBound {
+pub(super) const N16_DENSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 1024,
     max_log_modulus: 1707,
 };
 /// The ephemeral sparse secret of the logN16 presets.
-const N16_SPARSE_SECRET: SecretBound = SecretBound {
+pub(super) const N16_SPARSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 32,
     max_log_modulus: 345,
 };
 /// The dense secret of the logN15 preset.
-const N15_DENSE_SECRET: SecretBound = SecretBound {
+pub(super) const N15_DENSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 1024,
     max_log_modulus: 851,
 };
 /// The ephemeral sparse secret of the logN15 preset.
-const N15_SPARSE_SECRET: SecretBound = SecretBound {
+pub(super) const N15_SPARSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 32,
     max_log_modulus: 162,
+};
+/// The dense secret of the logN14 replicated preset.
+pub(super) const N14_DENSE_SECRET: SecretBound = SecretBound {
+    hamming_weight: 1024,
+    max_log_modulus: 424,
+};
+/// The ephemeral sparse secret of the logN14 replicated preset.
+pub(super) const N14_SPARSE_SECRET: SecretBound = SecretBound {
+    hamming_weight: 32,
+    max_log_modulus: 77,
 };
 
 #[derive(Clone, Copy, Debug)]

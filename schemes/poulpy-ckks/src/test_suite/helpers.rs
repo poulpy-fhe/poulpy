@@ -801,6 +801,26 @@ where
 
 /// Key source that records the Galois element and precision of each lookup, tensor-key lookups under element 0;
 /// shareable across threads.
+/// Asserts that the key lookups `seen` start with those of an entry check, `entry` in its order, and that the lookups
+/// after them use each key at most, and at the widest, at its widest width in `entry`.
+pub(crate) fn assert_entry_then_widest(label: &str, seen: &[(i64, usize)], entry: &[(i64, usize)]) {
+    let widest = |lookups: &[(i64, usize)]| {
+        let mut widest: BTreeMap<i64, usize> = BTreeMap::new();
+        for &(p, k) in lookups {
+            let width = widest.entry(p).or_default();
+            *width = k.max(*width);
+        }
+        widest
+    };
+    assert!(
+        seen.starts_with(entry),
+        "{label}: the entry check did not look up every key at its width"
+    );
+    let run = &seen[entry.len()..];
+    assert!(!run.is_empty(), "{label}: no key used");
+    assert_eq!(widest(run), widest(entry), "{label}: widest use of each key");
+}
+
 pub(crate) struct QueryLog<'a, K> {
     keys: &'a K,
     seen: Mutex<Vec<(i64, TorusPrecision)>>,
@@ -871,18 +891,7 @@ impl<'a, K, T, C> LoggedBootstrappingKeys<'a, K, T, C> {
             .map(|(p, k)| (p, k.as_usize()))
             .collect();
         let entry: Vec<(i64, usize)> = widths.rotation_keys.iter().map(|(&p, &k)| (p, k)).collect();
-        assert!(
-            rotations.starts_with(&entry),
-            "{label}: the entry check did not look up every rotation key at its width"
-        );
-        let stages = &rotations[entry.len()..];
-        assert!(!stages.is_empty(), "{label}: no rotation key used");
-        let mut widest: BTreeMap<i64, usize> = BTreeMap::new();
-        for &(p, k) in stages {
-            let width = widest.entry(p).or_default();
-            *width = k.max(*width);
-        }
-        assert_eq!(widest, widths.rotation_keys, "{label}: widest use of each rotation key");
+        assert_entry_then_widest(label, &rotations, &entry);
         let tensor_log = match (&self.tensor_key, &self.ci_tensor_key) {
             (Some(log), _) => log.take(),
             (None, Some(log)) => log.take(),

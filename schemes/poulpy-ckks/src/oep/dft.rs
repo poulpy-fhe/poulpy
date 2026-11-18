@@ -36,6 +36,8 @@ pub unsafe trait CKKSDFTImpl:
     + super::CKKSSubImpl
     + super::CKKSImagImpl
     + super::CKKSRotateImpl
+    + super::CKKSRoundImpl
+    + poulpy_core::oep::GLWETraceImpl
 {
     /// Scratch bound of [`Self::ckks_dft_matrix_prepare`] and [`Self::ckks_dft_matrix_prepare_alloc`]; may report less
     /// than the reference, never less than the body takes.
