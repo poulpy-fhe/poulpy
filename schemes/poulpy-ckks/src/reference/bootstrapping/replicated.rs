@@ -17,7 +17,7 @@ use crate::{
     },
     layouts::{
         CKKSCiphertextViewMut, CKKSDFTFactors, CKKSPlaintextOwned, Decode, Encode, EvalMod, MaskedCoeffs, ReplicatedStage,
-        ScratchArenaTakeCKKSCiphertext, Standard, bootstrapping::replicated::ReplicatedStep,
+        ScratchArenaTakeCKKSCiphertext, Standard, bootstrapping::replicated::ReplicatedStep, validation,
     },
 };
 
@@ -48,24 +48,37 @@ where
     module.ckks_round(ct, &wide, &mut scratch)
 }
 
-/// The query of a step on `ct` through `dft` under the keys of `key_layouts`, each switching with its own gadget.
-fn stage_query<BE, Dir, Fmt, D, C>(
+/// The keys a step of `stage` on `ct` through `dft` looks up at width `k`, those of its trace and of its factor chain,
+/// or `MissingAutomorphismKey` for `op`; otherwise the query of the step, each key switching with its own gadget. The
+/// trace of core looks its keys up and switches with them without a refusal of its own.
+pub(crate) fn check_stage_keys<BE, Dir, D, C, H>(
+    op: &'static str,
     module: &Module<BE>,
     ct: &C,
     dft: &D,
-    key_layouts: &[poulpy_core::layouts::GGLWELayout],
-) -> usize
+    stage: ReplicatedStage<'_>,
+    k: usize,
+    keys: &H,
+) -> Result<usize>
 where
     BE: Backend,
-    Module<BE>: CKKSDFTOps<BE>,
-    D: CKKSDFTFactors<BE, Dir, Fmt>,
+    Module<BE>: CKKSDFTOps<BE> + GLWETrace<BE>,
+    D: CKKSDFTFactors<BE, Dir, Standard>,
     C: CKKSCtBounds,
+    H: GetAutomorphismKey<BE>,
 {
-    key_layouts
+    let n = ct.n();
+    let trace = module
+        .glwe_trace_galois_elements(n, stage.trace_skip..n.log2(), false)
+        .into_iter()
+        .map(|p| (p, k));
+    let chain = validation::chain_galois_lookups(op, module, n.as_usize(), dft.factor_plans(), stage.consumed, k)?;
+    let key_layouts = validation::ensure_galois_keys(op, keys, trace.chain(chain))?;
+    Ok(key_layouts
         .iter()
         .map(|key| module.ckks_dft_tmp_bytes(ct, ct, dft, key))
         .max()
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 /// SlotsToCoeffs of a replicated run, in place on `ct`, a copy of the bootstrap's input at `Δ_b` or at the leveled
@@ -92,7 +105,7 @@ where
 {
     const OP: &str = "ckks_slots_to_coeffs_assign";
     let route = stage.route;
-    let k_in = route.log_delta + stage.log_msg_ratio + route.s2c_consumed_bits();
+    let k_in = stage.input_k();
     crate::ckks_ensure_operand!(
         OP,
         ct.slot_layout() == SlotLayout::Replicated(route.layout),
@@ -109,21 +122,8 @@ where
         ct.log_budget() + route.log_delta >= k_in,
         "the input has less budget than the input width of the route"
     );
-    // The trace of core looks its keys up and switches with them without a refusal of its own.
-    let lookups = module
-        .glwe_trace_galois_elements(ct.n(), stage.trace_skip..ct.n().log2(), false)
-        .into_iter()
-        .map(|p| (p, k_in + route.extra_bits));
-    let chain = crate::layouts::validation::chain_galois_lookups(
-        OP,
-        module,
-        ct.n().as_usize(),
-        dft.factor_plans(),
-        stage.consumed,
-        k_in + route.extra_bits,
-    )?;
-    let key_layouts = crate::layouts::validation::ensure_galois_keys(OP, keys, lookups.chain(chain))?;
-    crate::layouts::validation::ensure_scratch(OP, scratch, stage_query(module, &*ct, dft, &key_layouts))?;
+    let bytes = check_stage_keys(OP, module, &*ct, dft, stage, k_in + route.extra_bits, keys)?;
+    validation::ensure_scratch(OP, scratch, bytes)?;
     let lift = route.log_delta - log_delta;
     let at = |k: usize| GLWELayout {
         k: k.into(),
@@ -177,22 +177,9 @@ where
         "a replicated run takes the raised ciphertext, of the full layout"
     );
     let log_n = ct.n().log2();
-    // The trace of core looks its keys up and switches with them without a refusal of its own.
-    let lookups = module
-        .glwe_trace_galois_elements(ct.n(), stage.trace_skip..log_n, false)
-        .into_iter()
-        .map(|p| (p, ct.k().as_usize()));
     // The trace writes `ct`: the keys of the transform after it and the arena are checked first.
-    let chain = crate::layouts::validation::chain_galois_lookups(
-        OP,
-        module,
-        ct.n().as_usize(),
-        dft.factor_plans(),
-        stage.consumed,
-        ct.k().as_usize(),
-    )?;
-    let key_layouts = crate::layouts::validation::ensure_galois_keys(OP, keys, lookups.chain(chain))?;
-    crate::layouts::validation::ensure_scratch(OP, scratch, stage_query(module, &*ct, dft, &key_layouts))?;
+    let bytes = check_stage_keys(OP, module, &*ct, dft, stage, ct.k().as_usize(), keys)?;
+    validation::ensure_scratch(OP, scratch, bytes)?;
     module.glwe_trace_assign(ct, stage.trace_skip..log_n, false, true, keys, scratch);
     ct.set_log_sparsity(stage.top_sparsity);
     module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)?;
@@ -295,8 +282,8 @@ where
     A: CKKSCtBounds,
 {
     let route = stage.route;
-    crate::layouts::validation::ensure_rank_one(op, a, res)?;
-    crate::layouts::validation::ensure_one_degree(op, module.n(), a, res)?;
+    validation::ensure_rank_one(op, a, res)?;
+    validation::ensure_one_degree(op, module.n(), a, res)?;
     crate::ckks_ensure_operand!(
         op,
         a.slot_layout() == SlotLayout::Replicated(stage.c2s_layout()),
@@ -392,9 +379,8 @@ where
     let ct_bytes = |layout: &crate::CKKSLayout| crate::oep::derived::replicated::ct_bytes::<BE>(&layout.glwe_layout);
     match stage.step {
         ReplicatedStep::SlotsToCoeffs => {
-            let route = stage.route;
-            let k_in = route.log_delta + stage.log_msg_ratio + route.s2c_consumed_bits();
-            let (input, x) = (at(k_in), at(k_in + route.extra_bits));
+            let k_in = stage.input_k();
+            let (input, x) = (at(k_in), at(k_in + stage.route.extra_bits));
             let trace = ct_bytes(&x)
                 + module
                     .ckks_copy_tmp_bytes(&x, &input)

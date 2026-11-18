@@ -780,7 +780,7 @@ where
         .max()
         .unwrap();
     let atk = key_layout(n, b, widest, 1, 1, 1);
-    let d2s = key_layout(n, b, route.log_delta + plan.eval_mod().log_msg_ratio, 1, 1, 1);
+    let d2s = key_layout(n, b, plan.replicated_raise_input_k().unwrap(), 1, 1, 1);
     let s2d = key_layout(n, b, plan.replicated_raised_k(k_out).unwrap(), 1, 1, 1);
     let elements = ctx.replicated_galois_elements(module);
     let keys = FixtureKeys {

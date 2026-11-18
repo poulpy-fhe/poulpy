@@ -87,29 +87,14 @@ where
             .unwrap();
     let mut results = Vec::new();
     for (label, placement_factors) in [("dense", None), ("factored", Some(2))] {
-        let conv = with_scratch::<B, _>(bytes, |s| match placement_factors {
-            None => ReplicatedConversion::<B, Rg>::new::<F>(
+        let conv = with_scratch::<B, _>(bytes, |s| {
+            crate::test_suite::replicated::conversion::<B, F, Rg>(
                 module,
-                params.n.into(),
-                layout,
-                b.into(),
-                log_delta,
-                log_delta_diag,
-                extra_bits,
-                s,
-            ),
-            Some(placement_factors) => ReplicatedConversion::<B, Rg>::new_factored::<F>(
-                module,
-                params.n.into(),
-                layout,
-                b.into(),
-                log_delta,
-                log_delta_diag,
-                inner_log_delta_diag,
-                extra_bits,
+                (params.n, layout, b.into()),
+                (log_delta, log_delta_diag, inner_log_delta_diag, extra_bits),
                 placement_factors,
                 s,
-            ),
+            )
         })
         .unwrap();
         let from_bits = conv.from.as_ref().map_or(0, ReplicatedTransform::consumed_bits);

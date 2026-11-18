@@ -270,6 +270,14 @@ mod ckks {
     }
 
     #[test]
+    #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
+    fn ntt4x30_replicated_presets_meet_precision() {
+        poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30PortableRayon>(
+            52,
+        );
+    }
+
+    #[test]
     fn ntt4x30_ckks_coeffs_mask() {
         poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30PortableRayon>();
     }
@@ -345,10 +353,57 @@ mod ckks {
             arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
             multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
             rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         },
         ring_free_tests = {
             encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
             bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_ntt4x30_rank2,
+        backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+        backend_test = crate::NTT4x30PortableRayon,
+        scalar = f64,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+        tests = {
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_ci_ntt4x30_f64,
+        backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+        backend_test = crate::NTT4x30PortableRayon,
+        ring = ::poulpy_hal::layouts::ConjugateInvariant,
+        scalar = f64,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+        tests = {
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_fft64_rank2,
+        backend_ref = poulpy_cpu_portable::FFT64Portable,
+        backend_test = crate::FFT64PortableRayon,
+        scalar = f64,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+        tests = {
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_ci_fft64_f64,
+        backend_ref = poulpy_cpu_portable::FFT64Portable,
+        backend_test = crate::FFT64PortableRayon,
+        ring = ::poulpy_hal::layouts::ConjugateInvariant,
+        scalar = f64,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+        tests = {
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         }
     }
 

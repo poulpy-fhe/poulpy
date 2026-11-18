@@ -29,8 +29,8 @@ use crate::{
         CKKSLinearTransformationOps, CKKSModuleInfos,
     },
     layouts::{
-        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextAlloc,
-        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextAlloc,
+        CKKSCiphertextOwned, CKKSPlaintextAlloc,
     },
     oep::CKKSEncapsulatedModUpImpl,
     presets::replicated_bootstrapping::{ReplicatedBootstrappingPreset, all},
@@ -151,9 +151,9 @@ where
         let (module, client) = (Module::<BE>::new(n as u64), Module::<BC>::new(n as u64));
         let layout = unit.layout(k.trailing_zeros() as u8).unwrap();
         let plan = preset.plan(layout).unwrap();
-        let ctx = compile::<BE>(&module, base2k, &plan);
+        let ctx = crate::test_suite::replicated::compile_replicated::<BE, f64>(&module, base2k.into(), &plan).unwrap();
         // The client compiles the same plan, for the Galois elements and the keys of its secret.
-        let client_ctx = compile::<BC>(&client, base2k, &plan);
+        let client_ctx = crate::test_suite::replicated::compile_replicated::<BC, f64>(&client, base2k.into(), &plan).unwrap();
         let galois_elements = ctx.replicated_galois_elements(&module);
         assert_eq!(client_ctx.replicated_galois_elements(&client), galois_elements);
         let level_log_delta = plan.replicated_route().unwrap().level_log_delta;
@@ -436,20 +436,4 @@ where
         let mut run = ReplicatedBootstrappingPresetRun::<BE, BC>::setup_with_unit(preset.clone(), ShapingUnit::U8_40, k);
         check(&mut run, "offset");
     }
-}
-
-/// `plan` compiled on `module` and prepared.
-fn compile<B>(module: &Module<B>, base2k: usize, plan: &BootstrappingPlan) -> BootstrappingContextPrepared<B, f64>
-where
-    B: Backend,
-    Module<B>: crate::test_suite::replicated::ReplicatedBootstrapModule<B, f64>,
-    ScratchOwned<B>: ScratchOwnedAlloc<B>,
-    CKKSPlaintextOwned<B>: poulpy_core::layouts::GLWEToBackendRef<B> + crate::CKKSCtBounds + poulpy_core::GLWEDiagonalProd<B>,
-{
-    let unprepared = with_scratch::<B, _>(
-        BootstrappingContextPrepared::<B, f64>::compile_unprepared_tmp_bytes(module, plan).unwrap(),
-        |s| BootstrappingContextPrepared::<B, f64>::compile_unprepared(module, base2k.into(), plan, s),
-    )
-    .unwrap();
-    with_scratch::<B, _>(unprepared.prepare_tmp_bytes(module), |s| unprepared.prepare(module, s)).unwrap()
 }

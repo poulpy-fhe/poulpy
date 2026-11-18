@@ -226,8 +226,12 @@ impl BootstrappingPlan {
     /// Width of the input of a replicated plan at `Δ_b`: the message ratio and the bits `SlotsToCoeffs` consumes
     /// above it.
     pub fn replicated_input_k(&self) -> Option<usize> {
-        let route = self.replicated.as_ref()?;
-        Some(route.log_delta + self.eval_mod.log_msg_ratio + route.s2c_consumed_bits())
+        Some(self.replicated_raise_input_k()? + self.replicated.as_ref()?.s2c_consumed_bits())
+    }
+
+    /// Width of the input of the raise of a replicated plan at `Δ_b`: the message ratio.
+    pub(crate) fn replicated_raise_input_k(&self) -> Option<usize> {
+        Some(self.replicated.as_ref()?.log_delta + self.eval_mod.log_msg_ratio)
     }
 
     /// Width of the widest product EvalMod relinearizes on the replicated route for an output of width `k_out`: EvalMod
@@ -281,6 +285,11 @@ pub struct ReplicatedStage<'a> {
 }
 
 impl ReplicatedStage<'_> {
+    /// The input width of the run at `Δ_b`, as [`BootstrappingPlan::replicated_input_k`].
+    pub(crate) fn input_k(&self) -> usize {
+        self.route.log_delta + self.log_msg_ratio + self.route.s2c_consumed_bits()
+    }
+
     /// The layout `CoeffsToSlots` writes.
     pub(crate) fn c2s_layout(&self) -> ReplicatedLayout {
         self.packed.unwrap_or(self.route.layout)
@@ -601,35 +610,65 @@ fn times_minus_i_from<F: CKKSEncodingScalar>(diagonals: &mut ComplexDiagonals<F>
 }
 
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
-    /// Galois elements of the automorphism keys the replicated route uses, conjugation (`−1`) among them: those of
-    /// the factors of both transforms, of the traces from the levels of the period `k`, and of the recombination of a
-    /// packed EvalMod. Empty on the full layout.
+    /// Galois elements of the automorphism keys of [`Self::replicated_key_widths`], conjugation (`-1`) among them.
+    /// Empty on the full layout.
     pub fn replicated_galois_elements(&self, module: &Module<BE>) -> Vec<i64>
     where
-        Module<BE>: CKKSModuleInfos + GLWETrace<BE> + CyclotomicOrder,
+        Module<BE>: GLWETrace<BE> + CyclotomicOrder,
     {
-        let Some(stages) = self.replicated() else {
-            return Vec::new();
-        };
-        let n = self.bootstrap_degree();
-        let order = crate::operand_cyclotomic_order::<_, Standard>("replicated_galois_elements", module, n)
-            .expect("the context was compiled at a degree the module serves");
-        let rotation = |r: i64| galois_element(r.rem_euclid(order / 4), order);
-        let (k, r) = (1i64 << stages.route.layout.log_k(), 1i64 << stages.route.layout.log_r());
-        let plans = self
-            .slots_to_coeffs()
-            .factor_plans()
-            .iter()
-            .chain(self.coeffs_to_slots().factor_plans());
-        let mut elements: Vec<i64> = plans
-            .flat_map(|plan| plan.galois_elements(order))
-            .chain(stages.packed.map(|_| rotation(k * r)))
-            .chain(module.glwe_trace_galois_elements(n.into(), stages.top_skip..n.ilog2() as usize, false))
-            .chain([-1])
+        let mut elements: Vec<i64> = self
+            .replicated_key_uses(module, [0; 4])
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(p, _)| p)
             .collect();
         elements.sort_unstable();
         elements.dedup();
         elements
+    }
+
+    /// The automorphism keys the replicated route looks up, as `(galois element, k)`: the bottom trace and
+    /// `SlotsToCoeffs` at `wide_in`, the top trace and `CoeffsToSlots` at `raised`, each factor's baby rotations at its
+    /// input's width and its giant rotations at its output's, the conjugation at `after_c2s`, and with the packed
+    /// EvalMod the rotation that adds the second batch at `after_eval_mod`. `None` on the full layout.
+    fn replicated_key_uses(
+        &self,
+        module: &Module<BE>,
+        [wide_in, raised, after_c2s, after_eval_mod]: [usize; 4],
+    ) -> Option<Vec<(i64, usize)>>
+    where
+        Module<BE>: GLWETrace<BE> + CyclotomicOrder,
+    {
+        let stages = self.replicated()?;
+        let n = self.bootstrap_degree();
+        let log_n = n.ilog2() as usize;
+        let order = crate::operand_cyclotomic_order::<_, Standard>("replicated_key_uses", module, n).ok()?;
+        let rotation = |r: i64| galois_element(r.rem_euclid(order / 4), order);
+        let trace = |skip: usize, k: usize| {
+            module
+                .glwe_trace_galois_elements(n.into(), skip..log_n, false)
+                .into_iter()
+                .map(move |p| (p, k))
+        };
+        let chain = |plans: &[poulpy_core::layouts::LinearTransformationPlan], consumed: &[usize], k: usize| {
+            crate::layouts::validation::chain_key_lookups(plans, consumed, k)
+                .into_iter()
+                .map(|(r, k)| (rotation(r), k))
+                .collect::<Vec<_>>()
+        };
+        let packed = stages.packed.map(|double| {
+            let k = 1i64 << double.log_k();
+            (rotation((k / 2) << double.log_r()), after_eval_mod)
+        });
+        Some(
+            trace(stages.bottom_skip, wide_in)
+                .chain(chain(self.slots_to_coeffs().factor_plans(), &stages.s2c_consumed, wide_in))
+                .chain(trace(stages.top_skip, raised))
+                .chain(chain(self.coeffs_to_slots().factor_plans(), &stages.c2s_consumed, raised))
+                .chain([(-1, after_c2s)])
+                .chain(packed)
+                .collect(),
+        )
     }
 
     /// Generates the keys of the replicated route under `sk`, by the generator of the full layout: the automorphism
@@ -687,54 +726,19 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     }
 
     /// The widths at which a bootstrapping of the replicated route into an output of `k_out` bits uses its keys, the
-    /// one model the entry check, the key layouts and the tests read; `None` on the full layout:
-    ///
-    /// - the bottom trace and `SlotsToCoeffs` at the input width plus the working bits, each factor's baby rotations
-    ///   at its input's width and its giant rotations at its output's;
-    /// - the top trace and `CoeffsToSlots` at the raised width, likewise;
-    /// - the conjugation on what `CoeffsToSlots` leaves, and with the packed EvalMod the rotation that adds the second
-    ///   batch on what EvalMod leaves;
-    /// - the tensor key at the widest product EvalMod relinearizes.
-    ///
-    /// Each Galois element of [`Self::replicated_galois_elements`] gets the width of its widest use.
+    /// one model the entry check, the key layouts and the tests read: each Galois element at its widest use, and the
+    /// tensor key at the widest product EvalMod relinearizes. `None` on the full layout.
     pub fn replicated_key_widths(&self, module: &Module<BE>, k_out: usize) -> Option<BootstrappingKeyWidths>
     where
         Module<BE>: GLWETrace<BE> + CyclotomicOrder,
     {
-        let stages = self.replicated()?;
-        let (plan, route) = (&self.plan, &stages.route);
-        let n = self.bootstrap_degree();
-        let log_n = n.ilog2() as usize;
-        let order = crate::operand_cyclotomic_order::<_, Standard>("replicated_key_widths", module, n).ok()?;
-        let rotation = |r: i64| galois_element(r.rem_euclid(order / 4), order);
+        let (plan, route) = (&self.plan, &self.replicated()?.route);
         let wide_in = plan.replicated_input_k()? + route.extra_bits;
         let raised = plan.replicated_raised_k(k_out)?;
         let after_c2s = raised.checked_sub(route.c2s_consumed_bits())?;
         let after_eval_mod = after_c2s.checked_sub(route.extra_bits + plan.eval_mod.consumed_bits())?;
-        let trace = |skip: usize, k: usize| {
-            module
-                .glwe_trace_galois_elements(n.into(), skip..log_n, false)
-                .into_iter()
-                .map(move |p| (p, k))
-        };
-        let chain = |plans: &[poulpy_core::layouts::LinearTransformationPlan], consumed: &[usize], k: usize| {
-            crate::layouts::validation::chain_key_lookups(plans, consumed, k)
-                .into_iter()
-                .map(|(r, k)| (rotation(r), k))
-                .collect::<Vec<_>>()
-        };
-        let packed = stages.packed.map(|double| {
-            let k = 1i64 << double.log_k();
-            (rotation((k / 2) << double.log_r()), after_eval_mod)
-        });
         let mut rotation_keys: BTreeMap<i64, usize> = BTreeMap::new();
-        for (p, k) in trace(stages.bottom_skip, wide_in)
-            .chain(chain(self.slots_to_coeffs().factor_plans(), &stages.s2c_consumed, wide_in))
-            .chain(trace(stages.top_skip, raised))
-            .chain(chain(self.coeffs_to_slots().factor_plans(), &stages.c2s_consumed, raised))
-            .chain([(-1, after_c2s)])
-            .chain(packed)
-        {
+        for (p, k) in self.replicated_key_uses(module, [wide_in, raised, after_c2s, after_eval_mod])? {
             let width = rotation_keys.entry(p).or_default();
             *width = k.max(*width);
         }
