@@ -157,7 +157,9 @@ backend type, adding `, f32` when the type encodes in `f32`. It checks the
 encoding and the setup constants, in `f64` and `Quad` (and `f32`), against the
 frozen fixtures of
 [`test_suite/determinism.txt`](../src/test_suite/determinism.txt), which every
-backend reproduces byte for byte.
+backend reproduces byte for byte. A type serving the conjugate-invariant ring
+also registers `conjugate_invariant_determinism_test_suite!(mod <name>, backend = <type>)`,
+which checks its encoding in `f64` and `Quad` against the same fixtures.
 
 Register each supported operation/scalar combination in its backend crate.
 Encoding and DFT matrix generation accept any scalar satisfying their generic

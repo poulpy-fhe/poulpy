@@ -1,5 +1,3 @@
-use poulpy_ckks::ckks_determinism_test_suite;
-
 /// The small S2C-first and C2S-first presets at their 52-bit radix, the bootstrap key plan and the
 /// conjugate-invariant bootstrap refusals, by default.
 mod small_bootstrapping_presets {
@@ -149,22 +147,6 @@ mod replicated_bootstrapping_presets {
         replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
     }
 }
-
-ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512, backend = crate::FFT64Avx512, f32);
-
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512, backend = crate::NTT4x30Avx512, f32);
-
-#[cfg(feature = "enable-ifma")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifma, backend = crate::NTT3x42Ifma, f32);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512rayon, backend = crate::FFT64Avx512Rayon, f32);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512rayon, backend = crate::NTT4x30Avx512Rayon, f32);
-
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifmarayon, backend = crate::NTT3x42IfmaRayon, f32);
 
 // Paired OEP validation. Serial backends follow AVX -> AVX-512 -> IFMA.
 // Rayon backends validate against their serial counterparts.

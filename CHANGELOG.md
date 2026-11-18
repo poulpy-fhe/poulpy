@@ -32,6 +32,7 @@
 - CPU backends register `CKKSShapedRoundingImpl<Rg>` with `impl_cpu_ckks_shaped_rounding!`, on both rings from `($be)` and on one from `($be, $ring)`, while the oracle computes the correction independently, on both rings.
 - Every backend type, the oracle and the test fixture backends included, selects the replicated conversions through `impl_ckks_reference_full!`, and the GPU backend and the override fixture through `impl_ckks_replicated_derived_full!` beside their rounding, on both rings, under the same features as the type.
 - `ckks_replicated_workspace` checks prepared-buffer reuse across distinct conversion inputs.
+- Each CPU backend crate registers its determinism suites, on both rings, in a `tests/determinism.rs` target, and `poulpy-cpu-portable` its encoding round trips in `tests/ckks_encoding.rs`, outside the library tests.
 
 ### `poulpy-core`
 
@@ -139,6 +140,7 @@
 - **Breaking:** the suite trait `TestContextSharedModule` requires `VecZnxSwitchRing`, as `generate_keys` does.
 - **Breaking, behaviour:** a sparse plan needs its gap. `generate_keys` refuses transforms that do not fill `N/2g` slots, and `ckks_bootstrap` and `ckks_functional_bootstrap` refuse an input of another degree than those transforms fill, where a plan on fewer slots than the ring without a gap returned noise: no projection and no trace kept the overflow of the raise in the subring.
 - **Breaking, behaviour:** the bootstrapping presets take the bounds of their secrets from `poulpy_core::security::RlweParams` at 128 bits, rlwe-params v0.2.0, in place of hand-copied values. The weight-32 sparse secret at `N = 2^16` is bounded at 342 bits in place of 345 (`max_sparse_modulus`), and no key layout moves. `BootstrappingPreset`, `BootstrappingKeysLayout` and `CKKSFoldKeysLayout` implement `ValidateSecurity`, listing the raised ciphertext and every key under the secret its samples are encrypted with, and building a preset validates it under its own secrets (`BootstrappingPreset::dense_secret`, `BootstrappingPreset::sparse_secret`), which replaces the preset's own checks and refuses with the new `CKKSCompositionError::SecurityLevelNotMet`, naming the constructor or `with_*` method called and carrying the core error as its source. Add `BootstrappingPlan::secrets`, giving the `BootstrappingSecrets` of the keys from the dense secret, and `FoldSecrets` for the keys of a fold. Key generation checks no level: a caller drawing another secret validates the preset under it.
+- **Breaking:** test suites: `conjugate_invariant_ckks_test_suite!` loses `ckks_ci_encoding_determinism_f64` and `ckks_ci_encoding_determinism_quad` for `conjugate_invariant_determinism_test_suite!(mod <name>, backend = <type>)`, whose `encoding_determinism_f64` and `encoding_determinism_quad` run the new `test_conjugate_invariant_encoding_determinism::<BE, F>()`.
 
 ### `poulpy-bin-fhe`
 

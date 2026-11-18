@@ -24,6 +24,8 @@ case "$mode" in
 esac
 
 command=(cargo test -p "poulpy-cpu-$backend" --lib --profile ci --features "$features")
+# The determinism fixtures need CKKS, which only the native feature set enables for AVX.
+if [[ "$mode" == native ]]; then command+=(--test determinism); fi
 if [[ "$stage" == build ]]; then
   "${command[@]}" --no-run
   exit
