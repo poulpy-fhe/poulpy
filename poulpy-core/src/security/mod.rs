@@ -72,30 +72,16 @@
 //!
 //! | [`Distribution`] | Cell of the table |
 //! | --- | --- |
-//! | `TernaryFixed(h)` | sparse ternary, at the largest tabulated weight at most `h` |
-//! | `BinaryFixed(h)` | sparse binary, at the largest tabulated weight at most `min(h, N - h)` |
+//! | `TernaryFixed(h)` | sparse ternary, at the tabulated weight `h` |
+//! | `BinaryFixed(h)` | sparse binary, at the tabulated weight `min(h, N - h)` |
 //! | `TernaryProb(2/3)` | uniform ternary |
 //! | `BinaryProb(1/2)` | uniform binary |
-//! | other `TernaryProb(p)` | sparse ternary, at the largest tabulated weight at most `pN - t` |
-//! | other `BinaryProb(p)` | sparse binary, at the largest tabulated weight at most `min(pN, (1 - p)N) - t'` |
 //!
-//! Any other distribution, a degree the table does not cover, and a cell the
-//! estimators failed on are [unsupported](CoreError::SecurityUnsupported). Rounding
-//! a weight down is conservative, since the bounds grow with the weight (the tests
-//! check it on the vendored table). A binary secret of weight `h` is as weak as
-//! one of weight `N - h`: with `1` the all-ones polynomial, `a * s = a * 1 - a * (1 - s)`
-//! and `a * 1` is public, so a fixed-weight binary secret takes the smaller of the
-//! two. A ternary secret has no such complement. The table's sparse ternary secrets have
-//! exactly `h / 2` coefficients equal to 1, while
-//! [`TernaryFixed`](Distribution::TernaryFixed) draws each sign independently.
+//! An untabulated weight, any other distribution, a degree the table does not cover, and a cell the estimators failed on are [unsupported](CoreError::SecurityUnsupported).
+//! Bounds are not interpolated or extrapolated to other weights or probabilities.
+//! A binary secret of weight `h` is as weak as one of weight `N - h`: with `1` the all-ones polynomial, `a * s = a * 1 - a * (1 - s)` and `a * 1` is public, so a fixed-weight binary secret takes the smaller of the two.
+//! The table's sparse ternary secrets have exactly `h / 2` coefficients equal to 1, while [`TernaryFixed`](Distribution::TernaryFixed) draws each sign independently.
 //! Fixing the signs only lowers the entropy of the secret, so the bound holds.
-//!
-//! A secret of `TernaryProb(p)` or `BinaryProb(p)` draws each coefficient
-//! independently, so given its weight `w` it is a fixed-weight secret of weight
-//! `w`. By Hoeffding's inequality its weight is below `pN - t` with probability at
-//! most `exp(-2t^2 / N)`, and `t = sqrt(N * target * ln(2) / 2)` makes that
-//! `2^-target`. A binary secret bounds both tails, each at `2^-(target + 1)`, which
-//! gives `t'`.
 
 use crate::{
     CoreError, Distribution, GetDistribution, Result,
@@ -170,61 +156,25 @@ impl SecurityTable for RlweParams {
         }
         let n = secret.n;
         let log_n = n.trailing_zeros();
-        let cells = cells.iter().filter(|cell| cell.log_n == log_n);
-        let sparse_ternary = |secret| match secret {
-            TableSecret::SparseTernary(w) => Some(w),
-            _ => None,
-        };
-        let sparse_binary = |secret| match secret {
-            TableSecret::SparseBinary(w) => Some(w),
-            _ => None,
-        };
-        let bound = match secret.dist {
+        let table_secret = match secret.dist {
             Distribution::TernaryFixed(h) | Distribution::BinaryFixed(h) if h > n => {
                 return Err(unsupported("the weight exceeds the degree"));
             }
             Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if !(0.0..=1.0).contains(&p) => {
                 return Err(unsupported("the probability is not in [0, 1]"));
             }
-            Distribution::TernaryFixed(h) => rounded_down(cells, h, sparse_ternary),
-            Distribution::BinaryFixed(h) => rounded_down(cells, h.min(n - h), sparse_binary),
-            Distribution::TernaryProb(p) if p == 2.0 / 3.0 => exact(cells, TableSecret::Ternary),
-            Distribution::BinaryProb(0.5) => exact(cells, TableSecret::Binary),
-            Distribution::TernaryProb(p) => rounded_down(cells, least_weight(n, p, target_bits), sparse_ternary),
-            Distribution::BinaryProb(p) => {
-                let least = least_weight(n, p, target_bits + 1).min(least_weight(n, 1.0 - p, target_bits + 1));
-                rounded_down(cells, least, sparse_binary)
-            }
+            Distribution::TernaryFixed(h) => TableSecret::SparseTernary(h),
+            Distribution::BinaryFixed(h) => TableSecret::SparseBinary(h.min(n - h)),
+            Distribution::TernaryProb(p) if p == 2.0 / 3.0 => TableSecret::Ternary,
+            Distribution::BinaryProb(0.5) => TableSecret::Binary,
             _ => return Err(unsupported("the table has no secret of this distribution")),
         };
-        bound.ok_or_else(|| unsupported("the table has no bound for this secret at this degree"))
+        cells
+            .iter()
+            .find(|cell| cell.log_n == log_n && cell.secret == table_secret)
+            .and_then(|cell| cell.max_log_q)
+            .ok_or_else(|| unsupported("the table has no bound for this secret at this degree"))
     }
-}
-
-/// A weight that `n` coefficients, each non-zero with probability `p`, reach
-/// except with probability at most `2^-bits`, by Hoeffding's inequality.
-fn least_weight(n: usize, p: f64, bits: usize) -> usize {
-    let n = n as f64;
-    let t = (n * bits as f64 * std::f64::consts::LN_2 / 2.0).sqrt();
-    (p * n - t).floor().max(0.0) as usize
-}
-
-/// The bound of the largest tabulated weight at most `h` with a result, among
-/// the cells whose secret `weight` maps to a weight.
-fn rounded_down<'a>(
-    cells: impl Iterator<Item = &'a Cell>,
-    h: usize,
-    weight: impl Fn(TableSecret) -> Option<usize>,
-) -> Option<usize> {
-    cells
-        .filter_map(|cell| Some((weight(cell.secret)?, cell.max_log_q?)))
-        .filter(|&(w, _)| w <= h)
-        .max_by_key(|&(w, _)| w)
-        .map(|(_, max_log_q)| max_log_q)
-}
-
-fn exact<'a>(mut cells: impl Iterator<Item = &'a Cell>, secret: TableSecret) -> Option<usize> {
-    cells.find(|cell| cell.secret == secret).and_then(|cell| cell.max_log_q)
 }
 
 /// A secret as the tables see it: the degree of the ring it lives in and its
@@ -387,7 +337,6 @@ mod tests {
 
     #[test]
     fn bounds_grow_with_weight_and_degree() {
-        // Rounding a weight down to a tabulated one relies on the first.
         for a in CELLS_128 {
             for b in CELLS_128 {
                 let (Some(qa), Some(qb)) = (a.max_log_q, b.max_log_q) else {
@@ -412,25 +361,27 @@ mod tests {
     }
 
     #[test]
-    fn weights_round_down_to_a_tabulated_one() {
+    fn untabulated_weights_and_missing_results_are_unsupported() {
+        for log_n in 12..=17 {
+            for h in [0, 31, 33, 63, 1000, 2049, 1 << log_n] {
+                for dist in [Distribution::TernaryFixed(h), Distribution::BinaryFixed(h)] {
+                    assert_eq!(
+                        reason(bound(log_n, dist)),
+                        "the table has no bound for this secret at this degree"
+                    );
+                }
+            }
+        }
+        // This tabulated cell has no estimator result.
         assert_eq!(
-            bound(16, Distribution::TernaryFixed(1000)),
-            bound(16, Distribution::TernaryFixed(512))
-        );
-        assert_eq!(
-            bound(16, Distribution::TernaryFixed(40_000)),
-            bound(16, Distribution::TernaryFixed(2048))
-        );
-        assert_eq!(
-            reason(bound(16, Distribution::TernaryFixed(31))),
-            "the table has no bound for this secret at this degree"
-        );
-        // The estimators failed on weight 32 at degree 2^12, so no weight below 64 has a bound there.
-        assert_eq!(
-            reason(bound(12, Distribution::BinaryFixed(63))),
+            reason(bound(12, Distribution::BinaryFixed(32))),
             "the table has no bound for this secret at this degree"
         );
         assert_eq!(bound(12, Distribution::BinaryFixed(64)), Ok(53));
+        assert_eq!(
+            reason(bound(16, Distribution::TernaryFixed(40_000))),
+            "the table has no bound for this secret at this degree"
+        );
         // A weight above the degree is no secret of that ring.
         assert_eq!(
             reason(bound(12, Distribution::TernaryFixed(4097))),
@@ -455,10 +406,10 @@ mod tests {
             reason(bound(12, Distribution::BinaryFixed(4096))),
             "the table has no bound for this secret at this degree"
         );
-        // A ternary secret has no complement: its weight rounds down as it is.
+        // The binary complement mapping does not apply to a ternary secret of the same weight.
         assert_eq!(
-            bound(12, Distribution::TernaryFixed(4096 - 64)),
-            bound(12, Distribution::TernaryFixed(2048))
+            reason(bound(12, Distribution::TernaryFixed(4096 - 64))),
+            "the table has no bound for this secret at this degree"
         );
     }
 
@@ -469,44 +420,26 @@ mod tests {
     }
 
     #[test]
-    fn probabilistic_secrets_take_the_weight_they_reach_but_with_negligible_probability() {
-        // At 2^12, t = sqrt(4096 * 128 * ln 2 / 2) is about 426, so a weight of 2048 on average is at least 1621.
-        assert_eq!(least_weight(1 << 12, 0.5, 128), 1621);
-        assert_eq!(
-            bound(12, Distribution::TernaryProb(0.5)),
-            bound(12, Distribution::TernaryFixed(1024))
-        );
-        assert_eq!(
-            bound(15, Distribution::TernaryProb(0.5)),
-            bound(15, Distribution::TernaryFixed(2048))
-        );
-        // Denser than uniform, the weight still rounds down to a tabulated one.
-        assert_eq!(
-            bound(15, Distribution::TernaryProb(0.9)),
-            bound(15, Distribution::TernaryFixed(2048))
-        );
-        // A binary secret takes the lighter of its weight and that of its complement.
-        assert_eq!(least_weight(1 << 12, 0.25, 129), 596);
-        assert_eq!(
-            bound(12, Distribution::BinaryProb(0.25)),
-            bound(12, Distribution::BinaryFixed(512))
-        );
-        assert_eq!(
-            bound(12, Distribution::BinaryProb(0.75)),
-            bound(12, Distribution::BinaryFixed(512))
-        );
-        // Too sparse to reach any tabulated weight.
-        for dist in [Distribution::TernaryProb(0.01), Distribution::BinaryProb(0.99)] {
-            assert_eq!(
-                reason(bound(12, dist)),
-                "the table has no bound for this secret at this degree"
-            );
+    fn untabulated_probabilities_are_unsupported() {
+        for log_n in 12..=17 {
+            for p in [0.0, 0.01, 0.25, 0.75, 0.9, 0.99, 1.0] {
+                for dist in [Distribution::TernaryProb(p), Distribution::BinaryProb(p)] {
+                    assert_eq!(reason(bound(log_n, dist)), "the table has no secret of this distribution");
+                }
+            }
         }
+        assert_eq!(
+            reason(bound(12, Distribution::TernaryProb(0.5))),
+            "the table has no secret of this distribution"
+        );
+        assert_eq!(
+            reason(bound(12, Distribution::BinaryProb(2.0 / 3.0))),
+            "the table has no secret of this distribution"
+        );
         for p in [-0.1, 1.5, f64::NAN] {
-            assert_eq!(
-                reason(bound(12, Distribution::TernaryProb(p))),
-                "the probability is not in [0, 1]"
-            );
+            for dist in [Distribution::TernaryProb(p), Distribution::BinaryProb(p)] {
+                assert_eq!(reason(bound(12, dist)), "the probability is not in [0, 1]");
+            }
         }
     }
 
