@@ -92,6 +92,7 @@ impl Bootstrapping {
             split_strategy: SplitStrategy::MinDepth,
             coeffs_meta: CoeffsMeta::from_delta_budget(LUT_COEFFS_LOG_DELTA, 4),
             f_mod_log_delta: RAISED_LOG_DELTA,
+            packed: false,
         };
         let plan = BootstrappingPlan::new(
             BootstrappingPipeline::S2CFirst,

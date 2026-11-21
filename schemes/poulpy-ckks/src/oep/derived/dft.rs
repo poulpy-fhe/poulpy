@@ -33,7 +33,7 @@ where
 }
 
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode (IDFT) factors in place,
-/// retaining selected raw DFT dispatch.
+/// retaining selected raw DFT dispatch, then lets `dft` label the output.
 pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -44,14 +44,13 @@ pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, D, Dst, H>
 where
     BE: Backend,
     D: CKKSDFTFactors<BE, Encode, Standard>,
-    Module<BE>: crate::api::CKKSDFTOps<BE> + poulpy_core::GLWETrace<BE>,
+    Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    if let Some(stage) = dft.replicated_stage() {
-        return crate::reference::bootstrapping::replicated::coeffs_to_slots(module, ct, dft, stage, keys, scratch);
-    }
-    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
+    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)?;
+    dft.stamp_transform_output(ct);
+    Ok(())
 }
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode (DFT) factors in place,
@@ -66,14 +65,10 @@ pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, D, Dst, H>
 where
     BE: Backend,
     D: CKKSDFTFactors<BE, Decode, Standard>,
-    Module<BE>:
-        crate::api::CKKSDFTOps<BE> + crate::api::CKKSCopyOps<BE> + crate::api::CKKSRoundOps<BE> + poulpy_core::GLWETrace<BE>,
+    Module<BE>: CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    if let Some(stage) = dft.replicated_stage() {
-        return crate::reference::bootstrapping::replicated::slots_to_coeffs(module, ct, dft, stage, keys, scratch);
-    }
     module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)?;
     dft.stamp_transform_output(ct);
     Ok(())

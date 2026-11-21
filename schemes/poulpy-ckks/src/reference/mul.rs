@@ -18,7 +18,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSLayout, SlotLayout, SlotsKind,
     api::CKKSRoundOps,
-    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext, validation::ensure_scratch},
+    layouts::{CKKSCiphertextViewMut, validation::ensure_scratch},
+    oep::derived::round::take_wide,
     shaping::MAX_PASS_BITS,
 };
 use crate::{
@@ -918,19 +919,6 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos, Rg:
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
 impl<BE: Backend, Rg: Ring> CKKSMulReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}
-
-/// A ciphertext shaped as `dst` at width `k`, for a result rounded into `dst`.
-pub(crate) fn take_wide<'a, BE: Backend + 'a, D: GLWEInfos + CKKSInfos, Rg: Ring>(
-    scratch: &'a mut ScratchArena<'_, BE>,
-    dst: &D,
-    k: usize,
-) -> (CKKSCiphertextViewMut<'a, BE, Rg>, ScratchArena<'a, BE>) {
-    let layout = GLWELayout {
-        k: k.into(),
-        ..dst.glwe_layout()
-    };
-    scratch.borrow().take_ckks_ciphertext_scratch(&layout, dst.meta())
-}
 
 /// `a²` computed `lambda` bits under its scale into `wide`, without rounding:
 /// the square of a destination `lambda` bits narrower than `wide`, labeled

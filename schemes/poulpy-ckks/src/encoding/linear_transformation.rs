@@ -16,10 +16,11 @@ use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::api::CKKSModuleInfos;
 use crate::{
-    CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta,
+    CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta, ReplicatedLayout, SetGLWEPlaintextInfos, SlotLayout,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     ckks_ensure_operand,
     layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    znx_automorphism_host,
 };
 
 fn validate_compile_inputs<F>(
@@ -95,6 +96,10 @@ fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar, Rg: Ring>(
 /// - `false`: encode `B` as-is — engine produces `B·a` (matrix on the left).
 /// - `true`:  encode `Bᵀ` via [`ComplexDiagonals::transpose`] — engine produces
 ///   `Bᵀ·a = a·B` (matrix on the right of the row vector `a`).
+///
+/// A replicated `coeffs_meta.meta.slot_layout` quantizes the diagonals with its shaping, every slot as given: those
+/// of giant step `rot` with the shaping polynomial `g(X^(5^(-rot)))`, so that after the giant rotation their
+/// quantization error is a multiple of `g`. The diagonals are labelled full, as the ciphertext they multiply.
 ///
 /// `scratch` holds [`ckks_linear_transformation_encode_tmp_bytes`] of `diagonals.period()`.
 ///
@@ -188,8 +193,8 @@ where
 
 /// Encodes `diagonals` into `res`, allocated by
 /// [`CKKSLinearTransformationAlloc::ckks_linear_transformation_alloc_from_infos`] for their layout under `strategy`:
-/// every diagonal at `meta`, in the schedule's order, each plaintext overwritten, so encoding again into the same
-/// transform refills it.
+/// every diagonal at `meta`, a replicated layout as in [`ckks_linear_transformation_encode_from_diagonals`], in the
+/// schedule's order, each plaintext overwritten, so encoding again into the same transform refills it.
 /// `scratch` holds [`ckks_linear_transformation_encode_tmp_bytes`] of the period of `diagonals`.
 ///
 /// # Errors
@@ -235,22 +240,27 @@ where
     if let Some(pt) = res.first_diagonal_plaintext() {
         ensure_complex_fits::<_, _, Rg>(OP, module, meta, pt.n().as_usize(), diagonals)?;
     }
-    let mut targets = res.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals);
+    let mut targets = res.giant_steps.iter_mut().flat_map(|gs| {
+        let rot = gs.rot;
+        gs.diagonals.iter_mut().map(move |dst| (rot, dst))
+    });
     let mut result = Ok(());
     // The builder visits the diagonals in the schedule's order, the one checked above.
     diagonals.build_transform(strategy, |re, im| {
-        if let (Ok(()), Some(dst)) = (&result, targets.next()) {
-            result = encode_diagonal(module, &mut dst.plaintext, meta, re, im, scratch);
+        if let (Ok(()), Some((rot, dst))) = (&result, targets.next()) {
+            result = encode_diagonal(module, &mut dst.plaintext, meta, rot, re, im, scratch);
         }
     });
     result
 }
 
-/// Encodes `re + i im`, one period, into `pt` at `meta`, repeated over the slots of `pt`.
+/// Encodes `re + i im`, one period of a diagonal of giant step `rot`, into `pt` at `meta`, repeated over the slots of
+/// `pt`.
 fn encode_diagonal<BE, M, F, Rg: Ring>(
     module: &M,
     pt: &mut CKKSPlaintextOwned<BE, Rg>,
     meta: GLWEPlaintextMeta,
+    rot: i64,
     re: &[F],
     im: &[F],
     scratch: &mut ScratchArena<'_, BE>,
@@ -261,14 +271,29 @@ where
     F: CKKSEncodingScalar,
 {
     pt.set_meta_checked(meta)?;
+    if let SlotLayout::Replicated(layout) = meta.slot_layout {
+        let label = twisted(&layout, module.ckks_galois_element::<Rg>(-rot));
+        pt.set_slot_layout(SlotLayout::Replicated(label));
+    }
     // A period below the backend's minimum degree fills fewer slots than the plaintext holds.
     let reps = module.ckks_slots_of_degree::<Rg>(pt.n().as_usize()) / re.len();
     if reps > 1 {
-        module.ckks_encode_slots_host_into(pt, &re.repeat(reps), &im.repeat(reps), scratch)?;
+        module.ckks_encode_all_slots_host_into(pt, &re.repeat(reps), &im.repeat(reps), scratch)?;
     } else {
-        module.ckks_encode_slots_host_into(pt, re, im, scratch)?;
+        module.ckks_encode_all_slots_host_into(pt, re, im, scratch)?;
     }
+    pt.set_slot_layout(SlotLayout::Full);
     Ok(())
+}
+
+/// `layout` with the shaping polynomial `U(Y^gal)`, the image of `g` under the
+/// automorphism `X ↦ X^gal`: `Y = X^(n/(2R))` maps to `Y^(gal mod 4R)` in
+/// `Z[Y]/(Y^(2R) + 1)`.
+fn twisted(layout: &ReplicatedLayout, gal: i64) -> ReplicatedLayout {
+    let mut coeffs = vec![0i16; layout.shaping().len()];
+    znx_automorphism_host(gal, layout.shaping(), &mut coeffs);
+    ReplicatedLayout::new(layout.log_k() as u8, layout.log_r() as u8, &coeffs)
+        .expect("an automorphism keeps the shaping polynomial invertible")
 }
 
 /// The degree of the diagonals of a map of period `period`: `period * N / ckks_max_slots` (`2 * period` on the

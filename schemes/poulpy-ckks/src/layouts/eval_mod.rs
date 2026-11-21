@@ -43,12 +43,11 @@
 
 use crate::{numerics::CKKSFloat, shaping::conjugate_invariant};
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, GLWELayout, GetDegree, Rank, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
+use poulpy_core::layouts::{Base2K, GLWELayout, Rank, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale,
-    SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
@@ -190,10 +189,16 @@ pub struct EvalModPlan {
     /// Baby-step/giant-step split strategy used to encode the polynomials (depth
     /// vs. number-of-rotations trade-off).
     pub split_strategy: SplitStrategy,
-    /// CKKS metadata of the coefficients
+    /// CKKS metadata of the coefficients. Its slot layout is the one of the ciphertexts EvalMod runs on: a replicated
+    /// layout takes every constant with its masked plaintext ([`MaskedCoeffs`]).
     pub coeffs_meta: CoeffsMeta,
     /// Logscale used during EvalMod
     pub f_mod_log_delta: usize,
+    /// Evaluates two batches of a replicated layout at once, the halves of its values: the second carries the phase
+    /// `φ = e^(iπ/2^(r+1))` on the polynomial's constants and `φ^(2^(i+1))` on the constant of range-extension step `i`,
+    /// so that it comes out times `φ^(2^r) = i`, and the input offset carries none. It takes a cosine EvalMod without
+    /// inverse on a replicated layout of at least two values, on the standard ring.
+    pub packed: bool,
 }
 
 impl EvalModPlan {
@@ -217,6 +222,32 @@ impl EvalModPlan {
             split_strategy,
             coeffs_meta,
             f_mod_log_delta,
+            packed: false,
+        }
+    }
+
+    /// This plan on ciphertexts of `slot_layout`, set on [`Self::coeffs_meta`].
+    pub fn with_slot_layout(mut self, slot_layout: SlotLayout) -> Self {
+        self.coeffs_meta.meta.slot_layout = slot_layout;
+        self
+    }
+
+    /// This plan with [`Self::packed`] set to `packed`.
+    pub fn with_packed(mut self, packed: bool) -> Self {
+        self.packed = packed;
+        self
+    }
+
+    /// The slot layout of the ciphertexts EvalMod runs on.
+    pub(crate) fn slot_layout(&self) -> SlotLayout {
+        self.coeffs_meta.meta.slot_layout
+    }
+
+    /// The rotation that brings the second batch of a packed EvalMod onto the first, `None` unpacked.
+    pub(crate) fn batch_rotation(&self) -> Option<i64> {
+        match self.slot_layout() {
+            SlotLayout::Replicated(layout) if self.packed => Some(1 << (layout.log_k() + layout.log_r() - 1)),
+            _ => None,
         }
     }
 
@@ -311,7 +342,21 @@ impl EvalModPlan {
             self.eval_mod_type != EvalModType::CosHKEven || self.even_base_fits_plan(),
             "CosHKEven cannot beat CosHK's BSGS cost at this plan: adjust f_mod_degree, or use CosHK"
         );
-        Ok(())
+        if !self.packed {
+            return Ok(());
+        }
+        let cosine = self.f_mod_inv_degree.is_none() && matches!(self.eval_mod_type, EvalModType::CosHK | EvalModType::CosHKEven);
+        let reason = match self.slot_layout() {
+            SlotLayout::Full => "a packed EvalMod takes a replicated layout",
+            SlotLayout::Replicated(layout) if layout.log_k() == 0 => "a packed EvalMod needs two batches",
+            _ if !cosine => "a packed EvalMod needs a cosine EvalMod without inverse",
+            _ => return Ok(()),
+        };
+        Err(CKKSCompositionError::InvalidPlan {
+            plan: "EvalModPlan",
+            reason: reason.into(),
+        }
+        .into())
     }
 
     /// Layout and label EvalMod works at on an input like `ct`: its budget, at the plan's scale.
@@ -503,7 +548,7 @@ pub enum EvalModPoly<F> {
 ///
 /// `F` is the host floating-point scalar the polynomials were built in; `P` is
 /// the plaintext storage type — a host [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) right after
-/// [`ckks_eval_mod_compile`]. Evaluate it with
+/// [`ckks_eval_mod_compile`], in the [`MaskedCoeffs`] of each constant. Evaluate it with
 /// [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
 pub struct EvalMod<F, P> {
     /// Copy of [`EvalModPlan`].
@@ -536,13 +581,25 @@ pub trait CKKSEvalModInfos<BE: Backend, F> {
     fn eval_mod_plan(&self) -> &EvalModPlan;
 
     /// EvalMod on the standard ring, when it runs there.
-    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>>;
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>>;
 
     /// EvalMod on the conjugate-invariant ring and its conversions, when it runs there.
     fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>>;
 
     /// Guard bits the input of the step carries above its message: 0 on a plain [`EvalMod`].
     fn c2s_guard_bits(&self) -> usize;
+
+    /// Guard bits SlotsToCoeffs added under those of the raise, on a replicated layout
+    /// ([`BootstrappingPlan::with_s2c_guard_bits`](crate::layouts::BootstrappingPlan::with_s2c_guard_bits)).
+    fn s2c_guard_bits(&self) -> usize {
+        0
+    }
+
+    /// Bits under its scale each part of the input is rounded to before EvalMod, on a replicated layout
+    /// ([`BootstrappingPlan::with_working_bits`](crate::layouts::BootstrappingPlan::with_working_bits)).
+    fn working_bits(&self) -> usize {
+        0
+    }
 
     /// Whether real slots read the real part of the input alone: an S2C-first pipeline, whose raise leaves only integer
     /// multiples of the modulus in the imaginary part. A plain [`EvalMod`] has no pipeline and trusts the label of its
@@ -557,8 +614,9 @@ pub trait CKKSEvalModInfos<BE: Backend, F> {
     /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.
     fn eval_round_plus(&self) -> bool;
 
-    /// The slots of the message, which pick the route. `None`: the step reads the label of its input.
-    fn message_slots(&self) -> Option<SlotsKind>;
+    /// The labels of the message, whose slots pick the route and whose replicated layout the output takes, rounded with
+    /// shaping to its scale. `None`: the step reads the label of its input.
+    fn message(&self) -> Option<GLWEPlaintextMeta>;
 
     /// Removes the guard bits and labels an EvalMod output as the message. It runs once: in
     /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod), and by the composer only
@@ -575,26 +633,14 @@ pub trait CKKSEvalModInfos<BE: Backend, F> {
         lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         a_k: usize,
     ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>>;
-
-    /// The replicated route of a run, `None` on the full layout: the step then evaluates
-    /// [`Self::eval_mod_replicated`] on the parts of its input, as [`ReplicatedRoute`](crate::layouts::ReplicatedRoute)
-    /// says.
-    fn replicated_stage(&self) -> Option<crate::layouts::ReplicatedStage<'_>> {
-        None
-    }
-
-    /// EvalMod with masked constants of a replicated run.
-    fn eval_mod_replicated(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
-        None
-    }
 }
 
-impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<BE>> {
+impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>> {
     fn eval_mod_plan(&self) -> &EvalModPlan {
         &self.plan
     }
 
-    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
         Some(self)
     }
 
@@ -614,7 +660,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<B
         false
     }
 
-    fn message_slots(&self) -> Option<SlotsKind> {
+    fn message(&self) -> Option<GLWEPlaintextMeta> {
         None
     }
 
@@ -695,105 +741,62 @@ where
 ///
 /// Polynomial construction remains ordinary scalar setup work. Each BSGS baby
 /// polynomial and range-extension constant is staged through `scratch` and
-/// quantized by `module`'s backend-specific CKKS coefficient codec.
+/// quantized by `module`'s backend-specific CKKS coefficient codec into its scalar
+/// constants, which carry the coefficient metadata. On a replicated layout, each
+/// constant `c` also takes its masked plaintext `c·π_S`, quantized with shaped
+/// rounding at the coefficient scale, and on a [packed](EvalModPlan::packed) plan
+/// its phased form `(c, c·φ)` on the two batches when its phase is not one (see
+/// [`MaskedCoeffs`]).
 ///
 /// # Errors
 ///
 /// Returns an error if the plan is inconsistent, a generated coefficient is
 /// not representable, or `scratch` is too small for the largest coefficient
-/// block.
+/// block: among them [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a packed plan off a replicated
+/// layout of at least two values or other than a cosine EvalMod without inverse, and
+/// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a packed plan on the conjugate-invariant ring,
+/// which has no imaginary parts for the second batch, before any encoding.
 pub fn ckks_eval_mod_compile<BE, F, Rg: Ring>(
     base2k: Base2K,
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintextOwned<BE, Rg>>>
+) -> Result<EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE, Rg>>>>
 where
     BE: Backend,
     Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
-    let coeff_meta = lit.coeffs_meta;
-    compile_eval_mod_with(lit, &mut |values: &[F], _| {
-        encode_scalar_constants(module, base2k, coeff_meta, values, scratch)
-    })
-}
-
-/// [`ckks_eval_mod_compile`] for a ciphertext in `layout`: every constant also
-/// carries its masked plaintext `c·π_S`, quantized with shaped rounding at the
-/// coefficient scale (see [`MaskedCoeffs`]).
-pub fn ckks_eval_mod_replicated_compile<BE, F, Rg: Ring>(
-    base2k: Base2K,
-    lit: EvalModPlan,
-    layout: ReplicatedLayout,
-    module: &Module<BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE, Rg>>>>
-where
-    BE: Backend,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg> + GetDegree + CKKSModuleInfos,
-    F: CKKSEncodingScalar,
-{
-    let coeff_meta = lit.coeffs_meta;
-    compile_eval_mod_with(lit, &mut |values: &[F], _| {
-        encode_masked_constants(module, base2k, coeff_meta, layout, values, scratch)
-    })
-}
-
-/// [`ckks_eval_mod_replicated_compile`] for two batches packed side by side in
-/// `layout`, the second carrying the phase `φ = e^(iπ/2^(r+1))`, `r` the
-/// range-extension steps: the polynomial's constants are multiplied by `φ` on
-/// the second half and the constant of step `i` by `φ^(2^(i+1))`, so that the
-/// second half comes out multiplied by `φ^(2^r) = i`. The input offset carries
-/// no phase.
-///
-/// # Errors
-///
-/// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) on the conjugate-invariant ring, which has no
-/// imaginary parts for the second half, and for a `layout` of one batch, and
-/// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a plan other than a cosine EvalMod without inverse,
-/// before any encoding.
-pub fn ckks_eval_mod_replicated_packed_compile<BE, F, Rg: Ring>(
-    base2k: Base2K,
-    lit: EvalModPlan,
-    layout: ReplicatedLayout,
-    module: &Module<BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE, Rg>>>>
-where
-    BE: Backend,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg> + GetDegree + CKKSModuleInfos,
-    F: CKKSEncodingScalar,
-{
-    const OP: &str = "ckks_eval_mod_replicated_packed_compile";
-    let refuse = |reason: &str| -> anyhow::Error {
-        crate::CKKSError::from(crate::CKKSCompositionError::InvalidOperand {
-            op: OP,
-            reason: reason.into(),
-        })
-        .into()
-    };
-    if conjugate_invariant::<Rg>() {
-        return Err(refuse("a packed EvalMod needs the complex slots of the standard ring"));
-    }
-    if layout.log_k() == 0 {
-        return Err(refuse("a packed EvalMod needs two batches"));
-    }
-    if lit.f_mod_inv_degree.is_some() || !matches!(lit.eval_mod_type, EvalModType::CosHK | EvalModType::CosHKEven) {
-        return Err(crate::CKKSError::from(crate::CKKSCompositionError::InvalidPlan {
-            plan: "EvalModPlan",
-            reason: "a packed EvalMod needs a cosine EvalMod without inverse".into(),
+    lit.validate()?;
+    if lit.packed && conjugate_invariant::<Rg>() {
+        return Err(CKKSError::from(CKKSCompositionError::InvalidOperand {
+            op: "ckks_eval_mod_compile",
+            reason: "a packed EvalMod needs the complex slots of the standard ring".into(),
         })
         .into());
     }
+    // The scalar constants stay on the full layout, the masked plaintexts taking the plan's.
+    let scalars = CoeffsMeta {
+        meta: GLWEPlaintextMeta {
+            slot_layout: SlotLayout::Full,
+            ..lit.coeffs_meta.meta
+        },
+        ..lit.coeffs_meta
+    };
     let r = lit.f_mod_log_interval_reduction;
     let pi = F::PI();
     let phase = |m: u64| -> Result<(F, F)> {
         let angle = pi * scalar_from_u64::<F>("phase", m)? / scalar_from_u64::<F>("2^(r+1)", 2u64 << r)?;
         Ok((angle.ckks_cos(), angle.ckks_sin()))
     };
-    let coeff_meta = lit.coeffs_meta;
     compile_eval_mod_with(lit, &mut |values: &[F], role| {
+        let SlotLayout::Replicated(layout) = lit.slot_layout() else {
+            let constants = encode_scalar_constants(module, base2k, scalars, values, scratch)?;
+            return Ok(MaskedCoeffs::new(constants, Vec::new()));
+        };
+        if !lit.packed {
+            return encode_masked_constants(module, base2k, scalars, layout, values, scratch);
+        }
         let phases = (0..values.len())
             .map(|i| match role {
                 EvalModConstant::Polynomial => phase(1),
@@ -801,7 +804,7 @@ where
                 EvalModConstant::RangeExtension => phase(2 << i),
             })
             .collect::<Result<Vec<_>>>()?;
-        encode_masked_constants_phased(module, base2k, coeff_meta, layout, values, &phases, scratch)
+        encode_masked_constants_phased(module, base2k, scalars, layout, values, &phases, scratch)
     })
 }
 
@@ -821,7 +824,6 @@ fn compile_eval_mod_with<F, C>(
 where
     F: CKKSEncodingScalar,
 {
-    lit.validate()?;
     if lit.eval_mod_type == EvalModType::ExpCmplx {
         return compile_eval_mod_exp(lit, &mut |values: &[F]| encode(values, EvalModConstant::Polynomial));
     }

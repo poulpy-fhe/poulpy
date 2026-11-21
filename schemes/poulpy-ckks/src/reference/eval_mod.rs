@@ -198,7 +198,7 @@ const OP: &str = "ckks_eval_mod";
 /// it relinearizes ([`EvalModPlan::relinearization_k`](crate::layouts::eval_mod::EvalModPlan::relinearization_k)),
 /// and on a replicated input taking the tensor path, its tensor intermediate, carved `λ` bits under the result
 /// ([`product_key_k`]). A product that wide carries a `cnv_offset` of at least its width.
-fn eval_mod_key_k<BE, C, F, P, H, Rg: Ring>(ct: &C, params: &EvalMod<F, P>, tsk: &H) -> TorusPrecision
+pub(crate) fn eval_mod_key_k<BE, C, F, P, H, Rg: Ring>(ct: &C, params: &EvalMod<F, P>, tsk: &H) -> TorusPrecision
 where
     BE: Backend,
     C: CKKSCtBounds,
@@ -207,6 +207,10 @@ where
     let widest = params.plan.relinearization_k(ct.log_budget());
     let log_delta = params.plan.f_mod_log_delta;
     let lambda = crate::shaping::product_depth(ct.slot_layout(), log_delta);
+    // Either path of an unshaped product decomposes `widest`: no key lookup decides between them.
+    if lambda.is_none() {
+        return widest.into();
+    }
     product_key_k::<BE, _, _, Rg>(ct, &[ct.base2k()], widest.into(), widest, widest - log_delta, lambda, tsk)
 }
 

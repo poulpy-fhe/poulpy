@@ -30,11 +30,14 @@ thread_local! {
 }
 
 /// Takes `EXTRA` bytes first, fills them with a pattern, runs `body` on the rest and
-/// asserts the pattern intact.
+/// asserts the pattern intact; on an empty arena, runs `body` on it, for its refusals.
 pub(super) fn with_marked_region<const EXTRA: usize, R>(
     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
     body: impl FnOnce(&mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>) -> R,
 ) -> R {
+    if scratch.available() == 0 {
+        return body(scratch);
+    }
     let (mut marker, mut rest) = scratch.borrow().take_region(EXTRA);
     <OverrideBackend as Backend>::copy_host_to_view(&mut marker, &[0x5A; EXTRA]);
     let result = body(&mut rest);
@@ -50,6 +53,9 @@ pub(super) fn with_marked_bytes<R>(
     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
     body: impl FnOnce(&mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>) -> R,
 ) -> R {
+    if scratch.available() == 0 {
+        return body(scratch);
+    }
     let (mut marker, mut rest) = scratch.borrow().take_region(bytes);
     <OverrideBackend as Backend>::copy_host_to_view(&mut marker, &vec![0x5A; bytes]);
     let result = body(&mut rest);

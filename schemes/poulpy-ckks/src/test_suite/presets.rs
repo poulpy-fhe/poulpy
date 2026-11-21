@@ -48,7 +48,10 @@ use crate::{
     },
     oep::CKKSModUpFirstFactorImpl,
     polynomial::SplitStrategy,
-    presets::bootstrapping::{BootstrappingPreset, PresetScales, all},
+    presets::bootstrapping::{
+        BootstrappingPreset, PresetScales, all, all_replicated, insecure_n11_d20_k109_p23_s2c, n16_d20_k763_p19_s2c_factored,
+    },
+    shaping::ShapingUnit,
     test_suite::bootstrapping::{assert_eval_mod_refuses, assert_mod_raise_refuses},
     test_suite::helpers::{
         LoggedBootstrappingKeys, PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule,
@@ -210,11 +213,10 @@ where
         let (plan, keys_layout) = (preset.plan(), preset.keys_layout());
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
         let client_scratch = ScratchOwned::<BC>::alloc(bootstrap_setup_tmp_bytes(&client, &layout, plan, keys_layout));
-        let (plan, log_n, label) = (plan.clone(), preset.log_n(), preset_label(&preset));
+        let widths = plan.key_widths(preset.log_n(), preset.bootstrap_k(), preset.input_k(), preset.log_delta());
+        let label = preset_label(&preset);
         let bytes = module.ckks_bootstrap_tmp_bytes(&layout, &input_layout, &context, keys_layout);
         let bootstrap: Bootstrap<BE> = Box::new(move |module, output, input, scratch| {
-            // The bootstrap lowers the output's width to its result.
-            let widths = plan.key_widths(log_n, output.k().as_usize(), input.k().as_usize(), input.log_delta());
             let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
             module.ckks_bootstrap(output, input, &context, &logged, scratch)?;
             Ok(logged.assert_lookups_at(&widths, &label))
@@ -319,7 +321,11 @@ where
         bootstrap: Bootstrap<BE>,
     ) -> Self {
         let (input_layout, bootstrap_layout) = (preset.input_layout(), preset.bootstrap_layout());
-        let (want_re, want_im) = test_vector_1::<f64>(preset.n() / 2);
+        let values = match preset.input_layout().meta.slot_layout {
+            SlotLayout::Full => preset.n() / 2,
+            SlotLayout::Replicated(layout) => 1 << layout.log_k(),
+        };
+        let (want_re, want_im) = test_vector_1::<f64>(values);
         let input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
 
@@ -353,8 +359,13 @@ where
     /// with slots of kind `slots`, on the client, and moves it to the evaluated backend.
     fn encrypt_input(&mut self, slots: SlotsKind) {
         let (n, base2k, input_layout) = (self.preset.n(), self.preset.base2k(), self.preset.input_layout());
+        // A replicated plaintext rounds with shaping within `i128`: it takes the precision budget, not the input width.
+        let k = match input_layout.meta.slot_layout {
+            SlotLayout::Full => input_layout.k(),
+            SlotLayout::Replicated(_) => (self.preset.log_delta() + PRECISION_LOG_BUDGET).into(),
+        };
         let client = &self.client;
-        let mut input_pt = client.ckks_plaintext_alloc_from_slots(n / 2, base2k.into(), input_layout.k());
+        let mut input_pt = client.ckks_plaintext_alloc_from_slots(n >> (1 + input_layout.meta.log_sparsity), base2k.into(), k);
         input_pt.set_meta(GLWEPlaintextMeta {
             slots,
             ..input_layout.meta()
@@ -416,7 +427,7 @@ where
     /// backend that queues its work, the bootstrap may still be running when
     /// this returns. [`Self::synchronize`] waits for it.
     pub fn bootstrap_queued(&mut self) {
-        self.output.set_k(self.preset.bootstrap_k().into());
+        self.output.set_k(self.preset.bootstrap_layout().k());
         self.tensor_lookups = (self.bootstrap)(&self.module, &mut self.output, &self.input, &mut self.scratch.borrow()).unwrap();
     }
 
@@ -429,7 +440,7 @@ where
     /// its precision against the reference vector, as `(real, imaginary)`
     /// statistics.
     pub fn precision(&mut self) -> (PrecisionStats, PrecisionStats) {
-        // The allocation keeps the bootstrap width; the bootstrap narrowed `k`.
+        // On the full layout the allocation keeps the bootstrap width; the bootstrap narrowed `k`.
         let mut output = self
             .client
             .ckks_ciphertext_alloc_from_glwe_infos(&self.preset.bootstrap_layout());
@@ -447,16 +458,14 @@ where
             (output.log_delta() + log_budget).into(),
         );
         output_pt.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
-            slot_layout: SlotLayout::Full,
+            ..output.meta()
         });
         self.client
             .ckks_decrypt(&mut output_pt, &output, &self.sk, &mut self.client_scratch.borrow())
             .unwrap();
-        let n = self.preset.n();
-        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
+        let (mut got_re, mut got_im) = (vec![0.0; self.want_re.len()], vec![0.0; self.want_im.len()]);
         self.client
             .ckks_decode_slots_host_into(&output_pt, &mut got_re, &mut got_im, &mut self.client_scratch.borrow())
             .unwrap();
@@ -578,7 +587,8 @@ where
 /// The preset's name, marked with the variants that keep it: `+erp` with
 /// EvalRound+ ([`BootstrappingPreset::with_eval_round_plus`]), `+fold_u` with
 /// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]), `+pow2` with the
-/// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]).
+/// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]), and on a replicated layout
+/// its maps, batch size, period and output width.
 pub fn preset_label(preset: &BootstrappingPreset) -> String {
     let mut label = preset.name().unwrap_or("derived").to_string();
     if preset.plan().coeffs_to_slots_bypass().is_some() {
@@ -594,13 +604,66 @@ pub fn preset_label(preset: &BootstrappingPreset) -> String {
     if preset.plan().coeffs_to_slots().power_of_two_keys() {
         label.push_str("+pow2");
     }
+    let s2c = preset.plan().slots_to_coeffs();
+    if let SlotLayout::Replicated(layout) = s2c.slot_layout() {
+        let maps = if s2c.placement_factors == 0 { "dense" } else { "factored" };
+        let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+        label.push_str(&format!("[{maps},k={k},R={r},output_k={}]", preset.output_k()));
+    }
     label
+}
+
+/// The replicated presets the precision test and the benchmark run, at most at the radix `fixture_base2k`
+/// ([`preset_with_max_base2k`]), for batches of `U32_45`: every preset on 16 and 64 values, then the logN16 preset on 256
+/// and 1024 values, with its factored maps and with dense ones at the same levels.
+pub fn replicated_presets(fixture_base2k: usize) -> Vec<BootstrappingPreset> {
+    let layout = |log_k| ShapingUnit::U32_45.layout(log_k).unwrap();
+    let mut presets = [4, 6].map(|log_k| all_replicated(layout(log_k)).unwrap()).concat();
+    for log_k in [8, 10] {
+        let factored = n16_d20_k763_p19_s2c_factored(layout(log_k)).unwrap();
+        let dense = factored.with_dense_maps().unwrap();
+        presets.extend([factored, dense]);
+    }
+    let capped = presets.iter().map(|p| preset_with_max_base2k(p, fixture_base2k).unwrap());
+    capped.collect()
+}
+
+/// Runs every preset of [`replicated_presets`] on `BE`, with the keys generated, the batch encrypted and the output
+/// decrypted on the client `BC`, which a host backend plays for itself, and checks the precision of the data values
+/// against the one the preset advertises, with the preset's keys and with a full-width key back from the ephemeral
+/// secret; then every preset on 64 values of `U8_40`, whose guards widen the EvalMod scale. Full-size bootstraps are
+/// slow, so backends register this as an ignored test, on the NTT types whose radix takes the presets' 52 bits.
+pub fn replicated_bootstrapping_presets_meet_precision_with_client<BE, BC>(fixture_base2k: usize)
+where
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSEncodingOps<BE, f64, ConjugateInvariant> + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
+    Module<BC>: TestContextSharedModule<BC, ConjugateInvariant>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+{
+    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    for preset in replicated_presets(fixture_base2k) {
+        BootstrappingPresetRun::<BE, BC>::setup(preset.clone()).check(backend);
+        let mut full = preset.clone();
+        let wide = full.keys_layout.tensor_key;
+        let encapsulation = full.keys_layout.encapsulation.as_mut().unwrap();
+        let return_key = encapsulation.sparse_to_dense.as_mut().unwrap();
+        (return_key.k_offset, return_key.k_digit, return_key.k_aux) = (0usize.into(), wide.k_digit, wide.k_aux);
+        return_key.dnum = preset.bootstrap_k().div_ceil(wide.k_digit.as_usize()).into();
+        BootstrappingPresetRun::<BE, BC>::setup(full).check(&format!("{backend} full-width"));
+    }
+    for preset in all_replicated(ShapingUnit::U8_40.layout(6).unwrap()).unwrap() {
+        BootstrappingPresetRun::<BE, BC>::setup(preset_with_max_base2k(&preset, fixture_base2k).unwrap()).check(backend);
+    }
 }
 
 /// Runs the insecure `N = 2^11` S2C-first preset on `BE` and checks its key
 /// shapes and output precision, on complex and on real slots, then the same
 /// preset with EvalRound+, with EvalMod on the conjugate-invariant ring, and with
-/// the keys of power-of-two rotations. Unlike
+/// the keys of power-of-two rotations, and the insecure replicated preset on 8 values of `U16_40`. Unlike
 /// [`bootstrapping_presets_meet_precision`], it is small enough for a default
 /// test run, so the narrow conjugation and SlotsToCoeffs keys the presets derive
 /// run end to end. Backends register it when their radix takes the preset's 52 bits.
@@ -682,6 +745,11 @@ where
     };
     let preset = powers_of_two.with_eval_mod_ring(ci).unwrap();
     BootstrappingPresetRun::<BE>::setup(preset).check(backend);
+    // The radix model does not cover the maps of a replicated layout.
+    let layout = ShapingUnit::U16_40.layout(3).unwrap();
+    let replicated = insecure_n11_d20_k109_p23_s2c(layout).unwrap();
+    assert_eq!(replicated.max_backend_base2k::<BE>(BOOTSTRAP_FAILURE_BITS), 0);
+    BootstrappingPresetRun::<BE>::setup(replicated).check(backend);
 }
 
 /// Runs the insecure `N = 2^11` C2S-first preset on `BE` and checks its key shapes

@@ -223,7 +223,7 @@ jobs:
 
       # CKKS setup math uses the pure-Rust binary128 backing whatever the `Quad` routing.
       - name: Test CKKS encoding determinism with libquadmath
-        run: cargo test -p poulpy-cpu-portable --test determinism --profile ci --features "enable-ckks,poulpy-ckks/libquadmath"
+        run: cargo test -p poulpy-cpu-portable --lib --profile ci --features "enable-ckks,poulpy-ckks/libquadmath" determinism
 
   # Each backend test binary compiles once; portable_test runs it in round-robin shards.
   portable_build:
@@ -447,21 +447,23 @@ jobs:
 
       - name: Test Quad CKKS encoding on Darwin
         run: >-
-          cargo test -p poulpy-cpu-portable --test ckks_encoding
-          --features "enable-ckks,poulpy-ckks/libquadmath"
-          fft64_precision_families_coexist_in_one_module
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
+          --features "$SMOKE_FEATURES"
+          ckks_encoding::tests::fft64_precision_families_coexist_in_one_module
           -- --exact
 
       - name: Test Darwin AVX FFT assembly
         run: >-
-          cargo test -p poulpy-cpu-avx --lib --features enable-avx
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
+          --features "$SMOKE_FEATURES"
           fft64::reim::fft_avx2_fma::tests::fft_ifft_roundtrip_avx2
           -- --exact
 
       - name: Test CKKS encoding determinism on Intel macOS
         run: >-
-          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --test determinism
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
           --features "$SMOKE_FEATURES"
+          determinism
 
   macos_arm_quad:
     name: Apple Silicon Quad smoke
@@ -502,12 +504,13 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_log_regressions_terminate -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_math_surface_values -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
-          cargo test -p poulpy-cpu-portable --test ckks_encoding --features "enable-ckks,poulpy-ckks/libquadmath" fft64_precision_families_coexist_in_one_module -- --exact
+          cargo test -p poulpy-cpu-portable --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
 
       - name: Test CKKS encoding determinism on Apple Silicon
         run: >-
-          cargo test -p poulpy-cpu-portable -p poulpy-cpu-arm --test determinism
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-arm --lib
           --features "poulpy-cpu-portable/enable-ckks,poulpy-cpu-arm/enable-neon,poulpy-cpu-arm/enable-ckks"
+          determinism
 
   avx512_lint:
     name: AVX-512 lint
@@ -596,7 +599,7 @@ jobs:
         shell: bash
         run: |
           # The native feature set includes the emulated one, so one binary serves both modes.
-          cargo test -p poulpy-cpu-avx512 --lib --test determinism --profile ci --features enable-ifma,enable-rayon,enable-ckks,enable-bin-fhe,enable-blas \
+          cargo test -p poulpy-cpu-avx512 --lib --profile ci --features enable-ifma,enable-rayon,enable-ckks,enable-bin-fhe,enable-blas \
             --no-run --message-format=json-render-diagnostics |
             bash .github/scripts/test-shard.sh pack "$RUNNER_TEMP/tests"
           tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/tests.tar" tests

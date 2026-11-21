@@ -43,9 +43,6 @@ use crate::{
 pub use super::ckks_bootstrapping::{
     bench_ckks_bootstrapping, bench_ckks_bootstrapping_replayed_with_client, bench_ckks_bootstrapping_with_client,
 };
-pub use super::ckks_replicated_bootstrapping::{
-    bench_ckks_replicated_bootstrapping, bench_ckks_replicated_bootstrapping_with_client,
-};
 
 // Op tables for each CKKS capability group, one per `poulpy-ckks` API trait.
 // Each function returns the raw [`BenchOp`] table for that group only,

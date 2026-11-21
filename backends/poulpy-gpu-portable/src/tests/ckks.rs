@@ -266,10 +266,7 @@ fn bootstrapping_presets_meet_precision() {
 #[ignore = "full-size logN14 to logN16 replicated presets: minutes on the device; run in release"]
 fn replicated_bootstrapping_presets_meet_precision() {
     let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision_with_client::<
-        Gpu,
-        poulpy_cpu_portable::NTT4x30Portable,
-    >(52);
+    poulpy_ckks::test_suite::presets::replicated_bootstrapping_presets_meet_precision_with_client::<Gpu, NTT4x30Portable>(52);
 }
 
 /// One preset at full size: its measured precision, then the kernel launches

@@ -2,12 +2,14 @@
 
 use anyhow::{Result, ensure};
 
+use poulpy_hal::layouts::galois_element;
+
 use crate::{
-    CKKSCompositionError, CKKSInfos,
+    CKKSCompositionError, CKKSInfos, ReplicatedLayout, SlotLayout,
     layouts::{DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
 };
 
-use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, ReplicatedRoute, key_widths::StageWidths};
+use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, key_widths::StageWidths};
 
 /// Stage ordering of a bootstrap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,8 +17,9 @@ pub enum BootstrappingPipeline {
     /// The raise, CoeffsToSlots, EvalMod and SlotsToCoeffs. The last transform restores the message ratio and labels
     /// the output, whose scale and width return to the input's.
     C2SFirst,
-    /// SlotsToCoeffs below the raise, at scaling `1/2` on a doubled input, then the raise, CoeffsToSlots and EvalMod,
-    /// whose output is relabeled at the input's scale.
+    /// SlotsToCoeffs below the raise, at scaling `1/2` on a doubled input, on a replicated layout at scaling 1 on a copy
+    /// lifted by the S2C guard and working bits, then the raise, CoeffsToSlots and EvalMod, whose output is relabeled at
+    /// the input's scale.
     S2CFirst,
 }
 
@@ -53,7 +56,7 @@ pub struct BootstrappingTechniques {
     pub eval_round_plus: Option<EvalRoundPlus>,
 }
 
-fn invalid_plan(reason: &str) -> anyhow::Error {
+pub(super) fn invalid_plan(reason: &str) -> anyhow::Error {
     crate::CKKSCompositionError::InvalidPlan {
         plan: "BootstrappingPlan",
         reason: reason.to_string(),
@@ -77,7 +80,13 @@ fn invalid_plan(reason: &str) -> anyhow::Error {
 /// - `eval_mod_ring` ([`EvalModRing`], [`Self::with_eval_mod_ring`]): the ring of EvalMod, which takes an S2C-first
 ///   plan with a real EvalMod and no LUT off the standard ring.
 /// - `c2s_guard_bits` ([`Self::with_c2s_guard_bits`], S2C-first): scale bits added at the raise to reduce CoeffsToSlots
-///   rounding, charged to the raised width and removed at the output.
+///   rounding, charged to the raised width and removed at the output, the working bits included.
+/// - `slot_layout` ([`Self::with_slot_layout`]): the layout of the messages, full by default, and on a
+///   [replicated layout](SlotLayout::Replicated) the degree of their ciphertexts.
+/// - `working_bits` ([`Self::with_working_bits`], replicated): bits under the scale at which SlotsToCoeffs works, which
+///   the raise reads as part of its guard bits, and each part of EvalMod's input is rounded.
+/// - `s2c_guard_bits` ([`Self::with_s2c_guard_bits`], replicated): scale bits SlotsToCoeffs adds to its input, charged
+///   to the raised width and removed at the output.
 /// - `techniques` ([`BootstrappingTechniques`]): [`SparseSecretEncapsulation`] around the raise and [`EvalRoundPlus`]
 ///   around EvalMod. A first CoeffsToSlots factor on the raise excludes EvalRound+.
 /// - `functional_message_modulus` ([`Self::with_functional_bootstrap`], S2C-first): turns the bootstrap into a LUT
@@ -95,6 +104,7 @@ fn invalid_plan(reason: &str) -> anyhow::Error {
 ///
 /// | Plan and message | Route |
 /// |---|---|
+/// | replicated layout, [packed](EvalModPlan::packed) EvalMod | the real part, one EvalMod on both batches, the second rotated onto the first |
 /// | standard ring, real slots, S2C-first, no EvalRound+ | the real part, one EvalMod |
 /// | any other plan on the standard ring | the split, one EvalMod per half, on a parallel executor at once, the recombination |
 /// | conjugate-invariant ring | the conversion, one EvalMod for all coefficients, the conversion back |
@@ -107,6 +117,9 @@ fn invalid_plan(reason: &str) -> anyhow::Error {
 /// conjugate-invariant ring the scales of their products. The output of a run is:
 ///
 /// - S2C-first: `res.k() = a.k() - c2s_guard_bits - consumed` at the scale, slot kind and sparsity of the message;
+/// - on a replicated layout: each part of `a` rounded with shaping `working_bits` under its scale before EvalMod, and
+///   the output rounded with shaping to the scale of the message, `res.k() = a.k() - c2s_guard_bits - s2c_guard_bits -
+///   consumed`;
 /// - C2S-first: `log_delta_out = a.log_delta()`, `log_budget_out = a.log_budget() - consumed`, until SlotsToCoeffs
 ///   labels it;
 /// - under [`EvalRoundPlus`], and on a plain [`EvalMod`]: the same, with the guard bits still on and the working label,
@@ -151,16 +164,20 @@ pub struct BootstrappingPlan {
     /// SlotsToCoeffs: homomorphic decoding ([`DFTType::Decode`]).
     pub(crate) slots_to_coeffs: DFTPlan,
 
-    /// The replicated route, `None` on the full layout: see [`Self::replicated`].
-    pub(super) replicated: Option<ReplicatedRoute>,
+    /// `log2` of the degree a replicated layout states, `None` on the full layout, whose transforms and gap fill it.
+    log_n: Option<usize>,
+    working_bits: usize,
+    s2c_guard_bits: usize,
 }
 
 impl BootstrappingPlan {
     /// The stages that set the widths at which a bootstrap uses its keys.
-    fn stage_widths(&self) -> StageWidths<'_> {
+    pub(crate) fn stage_widths(&self) -> StageWidths<'_> {
         StageWidths {
             pipeline: self.pipeline,
             c2s_guard_bits: self.c2s_guard_bits,
+            working_bits: self.working_bits,
+            s2c_guard_bits: self.s2c_guard_bits,
             eval_mod_ring: self.eval_mod_ring,
             coeffs_to_slots: &self.coeffs_to_slots,
             coeffs_to_slots_bypass: self.coeffs_to_slots_bypass(),
@@ -195,8 +212,11 @@ impl BootstrappingPlan {
     /// otherwise): a swapped direction would make [`Self::galois_elements`]
     /// derive rotation keys for a transform that
     /// [`compile`](crate::layouts::BootstrappingContextPrepared::compile) never builds. The constructor also
-    /// rejects recipe techniques that the selected pipeline cannot evaluate, and [`EvalModType::ExpCmplx`] off the
-    /// route of one EvalMod: see [EvalMod](Self#evalmod).
+    /// rejects recipe techniques that the selected pipeline cannot evaluate, [`EvalModType::ExpCmplx`] off the route of
+    /// one EvalMod (see [EvalMod](Self#evalmod)), and an `eval_mod` or a transform off the full layout, which
+    /// [`Self::with_slot_layout`] sets. A [packed](EvalModPlan::packed) EvalMod and the transform settings
+    /// [`DFTPlan::with_slot_layout`] lists wait for it, which refuses them on the full layout, as the compilation of a plan
+    /// it never set does.
     pub fn new(
         pipeline: BootstrappingPipeline,
         techniques: BootstrappingTechniques,
@@ -234,7 +254,22 @@ impl BootstrappingPlan {
                 "the complex exponential takes an S2C-first plan without EvalRound+".to_string(),
             ));
         }
-        eval_mod.validate()?;
+        let bypass = techniques
+            .eval_round_plus
+            .as_ref()
+            .map(|eval_round| &eval_round.coeffs_to_slots_bypass);
+        let transforms = [&coeffs_to_slots, &slots_to_coeffs].into_iter().chain(bypass);
+        if eval_mod.slot_layout() != SlotLayout::Full || transforms.map(DFTPlan::slot_layout).any(|l| l != SlotLayout::Full) {
+            return Err(invalid(
+                "eval_mod and the transforms run on the full layout: with_slot_layout sets another".to_string(),
+            ));
+        }
+        // The packing takes the replicated layout `with_slot_layout` validates it on.
+        EvalModPlan {
+            packed: false,
+            ..eval_mod
+        }
+        .validate()?;
         let coeffs_to_slots = coeffs_to_slots.with_scaling(eval_mod.input_scaling()?)?;
         if let Some(sse) = techniques.sparse_secret_encapsulation
             && sse.hamming_weight == 0
@@ -266,61 +301,122 @@ impl BootstrappingPlan {
             coeffs_to_slots,
             eval_mod,
             slots_to_coeffs,
-            replicated: None,
+            log_n: None,
+            working_bits: 0,
+            s2c_guard_bits: 0,
         })
     }
 
-    /// The plan of the [replicated route](ReplicatedRoute): S2C-first, EvalMod on the standard ring with masked
-    /// constants, `eval_mod` of the message ratio the input width leaves, the sparse-secret encapsulation of
-    /// `techniques` around the raise, and the raise lifted by [`ReplicatedRoute::raise_bits`] as its guard bits. The
-    /// transforms are the route's maps, generated from the plan's subring DFTs: their schedules come from
-    /// [`ReplicatedRoute::transforms`].
+    /// Runs the stages on `slot_layout`, for ciphertexts of degree `2^log_n`: SlotsToCoeffs on `slot_layout`, and
+    /// CoeffsToSlots and EvalMod on the layout CoeffsToSlots writes, of the values of `slot_layout` on two batches when
+    /// EvalMod is [packed](EvalModPlan::packed) ([`DFTPlan::with_slot_layout`], [`EvalModPlan::with_slot_layout`]). The
+    /// full layout takes the degree its transforms and gap fill.
     ///
-    /// A replicated plan takes none of the settings of the full layout: a LUT, a gap, EvalRound+, EvalMod off the
-    /// standard ring, or other guard bits.
+    /// A [replicated layout](SlotLayout::Replicated) of `k` values of period `R <= k`, the small-batch bootstrapping of
+    /// [ePrint 2026/2513](https://eprint.iacr.org/2026/2513), takes an S2C-first plan with a real EvalMod on the standard
+    /// ring, without LUT, gap or EvalRound+, a degree whose slots hold `kR` values, twice as many packed, and transforms
+    /// on its `k` values with the settings [`DFTPlan::with_slot_layout`] lists, each starting with the normalized trace
+    /// onto the period its first factor reads. SlotsToCoeffs runs at scaling 1 on a copy of the input, not doubled,
+    /// lifted by [`Self::with_s2c_guard_bits`] and [`Self::with_working_bits`], the raise reads the working bits and lifts
+    /// the message by the rest of `c2s_guard_bits`, and EvalMod runs as [its section](Self#evalmod) says.
     ///
     /// # Errors
     ///
-    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for EvalRound+, a complex exponential, a zero sparse
-    /// weight, a leveled scale above `Δ_b`, a factored route with a factor count outside `1..=log2(k)`, and an invalid
-    /// `eval_mod`.
-    pub fn replicated(route: ReplicatedRoute, eval_mod: EvalModPlan, techniques: BootstrappingTechniques) -> Result<Self> {
-        if techniques.eval_round_plus.is_some() {
-            return Err(invalid_plan("a replicated plan runs no EvalRound+ bypass"));
-        }
-        if eval_mod.eval_mod_type == EvalModType::ExpCmplx {
-            return Err(invalid_plan("a replicated plan takes a real EvalMod"));
-        }
-        if route.level_log_delta > route.log_delta {
-            return Err(invalid_plan("a replicated plan takes a leveled scale at most Δ_b"));
-        }
-        if techniques
-            .sparse_secret_encapsulation
-            .is_some_and(|sse| sse.hamming_weight == 0)
-        {
-            return Err(invalid_plan("sparse-secret encapsulation hamming_weight must be nonzero"));
-        }
-        eval_mod.validate()?;
-        let (coeffs_to_slots, slots_to_coeffs) = route.dft_plans(&eval_mod)?;
-        Ok(Self {
-            pipeline: BootstrappingPipeline::S2CFirst,
-            c2s_guard_bits: route.raise_bits(),
-            log_gap: 0,
-            functional_message_modulus: None,
-            eval_mod_ring: EvalModRing::Standard,
-            techniques,
-            coeffs_to_slots,
-            eval_mod,
-            slots_to_coeffs,
-            replicated: Some(route),
-        })
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a setting or a degree a replicated layout refuses,
+    /// a transform or an EvalMod plan invalid on it, and on the full layout working or S2C guard bits, another degree
+    /// than its transforms fill, a packed EvalMod or a transform setting of a replicated layout.
+    pub fn with_slot_layout(mut self, slot_layout: SlotLayout, log_n: usize) -> Result<Self> {
+        let batches = match slot_layout {
+            SlotLayout::Replicated(layout) if self.eval_mod.packed => {
+                let log_k = layout.log_k() as u8 + 1;
+                let packed = ReplicatedLayout::new(log_k, layout.log_r() as u8, layout.shaping());
+                SlotLayout::Replicated(packed.map_err(|err| invalid_plan(&format!("a packed EvalMod: {err}")))?)
+            }
+            _ => slot_layout,
+        };
+        self.slots_to_coeffs = self.slots_to_coeffs.with_slot_layout(slot_layout);
+        self.coeffs_to_slots = self.coeffs_to_slots.with_slot_layout(batches);
+        self.eval_mod = self.eval_mod.with_slot_layout(batches);
+        self.log_n = (slot_layout != SlotLayout::Full).then_some(log_n);
+        self.check_layout()?;
+        self.check_log_gap(log_n)?;
+        self.slots_to_coeffs.check_slot_layout()?;
+        self.coeffs_to_slots.check_slot_layout()?;
+        self.eval_mod.validate()?;
+        Ok(self)
     }
 
-    fn refuse_on_replicated(&self, setting: &str) -> Result<()> {
-        if self.replicated.is_some() {
-            return Err(invalid_plan(&format!("a replicated plan takes no {setting}")));
+    /// Works SlotsToCoeffs of a replicated layout `bits` under the scale, which the raise reads as part of its guard
+    /// bits ([`Self::with_c2s_guard_bits`]), and rounds each part of EvalMod's input with shaping `bits` under its
+    /// scale.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) on the full layout, and for more bits than the guard
+    /// bits of the raise.
+    pub fn with_working_bits(mut self, bits: usize) -> Result<Self> {
+        self.working_bits = bits;
+        self.check_layout()?;
+        Ok(self)
+    }
+
+    /// Lifts the input of SlotsToCoeffs on a replicated layout by `bits` scale bits, charged to the raised width and
+    /// removed at the output: the raise reads its input `bits` above the scale of the message.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) on the full layout, and for more bits than SlotsToCoeffs
+    /// consumes.
+    pub fn with_s2c_guard_bits(mut self, bits: usize) -> Result<Self> {
+        self.s2c_guard_bits = bits;
+        self.check_layout()?;
+        Ok(self)
+    }
+
+    /// What [`Self::with_slot_layout`] refuses of the plan on its layout, and working or S2C guard bits on the full one.
+    fn check_layout(&self) -> Result<()> {
+        let (SlotLayout::Replicated(layout), Some(log_n)) = (self.slots_to_coeffs.slot_layout(), self.log_n) else {
+            if self.working_bits + self.s2c_guard_bits > 0 {
+                return Err(invalid_plan("working bits and S2C guard bits take a replicated layout"));
+            }
+            return Ok(());
+        };
+        let refused = [
+            (self.pipeline != BootstrappingPipeline::S2CFirst, "C2S-first pipeline"),
+            (self.eval_mod.eval_mod_type == EvalModType::ExpCmplx, "complex exponential"),
+            (self.eval_mod_ring != EvalModRing::Standard, "EvalMod off the standard ring"),
+            (self.functional_message_modulus.is_some(), "LUT"),
+            (self.log_gap > 0, "gap"),
+            (self.techniques.eval_round_plus.is_some(), "EvalRound+ bypass"),
+        ];
+        if let Some((_, setting)) = refused.into_iter().find(|&(refused, _)| refused) {
+            return Err(invalid_plan(&format!("a replicated layout takes no {setting}")));
         }
-        Ok(())
+        let (k, r, slots) = (1usize << layout.log_k(), 1usize << layout.log_r(), (1usize << log_n) / 2);
+        let reason = if k * r > slots {
+            format!("{k} values of period {r} need more than the {slots} slots of degree 2^{log_n}")
+        } else if self.eval_mod.packed && 2 * k * r > slots {
+            format!("a packed EvalMod needs its two batches of {k} values of period {r} to fit the {slots} slots")
+        } else if r > k {
+            format!("bootstrapping needs the period {r} to divide the batch size {k}")
+        } else if self.working_bits > self.c2s_guard_bits {
+            "the working bits exceed the guard bits of the raise".to_string()
+        } else if self.s2c_guard_bits > self.slots_to_coeffs.consumed_bits() {
+            "the S2C guard bits exceed the bits SlotsToCoeffs consumes".to_string()
+        } else {
+            return Ok(());
+        };
+        Err(invalid_plan(&reason))
+    }
+
+    /// Working bits of a replicated layout, see [`Self::with_working_bits`].
+    pub(crate) fn working_bits(&self) -> usize {
+        self.working_bits
+    }
+
+    /// Guard bits SlotsToCoeffs adds on a replicated layout, see [`Self::with_s2c_guard_bits`].
+    pub(crate) fn s2c_guard_bits(&self) -> usize {
+        self.s2c_guard_bits
     }
 
     /// Configures S2C-first functional bootstrapping of integer messages modulo the LUT length.
@@ -329,9 +425,8 @@ impl BootstrappingPlan {
     /// # Errors
     ///
     /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) on a plan with [`EvalRoundPlus`], whose bypass the
-    /// LUT step does not run, or with a gap.
+    /// LUT step does not run, with a gap, or on a replicated layout.
     pub fn with_functional_bootstrap<P>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
-        self.refuse_on_replicated("LUT")?;
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
             "functional bootstrapping requires an S2C-first plan"
@@ -349,6 +444,7 @@ impl BootstrappingPlan {
         let q = (1usize << lut.log_msg_ratio()) as f64;
         self.slots_to_coeffs = self.slots_to_coeffs.with_scaling(q / (2.0 * lut.message_modulus() as f64))?;
         self.functional_message_modulus = Some(lut.message_modulus());
+        self.check_layout()?;
         Ok(self)
     }
 
@@ -366,11 +462,9 @@ impl BootstrappingPlan {
     /// # Errors
     ///
     /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a nonzero gap on a plan that is not S2C-first with
-    /// EvalMod on the standard ring, the first CoeffsToSlots factor on the raise and a sparse secret, or a functional plan.
+    /// EvalMod on the standard ring, the first CoeffsToSlots factor on the raise and a sparse secret, a functional plan,
+    /// or a replicated layout.
     pub fn with_log_gap(mut self, log_gap: usize) -> Result<Self> {
-        if log_gap > 0 {
-            self.refuse_on_replicated("gap")?;
-        }
         if log_gap > 0 && self.functional_message_modulus.is_some() {
             return Err(invalid_plan("a gap takes a plan without a LUT"));
         }
@@ -385,19 +479,30 @@ impl BootstrappingPlan {
             ));
         }
         self.log_gap = log_gap;
+        self.check_layout()?;
         Ok(self)
     }
 
-    /// `log2` of the degree whose subring of the plan's gap the slots of `dft` fill.
+    /// `log2` of the degree whose subring of the plan's gap the slots of `dft` fill, the one a replicated layout states.
     fn filled_log_n(&self, dft: &DFTPlan) -> Option<usize> {
-        dft.log_slots().checked_add(1).and_then(|s| s.checked_add(self.log_gap))
+        self.log_n
+            .or_else(|| dft.log_slots().checked_add(1).and_then(|s| s.checked_add(self.log_gap)))
     }
 
-    /// Refuses transforms that do not fill `N / 2^(log_gap + 1)` slots at the degree `N = 2^log_n` of the keys.
+    /// `log2` of the degree of the ciphertexts, [`Self::filled_log_n`] of the transforms.
+    pub(super) fn log_n(&self) -> usize {
+        self.log_n.unwrap_or(self.slots_to_coeffs.log_slots() + 1 + self.log_gap)
+    }
+
+    /// Refuses transforms that do not fill `N / 2^(log_gap + 1)` slots at the degree `N = 2^log_n` of the keys, and
+    /// another degree than a replicated layout states.
     pub(crate) fn check_log_gap(&self, log_n: usize) -> Result<()> {
         let fills = |dft: &DFTPlan| self.filled_log_n(dft) == Some(log_n);
         if !(fills(&self.coeffs_to_slots) && fills(&self.slots_to_coeffs)) {
-            return Err(invalid_plan("the transforms must fill the slots of the subring of the gap"));
+            return Err(invalid_plan(match self.log_n {
+                Some(_) => "a replicated layout takes the degree it states",
+                None => "the transforms must fill the slots of the subring of the gap",
+            }));
         }
         Ok(())
     }
@@ -417,9 +522,10 @@ impl BootstrappingPlan {
     }
 
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.
-    /// Charged to the raised width and removed at the ordinary bootstrap output.
+    /// Charged to the raised width and removed at the ordinary bootstrap output. On a replicated layout they hold the
+    /// working bits ([`Self::with_working_bits`]), which the raise reads from SlotsToCoeffs, and fewer are refused with
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan).
     pub fn with_c2s_guard_bits(mut self, bits: usize) -> Result<Self> {
-        self.refuse_on_replicated("guard bits of its own")?;
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
             "C2S guard bits require an S2C-first plan"
@@ -431,6 +537,7 @@ impl BootstrappingPlan {
             "C2S guard bits overflow the post-ModUp budget"
         );
         self.c2s_guard_bits = bits;
+        self.check_layout()?;
         Ok(self)
     }
 
@@ -443,7 +550,7 @@ impl BootstrappingPlan {
     pub fn mod_raise(&self) -> ModRaisePlan {
         ModRaisePlan {
             lift: (self.pipeline == BootstrappingPipeline::C2SFirst).then_some(self.eval_mod),
-            c2s_guard_bits: self.c2s_guard_bits,
+            c2s_guard_bits: self.c2s_guard_bits - self.working_bits,
             sparse_secret_hamming_weight: self.sparse_secret_hamming_weight(),
             first_factor_on_raise: self.coeffs_to_slots.first_factor_on_raise(),
             log_gap: self.log_gap,
@@ -451,12 +558,9 @@ impl BootstrappingPlan {
     }
 
     /// Selects the ring EvalMod runs on. The conjugate-invariant ring takes an
-    /// S2C-first plan with a real EvalMod, without a LUT; `u` folds
+    /// S2C-first plan with a real EvalMod, without a LUT, on the full layout; `u` folds
     /// into a CoeffsToSlots factor the matrix evaluates, `v` does not fold.
     pub fn with_eval_mod_ring(mut self, ring: EvalModRing) -> Result<Self> {
-        if ring != EvalModRing::Standard {
-            self.refuse_on_replicated("EvalMod off the standard ring")?;
-        }
         if self.log_gap > 0 && ring != EvalModRing::Standard {
             return Err(invalid_plan("a gap takes EvalMod on the standard ring"));
         }
@@ -475,6 +579,7 @@ impl BootstrappingPlan {
             );
         }
         self.eval_mod_ring = ring;
+        self.check_layout()?;
         Ok(self)
     }
 
@@ -531,7 +636,7 @@ impl BootstrappingPlan {
     pub fn pre_mod_up_consumed_bits(&self) -> usize {
         match self.pipeline {
             BootstrappingPipeline::C2SFirst => 0,
-            BootstrappingPipeline::S2CFirst => self.slots_to_coeffs.consumed_bits(),
+            BootstrappingPipeline::S2CFirst => self.stage_widths().transform_bits().0,
         }
     }
 
@@ -544,7 +649,7 @@ impl BootstrappingPlan {
     /// S2C-first also charges the CoeffsToSlots guard bits.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
         let c2s_eval_mod =
-            self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.eval_mod_ring.consumed_bits();
+            self.stage_widths().transform_bits().1 + self.eval_mod.consumed_bits() + self.eval_mod_ring.consumed_bits();
         let eval_round = self
             .coeffs_to_slots_bypass()
             .map_or(c2s_eval_mod, |bypass| c2s_eval_mod.max(bypass.consumed_bits()));
@@ -554,9 +659,10 @@ impl BootstrappingPlan {
         }
     }
 
-    /// Input width for a given modulus at ModUp.
+    /// Input width for a given modulus at ModUp: the bits consumed before ModUp above it, less the guard and working
+    /// bits SlotsToCoeffs adds.
     pub fn input_k(&self, log_modulus: usize) -> usize {
-        log_modulus + self.pre_mod_up_consumed_bits()
+        log_modulus + (self.pre_mod_up_consumed_bits() - self.s2c_guard_bits - self.working_bits)
     }
 
     /// Bits the raised ciphertext fills at the bottom of the raised width, for
@@ -564,17 +670,17 @@ impl BootstrappingPlan {
     /// with a row offset of `bootstrap_k - raised_window` switches
     /// ([`EncapsulationKeysLayout::sparse_to_dense`](crate::layouts::EncapsulationKeysLayout::sparse_to_dense)).
     /// C2S-first lifts every input to the EvalMod scale, so its window does not
-    /// depend on the input; S2C-first raises its modulus and the C2S guard bits,
-    /// and a narrower input is shifted into the window.
+    /// depend on the input; S2C-first raises its modulus and the C2S guard bits
+    /// it does not hold as working bits, and a narrower input is shifted into the window.
     pub fn raised_window(&self, log_modulus: usize) -> usize {
         match self.pipeline {
             BootstrappingPipeline::C2SFirst => self.eval_mod.f_mod_log_delta,
-            BootstrappingPipeline::S2CFirst => log_modulus + self.c2s_guard_bits,
+            BootstrappingPipeline::S2CFirst => log_modulus + self.c2s_guard_bits - self.working_bits,
         }
     }
 
     /// Bootstrap width for an output at the input scale `log_delta`.
-    /// C2S-first includes the width removed when restoring that scale.
+    /// C2S-first includes the width removed when restoring that scale, and S2C-first the guard bits SlotsToCoeffs adds.
     pub fn bootstrap_k(&self, output_k: usize, log_delta: usize) -> usize {
         let scale_drop = match self.pipeline {
             BootstrappingPipeline::C2SFirst => self
@@ -582,7 +688,7 @@ impl BootstrappingPlan {
                 .f_mod_log_delta
                 .checked_sub(log_delta)
                 .expect("C2S-first input scale exceeds EvalMod scale"),
-            BootstrappingPipeline::S2CFirst => 0,
+            BootstrappingPipeline::S2CFirst => self.s2c_guard_bits,
         };
         output_k + self.post_mod_up_consumed_bits() + scale_drop
     }
@@ -625,9 +731,15 @@ impl BootstrappingPlan {
     /// last CoeffsToSlots factor ([`CIConversion::Folded`]), of the two folded factors,
     /// for a ring of degree `2^log_n` and the given `cyclotomic_order`. The split
     /// forward transform's conjugation key is separate (generate it from Galois
-    /// element `−1`) and not included here.
+    /// element `−1`) and not included here. A packed EvalMod adds the rotation of its second batch
+    /// ([`EvalModPlan::packed`]), and on a replicated layout the transforms include their traces.
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+        set.extend(
+            self.eval_mod
+                .batch_rotation()
+                .map(|batch| galois_element(batch, cyclotomic_order)),
+        );
         set.extend(self.coeffs_to_slots.galois_elements(log_n, cyclotomic_order));
         if let Some(bypass) = self.coeffs_to_slots_bypass() {
             set.extend(bypass.galois_elements(log_n, cyclotomic_order));
@@ -654,9 +766,11 @@ impl BootstrappingPlan {
 mod tests {
     use super::*;
     use crate::{
-        CoeffsMeta,
+        CKKSError, CoeffsMeta,
         layouts::{DFTOutputFormat, eval_mod::EvalModType},
         polynomial::SplitStrategy,
+        presets::bootstrapping::paper_eval_mod,
+        shaping::ShapingUnit,
     };
     use poulpy_hal::layouts::Module;
 
@@ -670,15 +784,18 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn a_gap_takes_a_plan_of_its_subring() {
-        let refusal = |err: anyhow::Error| match err.downcast_ref::<crate::CKKSCompositionError>() {
+    fn refusal(err: anyhow::Error) -> String {
+        match err.downcast_ref::<crate::CKKSCompositionError>() {
             Some(crate::CKKSCompositionError::InvalidPlan { plan, reason }) => {
                 assert_eq!(*plan, "BootstrappingPlan");
                 reason.clone()
             }
             _ => panic!("unexpected error: {err}"),
-        };
+        }
+    }
+
+    #[test]
+    fn a_gap_takes_a_plan_of_its_subring() {
         let eval_mod = EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
             log_msg_ratio: 4,
@@ -690,6 +807,7 @@ mod tests {
             split_strategy: SplitStrategy::MinDepth,
             coeffs_meta: CoeffsMeta::from_delta_budget(16, 2),
             f_mod_log_delta: 24,
+            packed: false,
         };
         let new = |sparse: bool, on_raise: bool| {
             let encode = dft(DFTType::Encode);
@@ -762,6 +880,161 @@ mod tests {
         assert!(refusal(new(true, true).check_log_gap(3).unwrap_err()).contains("must fill the slots of the subring"));
     }
 
+    /// The constructor takes stage plans on the full layout only, and a replicated layout set on the plan takes the
+    /// settings of the paper and refuses, each with its plan and reason, a setting of the full layout, a degree or a packing its
+    /// values do not fit, a period above the batch size, working or S2C guard bits it cannot hold and a transform invalid
+    /// on it; the full layout refuses working bits, another degree than its transforms fill, a packed EvalMod and a
+    /// transform setting of a replicated layout.
+    #[test]
+    fn a_replicated_layout_refuses_what_it_does_not_run() {
+        use BootstrappingPipeline::{C2SFirst, S2CFirst};
+        let layout = ShapingUnit::U16_40.layout(3).unwrap();
+        let replicated = SlotLayout::Replicated(layout);
+        let unpacked = paper_eval_mod(&layout);
+        let packed = unpacked.with_packed(true);
+        let sparse = BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: None,
+        };
+        let with_bypass = |coeffs_to_slots_bypass| BootstrappingTechniques {
+            eval_round_plus: Some(EvalRoundPlus { coeffs_to_slots_bypass }),
+            ..sparse.clone()
+        };
+        let on_k = |kind, log_delta| {
+            let meta = CoeffsMeta::from_delta_budget(log_delta, 0);
+            DFTPlan::new(kind, vec![(3, 1)], DFTOutputFormat::SplitRealAndImag, meta).unwrap()
+        };
+        let (encode, decode) = (|| on_k(DFTType::Encode, 34), || on_k(DFTType::Decode, 26));
+        let new = |pipeline, techniques: &BootstrappingTechniques, c2s: DFTPlan, eval_mod, s2c: DFTPlan| {
+            BootstrappingPlan::new(pipeline, techniques.clone(), c2s, eval_mod, s2c).unwrap()
+        };
+        let s2c_first = |eval_mod| new(S2CFirst, &sparse, encode(), eval_mod, decode());
+        let off = |dft: DFTPlan| dft.with_slot_layout(replicated);
+        for (techniques, c2s, eval_mod, s2c) in [
+            (sparse.clone(), off(encode()), packed, decode()),
+            (sparse.clone(), encode(), packed.with_slot_layout(replicated), decode()),
+            (sparse.clone(), encode(), packed, off(decode())),
+            (with_bypass(off(dft(DFTType::Encode))), encode(), unpacked, decode()),
+        ] {
+            let err = BootstrappingPlan::new(S2CFirst, techniques, c2s, eval_mod, s2c).unwrap_err();
+            let reason = "eval_mod and the transforms run on the full layout: with_slot_layout sets another";
+            assert_eq!(refusal(err), reason);
+        }
+        let layouts = |plan: &BootstrappingPlan| {
+            let stages = [plan.coeffs_to_slots().slot_layout(), plan.eval_mod().slot_layout()];
+            (plan.slots_to_coeffs().slot_layout(), stages)
+        };
+        let plan = s2c_first(packed)
+            .with_slot_layout(replicated, 8)
+            .and_then(|plan| plan.with_c2s_guard_bits(14))
+            .and_then(|plan| plan.with_working_bits(8))
+            .and_then(|plan| plan.with_s2c_guard_bits(10))
+            .unwrap();
+        let batches = SlotLayout::Replicated(ShapingUnit::U16_40.layout(4).unwrap());
+        assert_eq!(layouts(&plan), (replicated, [batches; 2]));
+        let module = Module::<poulpy_hal::layouts::HostBytesBackend>::new(16);
+        let lut = EncodedLut::general(
+            &module,
+            &[1.0f64; 5],
+            32usize.into(),
+            CoeffsMeta::from_delta_budget(55, 32),
+            SplitStrategy::MinDepth,
+        )
+        .unwrap();
+        let ci = EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Product { log_delta: 8 },
+            post: CIConversion::Product { log_delta: 8 },
+        };
+        let exp = EvalModPlan {
+            eval_mod_type: EvalModType::ExpCmplx,
+            ..unpacked
+        };
+        let gapped = new(S2CFirst, &sparse, encode().with_first_factor_on_raise(), unpacked, decode())
+            .with_log_gap(1)
+            .unwrap();
+        let ungathered = SlotLayout::Replicated(ShapingUnit::U16_40.layout(2).unwrap());
+        let (bits, refused) = (
+            "the working bits exceed the guard bits of the raise",
+            "a replicated layout takes no",
+        );
+        let full_bits = "working bits and S2C guard bits take a replicated layout";
+        for (plan, reason) in [
+            (
+                new(C2SFirst, &sparse, encode(), packed, decode()).with_slot_layout(replicated, 8),
+                format!("{refused} C2S-first pipeline"),
+            ),
+            (
+                s2c_first(exp).with_slot_layout(replicated, 8),
+                format!("{refused} complex exponential"),
+            ),
+            (
+                plan.clone().with_eval_mod_ring(ci),
+                format!("{refused} EvalMod off the standard ring"),
+            ),
+            (plan.clone().with_functional_bootstrap(&lut), format!("{refused} LUT")),
+            (gapped.with_slot_layout(replicated, 8), format!("{refused} gap")),
+            (
+                new(S2CFirst, &with_bypass(dft(DFTType::Encode)), encode(), packed, decode()).with_slot_layout(replicated, 8),
+                format!("{refused} EvalRound+ bypass"),
+            ),
+            (
+                s2c_first(packed).with_slot_layout(replicated, 6),
+                "8 values of period 8 need more than the 32 slots of degree 2^6".into(),
+            ),
+            (
+                s2c_first(packed).with_slot_layout(replicated, 7),
+                "a packed EvalMod needs its two batches of 8 values of period 8 to fit the 64 slots".into(),
+            ),
+            (
+                s2c_first(packed).with_slot_layout(ungathered, 8),
+                "bootstrapping needs the period 8 to divide the batch size 4".into(),
+            ),
+            (
+                s2c_first(packed).with_slot_layout(SlotLayout::Replicated(ShapingUnit::U4_15.layout(61).unwrap()), 8),
+                "a packed EvalMod: invalid replicated layout: 2kR must fit in a usize".into(),
+            ),
+            (plan.clone().with_working_bits(15), bits.into()),
+            (plan.clone().with_c2s_guard_bits(7), bits.into()),
+            (
+                plan.clone().with_s2c_guard_bits(27),
+                "the S2C guard bits exceed the bits SlotsToCoeffs consumes".into(),
+            ),
+            (s2c_first(unpacked).with_working_bits(1), full_bits.into()),
+            (plan.clone().with_slot_layout(SlotLayout::Full, 4), full_bits.into()),
+            (
+                s2c_first(unpacked).with_slot_layout(SlotLayout::Full, 5),
+                "the transforms must fill the slots of the subring of the gap".into(),
+            ),
+        ] {
+            assert_eq!(refusal(plan.unwrap_err()), reason);
+        }
+        s2c_first(unpacked).with_slot_layout(SlotLayout::Full, 4).unwrap();
+        let placed = |p| new(S2CFirst, &sparse, encode(), packed, decode().with_placement_factors(p));
+        for (plan, inner, reason) in [
+            (
+                placed(4).with_slot_layout(replicated, 8),
+                "DFTPlan",
+                "the placement takes at most log2(k) = 3 factors",
+            ),
+            (
+                placed(1).with_slot_layout(SlotLayout::Full, 4),
+                "DFTPlan",
+                "placement factors and a last-factor scale take a replicated layout",
+            ),
+            (
+                s2c_first(packed).with_slot_layout(SlotLayout::Full, 4),
+                "EvalModPlan",
+                "a packed EvalMod takes a replicated layout",
+            ),
+        ] {
+            let (err, reason) = (plan.unwrap_err(), reason.to_string());
+            let got = err
+                .downcast_ref::<CKKSError>()
+                .map_or(err.downcast_ref(), CKKSError::composition);
+            assert_eq!(got, Some(&CKKSCompositionError::InvalidPlan { plan: inner, reason }));
+        }
+    }
+
     #[test]
     fn functional_bootstrapping_normalization_is_in_s2c() {
         let module = Module::<poulpy_hal::layouts::HostBytesBackend>::new(16);
@@ -832,6 +1105,7 @@ mod tests {
             split_strategy: SplitStrategy::MinDepth,
             coeffs_meta: CoeffsMeta::from_delta_budget(8, 2),
             f_mod_log_delta: 10,
+            packed: false,
         }
     }
 

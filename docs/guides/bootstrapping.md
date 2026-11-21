@@ -290,6 +290,7 @@ let plan = BootstrappingPlan::new(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: meta(48, 4),
         f_mod_log_delta: 60,
+        packed: false,
     },
     slots_to_coeffs,
 )?;
@@ -317,7 +318,7 @@ let bootstrap_layout = preset.bootstrap_layout();
 Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first), followed by a suffix per further technique: `ffr` for the first CoeffsToSlots factor on the raise and `ci` for EvalMod on the conjugate-invariant ring.
 All output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
-The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
+The presets of the full layout take inputs at scale `2^35` and use an optimized Han–Ki EvalMod (those of a replicated layout are in [its guide](replicated.md#presets)):
 
 | Constructor | Pipeline | Input `k` | Output `k` | Minimum precision | Net usable bits (levels) | Bootstrap `k` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |

@@ -50,7 +50,9 @@ thread_local! {
  /// whole bootstrap.
  static EVAL_MOD_FORWARD: Cell<bool> = const { Cell::new(false) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
+ static COPY_CALLS: Cell<usize> = const { Cell::new(0) };
  static ROUND_CALLS: Cell<usize> = const { Cell::new(0) };
+ static ROUND_EXTRA: Cell<usize> = const { Cell::new(ROUND_EXTRA_DEFAULT) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
 poulpy_ckks::impl_ckks_plaintext_vec_reference_full!(OverrideBackend);
@@ -69,6 +71,7 @@ unsafe impl CKKSCopyImpl<Standard> for OverrideBackend {
         Dst: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
     {
+        COPY_CALLS.set(COPY_CALLS.get() + 1);
         MAX_COPY_CAPACITY.with(|capacity| capacity.set(capacity.get().max(dst.max_size())));
         let workspace = COPY_WORKSPACE * dst.max_size();
         // The reference refuses before any scratch use, so an arena short of the workspace goes to it and must refuse.
@@ -116,10 +119,10 @@ unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingI
     }
 }
 // The round counts its calls and runs behind a marked region its query adds.
-const ROUND_EXTRA: usize = 960;
+const ROUND_EXTRA_DEFAULT: usize = 960;
 unsafe impl CKKSRoundImpl<Standard> for OverrideBackend {
     fn ckks_round_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds>(module: &Module<Self>, res: &R, a: &A) -> usize {
-        ROUND_EXTRA + CKKSRoundReference::<Self, Standard>::ckks_round_tmp_bytes_reference(module, res, a)
+        ROUND_EXTRA.get() + CKKSRoundReference::<Self, Standard>::ckks_round_tmp_bytes_reference(module, res, a)
     }
 
     fn ckks_round<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>) -> CKKSResult<()>
@@ -128,7 +131,7 @@ unsafe impl CKKSRoundImpl<Standard> for OverrideBackend {
         A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
     {
         ROUND_CALLS.with(|calls| calls.set(calls.get() + 1));
-        carry::with_marked_region::<ROUND_EXTRA, _>(scratch, |rest| {
+        carry::with_marked_bytes(ROUND_EXTRA.get(), scratch, |rest| {
             CKKSRoundReference::<Self, Standard>::ckks_round_reference(module, res, a, rest)
         })
     }
@@ -1123,22 +1126,58 @@ fn ckks_round_reference_dispatches_shaping_correction() {
     );
 }
 
+/// The conversions of the replicated parity, each on exactly its query, enter the round hook onto the replicated layout
+/// and the copy hook on both maps, and give the base backend's outputs; the conversion query takes the round's extra.
 #[test]
 fn replicated_conversions_enter_the_round_hook() {
-    let params = poulpy_ckks::test_suite::BASE19_PARAMS_F64;
-    let module = Module::<OverrideBackend>::new(params.n as u64);
-    let host = Module::<poulpy_hal::layouts::HostBytesBackend>::new(params.n as u64);
-    ROUND_CALLS.with(|calls| calls.set(0));
-    SHAPING_CALLS.with(|calls| calls.set(0));
-    // Every conversion of the suite runs on an arena of exactly its query, so the round's marked extra fits only if
-    // the query takes it.
-    poulpy_ckks::test_suite::replicated::test_replicated_conversions_round_trip::<OverrideBackend, f64, Standard>(
-        params, &module, &host,
-    )
+    use poulpy_ckks::SlotsKind;
+    use poulpy_ckks::api::CKKSReplicatedOps;
+    use poulpy_ckks::layouts::ReplicatedConversion;
+    use poulpy_ckks::shaping::ShapingUnit;
+    use poulpy_ckks::test_suite::parity::{keys::key_layout, layout, run_replicated_conversions};
+    let params = poulpy_ckks::test_suite::CKKSTestParams {
+        n: 64,
+        hw: 48,
+        base2k: 12,
+        ..poulpy_ckks::test_suite::BASE19_PARAMS_F64
+    };
+    let module = Module::<OverrideBackend>::new(64);
+    let unit = ShapingUnit::U8_40.layout(2).unwrap();
+    let base2k = params.base2k.into();
+    let bytes = ReplicatedConversion::<OverrideBackend>::new_tmp_bytes::<f64>(&module, &unit, base2k, 30).unwrap();
+    let conv = with_scratch::<OverrideBackend, _>(bytes, |s| {
+        ReplicatedConversion::<_, Standard>::new::<f64>(&module, 64usize.into(), unit, base2k, 20, 30, 17, s)
+    })
     .unwrap();
-    // One round onto the replicated layout per conversion to it, into a wide and a narrow destination, at the module
-    // degree and at half of it, each with a shaping correction per half. The conversions back gather and trace
-    // without a round.
-    assert_eq!(ROUND_CALLS.with(Cell::get), 4);
-    assert_eq!(SHAPING_CALLS.with(Cell::get), 8);
+    let a = layout(params, 1, 120, 40, 0, SlotsKind::Complex);
+    let res = CKKSLayout {
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(20),
+            slot_layout: SlotLayout::Replicated(unit),
+            ..a.meta
+        },
+        ..a
+    };
+    let key = key_layout(64, 12, 160, 1, 1, 1);
+    carry::assert_query_takes_extra(
+        "ckks_replicated_conversion_tmp_bytes",
+        |bytes| ROUND_EXTRA.set(bytes),
+        || module.ckks_replicated_conversion_tmp_bytes(&res, &a, &key, &conv),
+    );
+    ROUND_EXTRA.set(ROUND_EXTRA_DEFAULT);
+
+    let counters = [&ROUND_CALLS, &SHAPING_CALLS, &COPY_CALLS];
+    counters.iter().for_each(|calls| calls.set(0));
+    let got = run_replicated_conversions::<OverrideBackend, f64, Standard>(params, &module);
+    // Three sources, dense and factored, each with two conversions onto the replicated layout and two back. Onto it, a
+    // round with a shaping correction per half; every conversion copies into its wide stage and once per factor of its
+    // map, one dense and two factored, and the narrow one onto the layout and both back once more, out of the round or
+    // the trace.
+    assert_eq!(counters.map(|calls| calls.get()), [12, 24, 78]);
+    let base = Module::<crate::FFT64Portable>::new(64);
+    assert_eq!(
+        got,
+        run_replicated_conversions::<crate::FFT64Portable, f64, Standard>(params, &base),
+        "the probe's conversions differ from the base backend's"
+    );
 }

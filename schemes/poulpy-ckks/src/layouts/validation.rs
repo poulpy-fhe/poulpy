@@ -9,21 +9,21 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     LinearTransformationPrepared,
     layouts::{
-        Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendRef, GetAutomorphismKey,
-        GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos,
+        LWEInfos, LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, Ring};
+use poulpy_hal::layouts::{Backend, Module, Ring, galois_element};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, Scale, SlotLayout,
     SlotsKind,
-    api::CKKSBootstrappingOps,
+    api::{CKKSBootstrappingOps, LtDiagonalMeta},
     checked_log_budget_sub, ckks_bail, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingLinearKeys, BootstrappingPipeline, CKKSCiphertextOwned,
-        CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalMod, EvalModPlan,
-        EvalModType, ReplicatedTransform, ReplicatedTransformWorkspace,
+        CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, DFTPlan, DFTType,
+        EncodedLut, EvalMod, EvalModPlan, EvalModType, MaskedCoeffs, dft::trace_galois_element,
     },
     presets::first_factor::{first_factor_small_bits, first_factor_work},
 };
@@ -400,76 +400,8 @@ pub(crate) fn ensure_replicated_operands<A: GLWEInfos, R: GLWEInfos>(
     Ok(())
 }
 
-/// `InvalidOperand` for `op` unless `workspace` holds the baby steps of every factor of `transform` for inputs of
-/// layout `input`.
-pub(crate) fn ensure_transform_workspace<BE: Backend, Rg: Ring>(
-    op: &'static str,
-    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
-    input: &GLWELayout,
-    transform: &ReplicatedTransform<BE, Rg>,
-) -> CKKSResult<()> {
-    let babies_match = workspace.babies.len() == transform.factors.len()
-        && workspace
-            .babies
-            .iter()
-            .zip(&transform.factors)
-            .all(|(babies, (lt, _))| babies.baby_steps().eq(lt.baby_steps().iter().copied()));
-    ckks_ensure_operand!(
-        op,
-        workspace.input == *input && babies_match,
-        "the workspace does not match the transform's input layout or rotations"
-    );
-    Ok(())
-}
-
-/// The automorphism keys a chain of BSGS factors switches with on an input of `input_k` bits, as `(rotation, k)`:
-/// each factor's baby key rotations at its input's width and the keys of its giant steps at its output's, as the
-/// evaluation looks them up. Each factor gives its baby key rotations, its rotation schedule, its giant steps and the
-/// bits it consumes.
-fn bsgs_key_lookups(
-    factors: impl IntoIterator<Item = (Vec<i64>, BsgsRotations, Vec<i64>, usize)>,
-    input_k: usize,
-) -> Vec<(i64, usize)> {
-    let mut lookups = Vec::new();
-    let mut k = input_k;
-    for (babies, rotations, giants, consumed) in factors {
-        let out_k = k.saturating_sub(consumed);
-        lookups.extend(babies.into_iter().map(|rotation| (rotation, k)));
-        let giants = match rotations {
-            BsgsRotations::PerRotation => giants.into_iter().filter(|&rotation| rotation != 0).collect(),
-            rotations => rotations.giant_key_rotations(giants),
-        };
-        lookups.extend(giants.into_iter().map(|rotation| (rotation, out_k)));
-        k = out_k;
-    }
-    lookups
-}
-
-/// [`bsgs_key_lookups`] of the prepared `transform`, through the baby steps `workspace` prepared and the giant steps
-/// holding diagonals.
-pub(crate) fn transform_key_lookups<BE: Backend, Rg: Ring>(
-    transform: &ReplicatedTransform<BE, Rg>,
-    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
-    input_k: usize,
-) -> Vec<(i64, usize)> {
-    let factors = transform
-        .factors
-        .iter()
-        .zip(&workspace.babies)
-        .map(|((lt, consumed), babies)| {
-            let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-            (
-                babies.rotations().baby_key_rotations(babies.baby_steps()),
-                lt.rotations,
-                giants.collect(),
-                *consumed,
-            )
-        });
-    bsgs_key_lookups(factors, input_k)
-}
-
-/// The key of Galois element `p` at width `k`, its layout, or `MissingAutomorphismKey` for `op` naming `rotation`.
-fn automorphism_key_layout<BE, Rg, H>(op: &'static str, keys: &H, p: i64, rotation: i64, k: usize) -> CKKSResult<GGLWELayout>
+/// The key of Galois element `p` at width `k`, its layout, or `MissingAutomorphismKey` for `op` naming `p`.
+pub(crate) fn automorphism_key_layout<BE, Rg, H>(op: &'static str, keys: &H, p: i64, k: usize) -> CKKSResult<GGLWELayout>
 where
     BE: Backend,
     Rg: Ring,
@@ -481,35 +413,12 @@ where
         .map_err(|source| {
             CKKSCompositionError::MissingAutomorphismKey {
                 op,
-                rotation,
+                rotation: p,
                 k: k.into(),
                 source,
             }
             .into()
         })
-}
-
-/// `MissingAutomorphismKey` for `op` unless `keys` cover each `(rotation, k)` of `lookups` on operands of degree `n`;
-/// otherwise the layouts of the keys, for the scratch queries.
-pub(crate) fn ensure_rotation_keys<BE, Rg, H>(
-    op: &'static str,
-    module: &Module<BE>,
-    n: usize,
-    keys: &H,
-    lookups: impl IntoIterator<Item = (i64, usize)>,
-) -> CKKSResult<Vec<GGLWELayout>>
-where
-    BE: Backend,
-    Rg: Ring,
-    H: GetAutomorphismKey<BE, Rg>,
-{
-    lookups
-        .into_iter()
-        .map(|(rotation, k)| {
-            let p = crate::operand_rotation_galois_element::<_, Rg>(op, module, n, rotation)?;
-            automorphism_key_layout(op, keys, p, rotation, k)
-        })
-        .collect()
 }
 
 /// `InvalidOperand` for `op` unless `keys` carry the encapsulation switches exactly when the recipe encapsulates.
@@ -551,13 +460,80 @@ fn ensure_bootstrap_degree<BE: Backend, F>(
     Ok(())
 }
 
+/// What the chain of `dft` on a replicated layout refuses before its trace, on a working ciphertext of degree `n`, width
+/// `k` and budget `log_budget`: a layout past the slots of degree `n`, less budget than its factors consume, and a key
+/// of the trace or of a factor missing at its width. Returns the largest `key_bytes` of those keys, 0 on the full layout.
+pub(crate) fn check_replicated_chain<BE, Dir, Fmt, D, H>(
+    op: &'static str,
+    dft: &D,
+    (n, k, log_budget): (usize, usize, usize),
+    keys: &H,
+    key_bytes: impl Fn(&GGLWELayout) -> usize,
+) -> CKKSResult<usize>
+where
+    BE: Backend,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
+    H: GetAutomorphismKey<BE>,
+{
+    let plan = dft.dft_plan();
+    let SlotLayout::Replicated(layout) = plan.slot_layout() else {
+        return Ok(0);
+    };
+    let log_n = n.ilog2() as usize;
+    ckks_ensure_operand!(
+        op,
+        layout.log_k() + layout.log_r() < log_n,
+        "the slots of the input's degree must hold the layout of the plan"
+    );
+    let scales = || {
+        dft.factors()
+            .map(|f| f.first_diagonal_plaintext().map_or(0, |pt| pt.lt_log_scale()))
+    };
+    checked_log_budget_sub(op, log_budget, scales().sum())?;
+    let order = 2 * n as i64;
+    let mut bytes = 0;
+    let mut check = |p: i64, below: usize| -> CKKSResult<()> {
+        bytes = bytes.max(key_bytes(&automorphism_key_layout(op, keys, p, k - below)?));
+        Ok(())
+    };
+    for level in plan.trace_levels(log_n).into_iter().flatten() {
+        check(trace_galois_element(level, order), 0)?;
+    }
+    let mut below = 0;
+    // A replicated factor switches a key per rotation, its giant ones on the product.
+    for (scale, schedule) in scales().zip(dft.factor_plans()) {
+        let babies = schedule.baby_steps.iter().map(|&rotation| (rotation, below));
+        let giants = schedule.giant_steps.iter().map(|&rotation| (rotation, below + scale));
+        for (rotation, below) in babies.chain(giants).filter(|&(rotation, _)| rotation != 0) {
+            check(galois_element(rotation, order), below)?;
+        }
+        below += scale;
+    }
+    Ok(bytes)
+}
+
+/// `InvalidOperand` for `op` unless `slot_layout` is the layout the chain of `plan` reads: a `Decode` on a replicated
+/// layout reads that layout, every other chain the full layout.
+pub(crate) fn ensure_chain_input(op: &'static str, plan: &DFTPlan, slot_layout: SlotLayout) -> CKKSResult<()> {
+    if plan.kind() == DFTType::Decode && plan.slot_layout() != SlotLayout::Full {
+        ckks_ensure_operand!(
+            op,
+            slot_layout == plan.slot_layout(),
+            "the source must have the replicated layout of SlotsToCoeffs"
+        );
+        return Ok(());
+    }
+    ensure_full_layout(op, slot_layout)
+}
+
 /// What `ckks_bootstrap_derived` refuses before its first step, so that no later step refuses with `res` half written:
 /// the context kind, ranks, degrees and radices, ciphertexts of another degree than the one the context bootstraps, a
 /// sparse plan without its gap among them, an input off the subring of the gap, or a module of another degree than
 /// `2N` with EvalMod on the
 /// conjugate-invariant ring, an input the lifts of a C2S-first raise do not fit, a working width without the budget of
 /// the stages, the keys of the plan's ring and their coverage of the run's widths, and, when the keys report their
-/// layout, the arena against the query.
+/// layout, the arena against the query. An input off the layout SlotsToCoeffs reads ([`ensure_chain_input`]) comes
+/// first, then an S2C-first input without the budget SlotsToCoeffs consumes.
 pub(crate) fn check_bootstrap_entry<BE, F, K>(
     module: &Module<BE>,
     res: &CKKSCiphertextOwned<BE>,
@@ -572,7 +548,11 @@ where
     K: BootstrappingKeys<BE>,
 {
     const OP: &str = "ckks_bootstrap";
-    ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
+    let run = ctx.run(a.meta());
+    ensure_chain_input(OP, ctx.slots_to_coeffs().plan(), crate::GLWEPlaintextInfos::slot_layout(a))?;
+    if ctx.pipeline() == BootstrappingPipeline::S2CFirst {
+        checked_log_budget_sub(OP, a.log_budget(), ctx.slots_to_coeffs().consumed_bits())?;
+    }
     ckks_ensure_operand!(
         OP,
         ctx.functional_message_modulus().is_none() && ctx.plan.eval_mod().eval_mod_type != EvalModType::ExpCmplx,
@@ -595,9 +575,12 @@ where
             let widths = ctx.stage_widths().conversions(res.k().as_usize()).unwrap_or_default();
             check_conversion_key_widths(OP, trace_key, embed_key, widths)?;
         }
-        None => check_key_widths(OP, res, a, ctx, keys, required_tensor_key(OP, keys.tensor_key())?, tensor_k)?,
+        None => {
+            let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
+            check_key_widths(OP, res, a, ctx, keys, tensor_key, tensor_k)?;
+        }
     }
-    ensure_eval_round_interval(&ctx.run(a.meta()))?;
+    ensure_eval_round_interval(&run)?;
     if let Some(keys_layout) = keys.keys_layout() {
         let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, keys_layout);
         ckks_ensure!(
@@ -756,9 +739,8 @@ where
     check_raise_keys(op, ct_out, ct_in, ctx, keys)
 }
 
-/// Keys with a row offset are laid out for the raise: fails before any work
-/// unless the first-factor keys, or a sparse-to-dense key with an offset, fit
-/// the raise of `ct_in` into `ct_out.k()` bits.
+/// The raise of `ct_in` into `ct_out.k()` bits, as its step checks it ([`check_raise_widths`]): fails before any work
+/// unless the encapsulation and first-factor keys fit it.
 fn check_raise_keys<BE, F, K, C1, C2>(
     op: &'static str,
     ct_out: &C1,
@@ -772,24 +754,15 @@ where
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
-    let bootstrap_k = ct_out.k().as_usize();
     let (k_small, raised) = ctx.stage_widths().raise(ct_in.k().as_usize());
-    if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
-        check_first_factor_raise(
-            op,
-            ct_out.base2k().as_usize(),
-            ct_out.n().as_usize().ilog2() as usize,
-            bootstrap_k,
-            raised,
-            factor,
-            keys,
-        )?;
-    } else if let Some((_, Some(sparse_to_dense))) = keys.encapsulation_keys()
-        && sparse_to_dense.k_offset().as_usize() > 0
-    {
-        check_offset_raise(op, bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
-    }
-    Ok(())
+    let src = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: k_small.into(),
+            ..ct_out.glwe_layout()
+        },
+        meta: GLWEPlaintextMeta::default(),
+    };
+    check_raise_widths(op, ct_out, &src, raised - k_small, ctx.coeffs_to_slots_first_factor(), keys)
 }
 
 /// What the raise refuses on widths, labelled `op`: `src`, lifted by `scale_up` fused
@@ -958,7 +931,10 @@ where
 }
 
 /// EvalMod on the standard ring, which the two standard routes run.
-pub(crate) fn eval_mod_standard<'a, BE, F, P>(op: &'static str, plan: &'a P) -> CKKSResult<&'a EvalMod<F, CKKSPlaintextOwned<BE>>>
+pub(crate) fn eval_mod_standard<'a, BE, F, P>(
+    op: &'static str,
+    plan: &'a P,
+) -> CKKSResult<&'a EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>>
 where
     BE: Backend,
     P: CKKSEvalModInfos<BE, F>,
@@ -1284,153 +1260,4 @@ where
         small,
         growth,
     })
-}
-
-/// [`bsgs_key_lookups`] of the factor schedules `plans`, `consumed` giving each factor's bits.
-pub(crate) fn chain_key_lookups(
-    plans: &[poulpy_core::layouts::LinearTransformationPlan],
-    consumed: &[usize],
-    input_k: usize,
-) -> Vec<(i64, usize)> {
-    let factors = plans.iter().zip(consumed).map(|(plan, &bits)| {
-        (
-            plan.rotations.baby_key_rotations(plan.baby_steps.iter().copied()),
-            plan.rotations,
-            plan.giant_steps.clone(),
-            bits,
-        )
-    });
-    bsgs_key_lookups(factors, input_k)
-}
-
-/// [`chain_key_lookups`] as Galois elements of operands of degree `n`.
-pub(crate) fn chain_galois_lookups<M: poulpy_hal::layouts::CyclotomicOrder + ?Sized>(
-    op: &'static str,
-    module: &M,
-    n: usize,
-    plans: &[poulpy_core::layouts::LinearTransformationPlan],
-    consumed: &[usize],
-    input_k: usize,
-) -> CKKSResult<Vec<(i64, usize)>> {
-    chain_key_lookups(plans, consumed, input_k)
-        .into_iter()
-        .map(|(rotation, k)| {
-            Ok((
-                crate::operand_rotation_galois_element::<M, poulpy_hal::layouts::Standard>(op, module, n, rotation)?,
-                k,
-            ))
-        })
-        .collect()
-}
-
-/// `MissingAutomorphismKey` for `op` unless `keys` cover each `(galois element, k)` of `lookups`, the error naming the
-/// element in place of a rotation, or else the layout of each key found.
-pub(crate) fn ensure_galois_keys<BE, H>(
-    op: &'static str,
-    keys: &H,
-    lookups: impl IntoIterator<Item = (i64, usize)>,
-) -> CKKSResult<Vec<GGLWELayout>>
-where
-    BE: Backend,
-    H: GetAutomorphismKey<BE>,
-{
-    lookups
-        .into_iter()
-        .map(|(p, k)| automorphism_key_layout(op, keys, p, p, k))
-        .collect()
-}
-
-/// What the replicated route of `ckks_bootstrap` refuses before its first step, so that no step refuses with `res` half
-/// written: an input off the route's layout, ranks other than one, degrees other than the module's, two radices, an
-/// input at neither `Δ_b` nor the leveled scale or without the budget of the input width, an output narrower than the
-/// leveled scale, the encapsulation keys the plan does not match, a missing tensor key, every automorphism key at the
-/// width its stage looks it up at, and, when the keys report their layout, the arena against the query.
-pub(crate) fn check_replicated_bootstrap_entry<BE, F, K>(
-    module: &Module<BE>,
-    res: &CKKSCiphertextOwned<BE>,
-    a: &CKKSCiphertextOwned<BE>,
-    ctx: &BootstrappingContextPrepared<BE, F>,
-    keys: &K,
-    available: usize,
-) -> CKKSResult<()>
-where
-    BE: Backend,
-    Module<BE>: CKKSBootstrappingOps<BE> + poulpy_core::GLWETrace<BE> + poulpy_hal::layouts::CyclotomicOrder,
-    K: BootstrappingKeys<BE>,
-{
-    const OP: &str = "ckks_bootstrap";
-    let Some(stages) = ctx.replicated() else {
-        ckks_bail!("{OP}: the context has no replicated route");
-    };
-    let (route, plan) = (&stages.route, &ctx.plan);
-    ckks_ensure_operand!(
-        OP,
-        crate::GLWEPlaintextInfos::slot_layout(a) == SlotLayout::Replicated(route.layout),
-        "the source must have the bootstrapping's replicated layout"
-    );
-    ensure_rank_one(OP, a, res)?;
-    ensure_replicated_operands(OP, module.n(), ctx.bootstrap_degree(), a, res)?;
-    ensure_one_base2k(OP, a, res)?;
-    let log_delta = a.log_delta();
-    ckks_ensure_operand!(
-        OP,
-        log_delta == route.log_delta || (log_delta == route.level_log_delta && log_delta < route.log_delta),
-        "the source must be at the bootstrapping or the leveled scale, got 2^{log_delta}"
-    );
-    let k_in = plan.replicated_input_k().unwrap_or_default();
-    ckks_ensure_operand!(
-        OP,
-        a.log_budget() + route.log_delta >= k_in,
-        "the source has a budget of {} bits, below the {} bits of the input width over Δ_b",
-        a.log_budget(),
-        k_in - route.log_delta
-    );
-    ckks_ensure_operand!(
-        OP,
-        res.k().as_usize() >= route.level_log_delta,
-        "the output is narrower than the leveled scale"
-    );
-    ensure_encapsulation(OP, keys, plan.sparse_secret_hamming_weight())?;
-    let Some(widths) = ctx.replicated_key_widths(module, res.k().as_usize()) else {
-        ckks_bail!("{OP}: the output is too narrow for the stages of the route");
-    };
-    // Each key once, in the order of its Galois element, at the width of its widest use.
-    ensure_galois_keys(OP, keys, widths.rotation_keys.iter().map(|(&p, &k)| (p, k)))?;
-    let k = TorusPrecision(widths.tensor_key as u32);
-    required_tensor_key(OP, keys.tensor_key())?
-        .get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op: OP,
-            k: k.into(),
-            source,
-        })?;
-    // The raise of the coefficients SlotsToCoeffs leaves, at the message ratio above `Δ_b`, into the raised width.
-    let Some(raised_k) = plan.replicated_raised_k(res.k().as_usize()) else {
-        ckks_bail!("{OP}: the context has no replicated route");
-    };
-    let at = |k: usize| CKKSLayout {
-        glwe_layout: GLWELayout {
-            n: a.n(),
-            base2k: a.base2k(),
-            k: k.into(),
-            rank: poulpy_core::layouts::Rank(1),
-        },
-        meta: GLWEPlaintextMeta::default(),
-    };
-    check_raise_widths(
-        OP,
-        &at(raised_k),
-        &at(plan.replicated_raise_input_k().unwrap_or_default()),
-        route.raise_bits(),
-        None::<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
-        keys,
-    )?;
-    if let Some(keys_layout) = keys.keys_layout() {
-        let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, keys_layout);
-        ckks_ensure!(
-            available >= bytes,
-            "{OP} needs a scratch arena of {bytes} bytes, got {available}"
-        );
-    }
-    Ok(())
 }

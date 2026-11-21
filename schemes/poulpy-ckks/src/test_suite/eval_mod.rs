@@ -422,6 +422,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", lit, 18.0);
 }
@@ -451,6 +452,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", lit, 18.0);
 }
@@ -480,6 +482,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
 }
@@ -509,6 +512,7 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", lit, 18.0);
 }
@@ -535,6 +539,7 @@ where
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", lit, 18.0);
 }
@@ -564,6 +569,7 @@ pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
         f_mod_log_delta: 60,
+        packed: false,
     };
     assert!(lit.folds_even_base());
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);

@@ -63,6 +63,7 @@ use crate::{
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
+    shaping::ShapingUnit,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -213,6 +214,7 @@ fn plan_with_encapsulation(
             split_strategy: SplitStrategy::MinDepth,
             coeffs_meta: meta(48, 4),
             f_mod_log_delta: 60,
+            packed: false,
         },
         slots_to_coeffs,
     )
@@ -385,6 +387,11 @@ where
                     "the input is wider than an encapsulation key's max_input_k",
                     |res, a, s| module.ckks_mod_raise(res, a, &ctx, &bsk, s),
                 );
+                let wide_in = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_in + 1 - log_delta), 53);
+                let before = snapshot::<BE, _, Standard>(&dst);
+                let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut dst, &wide_in, &ctx, &bsk, s)).unwrap_err();
+                assert_invalid_operand("raise past the ephemeral key", &err, "ckks_bootstrap", "key's max_input_k");
+                assert_eq!(snapshot::<BE, _, Standard>(&dst), before, "a refused bootstrap wrote res");
                 bsk.encapsulation_keys = wide_keys;
             }
             let narrow_spec = ckks_spec(n, base2k, log_delta, k_boot - base2k - log_delta);
@@ -687,6 +694,14 @@ where
             );
             assert_eq!(snapshot::<BE, _, Standard>(&short), before, "a refused step wrote res");
 
+            let mut replicated = raised.clone();
+            replicated.set_slot_layout(SlotLayout::Replicated(ShapingUnit::U16_40.layout(3).unwrap()));
+            assert_eval_mod_refuses(
+                &mut stepped,
+                &replicated,
+                "takes the layout of its EvalMod: the full layout, or the output of the replicated CoeffsToSlots",
+                |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, &keys, s),
+            );
             let mut rank2 = boot;
             rank2.glwe_layout.rank = 2usize.into();
             let a_rank2 = fixture_ciphertext(&module, &rank2, 29);
@@ -1805,7 +1820,6 @@ where
         &mut scratch.borrow(),
     );
     let mut ct_out = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - log_delta), 24);
-    // The S2C-first budget refusal comes from its first stage, after the pipeline carved its working ciphertexts.
     let before = snapshot::<BE, _, Standard>(&ct_out);
     let err = with_scratch::<BE, _>(boot_tmp, |s| {
         module.ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, s)
@@ -1813,7 +1827,10 @@ where
     .unwrap_err();
     assert!(matches!(
         err.composition(),
-        Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
+        Some(CKKSCompositionError::InsufficientHomomorphicCapacity {
+            op: "ckks_bootstrap",
+            ..
+        })
     ));
     assert_eq!(snapshot::<BE, _, Standard>(&ct_out), before, "a refused bootstrap wrote res");
 

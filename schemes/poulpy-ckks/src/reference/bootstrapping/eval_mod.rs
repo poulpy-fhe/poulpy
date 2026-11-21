@@ -10,24 +10,26 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    SetGLWEPlaintextInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
-    checked_log_budget_sub, ckks_ensure, ckks_ensure_operand,
+    checked_log_budget_sub, ckks_ensure_operand, ckks_log_delta,
     layouts::{
-        BootstrappingKeys, BootstrappingKeysLayout, CKKSEvalModInfos, CKKSPlaintextOwned, EvalMod,
+        BootstrappingKeys, BootstrappingKeysLayout, CKKSEvalModInfos, CKKSPlaintextOwned, EvalMod, MaskedCoeffs,
         ScratchArenaTakeCKKSCiphertext,
         bootstrapping::bootstrap_layouts,
         eval_mod::{EvalModPlan, EvalModType},
+        replicated::layout_at,
         validation::{
             check_conversion_key_widths, check_eval_mod_on_ci, ensure_eval_round_interval, ensure_one_base2k, ensure_one_degree,
-            ensure_rank_one, eval_mod_standard, remove_guard_bits, required_tensor_key,
+            ensure_rank_one, ensure_scratch, eval_mod_standard, remove_guard_bits, required_tensor_key,
         },
     },
     oep::derived::dft::ckks_split_halves,
-    reference::mul::tensor_key_at,
+    reference::{eval_mod::eval_mod_key_k, mul::tensor_key_at},
 };
 
 use super::{
@@ -58,56 +60,78 @@ where
     }
 }
 
-/// Scratch of [`eval_mod_real`] and [`eval_mod_complex`], the larger of the two: the inputs of EvalMod and the imaginary
-/// output beside EvalMod, on two worker arenas on a parallel executor, or beside the conjugation, the split or the
-/// subtraction of EvalRound+.
-fn eval_mod_standard_tmp_bytes<BE, R, A, P, F>(
+/// Scratch of [`eval_mod_real`] into `res`, of layout `boot`, from an input of layout `a` when `real`, else the larger
+/// of it and [`eval_mod_complex`]. The real route: EvalMod's input, and its copy rounded `w` bits under its scale when
+/// `w > 0`, beside EvalMod, the conjugation, the rounding or the rotation of a packed EvalMod. The split: its two
+/// inputs, the rounded copy and the imaginary output, beside EvalMod on two worker arenas on a parallel executor, or
+/// beside the split, the rounding or the subtraction of EvalRound+.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the query reads the working bits and the route beside the layouts, the plan and the keys"
+)]
+fn eval_mod_standard_tmp_bytes<BE, R, P, F>(
     module: &Module<BE>,
     res: &R,
-    a: &A,
+    boot: &CKKSLayout,
+    a: &CKKSLayout,
     plan: &P,
+    w: usize,
+    real: bool,
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
     BE: Backend,
-    Module<BE>: GLWEBytesOf<BE> + CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE>,
+    Module<BE>: GLWEBytesOf<BE> + CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + CKKSRoundOps<BE>,
     R: CKKSCtBounds,
-    A: CKKSCtBounds,
     P: CKKSEvalModInfos<BE, F>,
 {
-    let (boot_layout, a_layout) = bootstrap_layouts(res, a);
     let coeffs_layout = eval_mod_coeffs_layout(res, a, plan.eval_mod_plan());
     let tsk = &keys_layout.tensor_key;
     // EvalMod writes into a ciphertext of `res`'s width and into `res` itself, which
     // may be allocated wider than its `k`.
     let inputs = plan.eval_mod_standard().map(|eval_mod| {
-        let (_, meta) = eval_mod.plan.work_layout(&a_layout);
+        let (_, mut meta) = eval_mod.plan.work_layout(a);
+        if let SlotLayout::Replicated(_) = meta.slot_layout {
+            // EvalMod takes the part `w` bits under the scale of `a` and rounds it into a working copy at its own scale.
+            meta.scale = Scale::Log(a.log_delta().saturating_sub(w));
+        }
         CKKSLayout {
-            glwe_layout: eval_mod.plan.input_layout(&a_layout),
+            glwe_layout: eval_mod.plan.input_layout(a),
             meta,
         }
     });
     let eval_mod = plan.eval_mod_standard().zip(inputs.as_ref()).map_or(0, |(eval_mod, input)| {
         module
-            .ckks_eval_mod_tmp_bytes(&boot_layout, input, eval_mod, tsk)
+            .ckks_eval_mod_tmp_bytes(boot, input, eval_mod, tsk)
             .max(module.ckks_eval_mod_tmp_bytes(res, input, eval_mod, tsk))
     });
+    let mut linear = 0;
+    for atk in keys_layout.rotation_key_layouts() {
+        linear = linear
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(res, &coeffs_layout, tsk, atk))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(boot, &coeffs_layout, tsk, atk))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(a, &coeffs_layout, tsk, atk));
+        if real && let Some(input) = &inputs {
+            linear = linear.max(module.ckks_all_ops_with_atk_tmp_bytes(input, &coeffs_layout, tsk, atk));
+        }
+    }
+    let rounded = inputs
+        .as_ref()
+        .filter(|_| w > 0)
+        .map_or(0, |input| module.ckks_round_tmp_bytes(input, input));
+    let input_bytes = inputs.map_or(0, |input| BE::scratch_aligned(module.glwe_bytes_of_from_infos(&input)));
+    let copies = 1 + usize::from(w > 0);
+    if real {
+        return copies * input_bytes + eval_mod.max(linear).max(rounded);
+    }
     let eval_mod = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
         2 * worker_scratch_bytes::<BE>(eval_mod)
     } else {
         eval_mod
     };
-    let mut linear = 0;
-    for atk in keys_layout.rotation_key_layouts() {
-        linear = linear
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(res, &coeffs_layout, tsk, atk))
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, &coeffs_layout, tsk, atk))
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(&a_layout, &coeffs_layout, tsk, atk));
-    }
-    let a_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&a_layout));
-    let boot_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
-    let input_bytes = inputs.map_or(0, |input| BE::scratch_aligned(module.glwe_bytes_of_from_infos(&input)));
-    2 * input_bytes + boot_bytes + eval_mod.max(a_bytes + linear)
+    let a_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(a));
+    let boot_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(boot));
+    (copies + 1) * input_bytes + boot_bytes + eval_mod.max(a_bytes + linear).max(rounded)
 }
 
 /// Backend-generic reference of EvalMod as a bootstrapping step, selected by
@@ -144,16 +168,22 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
         P: CKKSEvalModInfos<BE, F>,
     {
         let module: &Module<BE> = self.borrow();
-        if let (Some(stage), Some(eval_mod)) = (plan.replicated_stage(), plan.eval_mod_replicated()) {
-            return super::replicated::eval_mod_tmp_bytes(module, res, a, stage, eval_mod, keys_layout);
+        if let Some(eval_mod_ci) = plan.eval_mod_ci() {
+            let (boot_layout, _) = bootstrap_layouts(res, a);
+            return eval_mod_on_ci_tmp_bytes(module, &boot_layout, eval_mod_ci, plan.eval_round_plus(), keys_layout);
         }
-        match plan.eval_mod_ci() {
-            Some(eval_mod_ci) => {
-                let (boot_layout, _) = bootstrap_layouts(res, a);
-                eval_mod_on_ci_tmp_bytes(module, &boot_layout, eval_mod_ci, plan.eval_round_plus(), keys_layout)
-            }
-            None => eval_mod_standard_tmp_bytes(module, res, a, plan, keys_layout),
-        }
+        let Some(message) = replicated_message(plan) else {
+            let (boot_layout, a_layout) = bootstrap_layouts(res, a);
+            return eval_mod_standard_tmp_bytes(module, res, &boot_layout, &a_layout, plan, 0, false, keys_layout);
+        };
+        // The route into a ciphertext like `a`, in the layout CoeffsToSlots writes, beside it and its rounding into `res`.
+        let mut out = layout_at(a, a.k().as_usize());
+        out.meta.slot_layout = plan.eval_mod_plan().slot_layout();
+        let real = plan.eval_mod_plan().packed || (message.slots.is_real() && plan.one_eval_mod_on_real_slots());
+        let w = plan.working_bits();
+        BE::scratch_aligned(module.glwe_bytes_of_from_infos(&out))
+            + eval_mod_standard_tmp_bytes(module, &out, &out, &out, plan, w, real, keys_layout)
+                .max(module.ckks_round_tmp_bytes(res, &out))
     }
 
     /// Reference body of [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod).
@@ -195,28 +225,48 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
     {
         let module: &Module<BE> = self.borrow();
         const OP: &str = EVAL_MOD_OP;
-        if let (Some(stage), Some(eval_mod)) = (plan.replicated_stage(), plan.eval_mod_replicated()) {
-            super::replicated::check_eval_mod(OP, module, res, a, stage, plan.eval_mod_plan().consumed_bits())?;
-            let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
-            if let Some(keys_layout) = keys.keys_layout() {
-                let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes_reference(res, a, plan, keys_layout);
-                ckks_ensure!(
-                    scratch.available() >= bytes,
-                    "{OP} needs a scratch arena of {bytes} bytes, got {}",
-                    scratch.available()
-                );
-            }
-            return super::replicated::eval_mod(module, res, a, stage, eval_mod, keys, tsk, scratch);
-        }
-        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
-        ensure_rank_one(OP, a, res)?;
-        ensure_one_degree(OP, module.n(), a, res)?;
-        ensure_one_base2k(OP, a, res)?;
-        remove_guard_bits(OP, a.log_delta(), plan.c2s_guard_bits())?;
-        let one_eval_mod = plan.message_slots().unwrap_or(a.slots()).is_real() && plan.one_eval_mod_on_real_slots();
+        let eval_mod_plan = plan.eval_mod_plan();
         ckks_ensure_operand!(
             OP,
-            one_eval_mod || plan.eval_mod_plan().eval_mod_type != EvalModType::ExpCmplx,
+            a.slot_layout() == eval_mod_plan.slot_layout(),
+            "takes the layout of its EvalMod: the full layout, or the output of the replicated CoeffsToSlots"
+        );
+        ckks_ensure_operand!(
+            OP,
+            plan.message().is_some() || a.slot_layout() == SlotLayout::Full,
+            "a plain EvalMod takes the full layout: a replicated input takes the run of a bootstrap"
+        );
+        ensure_rank_one(OP, a, res)?;
+        ensure_one_degree(OP, module.n(), a, res)?;
+        // The full layout relabels the output off the guard bits; a run on a replicated layout takes an input
+        // `working_bits` above the raised scale and rounds the output with shaping to the scale of the message.
+        let landing = match replicated_message(plan) {
+            None => {
+                ensure_one_base2k(OP, a, res)?;
+                remove_guard_bits(OP, a.log_delta(), plan.c2s_guard_bits())?;
+                None
+            }
+            Some(message) => {
+                let w = plan.working_bits();
+                let raised = a.log_delta().saturating_sub(w);
+                let landed = ckks_log_delta(&message) + (plan.c2s_guard_bits() + plan.s2c_guard_bits()).saturating_sub(w);
+                ckks_ensure_operand!(OP, raised >= landed, "takes an input {w} bits under the raised scale");
+                let budget = checked_log_budget_sub(OP, a.log_budget(), eval_mod_plan.consumed_bits())?;
+                let k_out = budget + raised - landed + ckks_log_delta(&message);
+                let max_k = res.max_k().as_usize();
+                ckks_ensure_operand!(
+                    OP,
+                    max_k >= k_out,
+                    "lands the result in an output of {k_out} bits, got an allocation of {max_k}"
+                );
+                Some((message, landed, k_out))
+            }
+        };
+        let one_eval_mod =
+            plan.message().map_or(a.slots(), |message| message.slots).is_real() && plan.one_eval_mod_on_real_slots();
+        ckks_ensure_operand!(
+            OP,
+            one_eval_mod || eval_mod_plan.eval_mod_type != EvalModType::ExpCmplx,
             "the complex exponential takes a real message"
         );
         let (standard, on_ci) = match plan.eval_mod_ci() {
@@ -226,16 +276,15 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
                 let (tensor_key, trace_key, embed_key) = ci_keys;
                 // The conversion to the conjugate-invariant ring consumes its scale before EvalMod, at the scale of `a`.
                 let traced = a.k().as_usize().saturating_sub(eval_mod_ci.pre_consumed_bits());
-                check_conversion_key_widths(OP, trace_key, embed_key, plan.eval_mod_plan().conversion_widths(traced))?;
-                let widest = plan.eval_mod_plan().relinearization_k(traced.saturating_sub(a.log_delta()));
+                check_conversion_key_widths(OP, trace_key, embed_key, eval_mod_plan.conversion_widths(traced))?;
+                let widest = eval_mod_plan.relinearization_k(traced.saturating_sub(a.log_delta()));
                 tensor_key_at::<BE, _, ConjugateInvariant>(OP, tensor_key, widest.into())?;
                 (None, Some((eval_mod_ci, ci_keys)))
             }
             None => {
                 let eval_mod = eval_mod_standard(OP, plan)?;
                 let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
-                let widest = plan.eval_mod_plan().relinearization_k(a.log_budget());
-                tensor_key_at::<BE, _, Standard>(OP, tensor_key, widest.into())?;
+                tensor_key_at::<BE, _, Standard>(OP, tensor_key, eval_mod_key_k(a, eval_mod, tensor_key))?;
                 // EvalMod checks this too, past the conjugation.
                 checked_log_budget_sub(OP, a.log_budget(), eval_mod.consumed_bits())?;
                 (Some((eval_mod, tensor_key)), None)
@@ -243,18 +292,31 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
         };
         ensure_eval_round_interval(plan)?;
         if let Some(keys_layout) = keys.keys_layout() {
-            let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes_reference(res, a, plan, keys_layout);
-            ckks_ensure!(
-                scratch.available() >= bytes,
-                "{OP} needs a scratch arena of {bytes} bytes, got {}",
-                scratch.available()
-            );
+            ensure_scratch(
+                OP,
+                scratch,
+                module.ckks_bootstrap_eval_mod_tmp_bytes_reference(res, a, plan, keys_layout),
+            )?;
         }
         if let Some((eval_mod, tensor_key)) = standard {
-            if one_eval_mod {
-                eval_mod_real(module, res, a, eval_mod, tensor_key, keys, scratch)?;
-            } else {
-                eval_mod_complex(module, res, a, plan, eval_mod, tensor_key, keys, scratch)?;
+            let real = one_eval_mod || eval_mod.plan.packed;
+            match landing {
+                None if real => eval_mod_real(module, res, a, eval_mod, 0, tensor_key, keys, scratch)?,
+                None => eval_mod_complex(module, res, a, plan, eval_mod, 0, tensor_key, keys, scratch)?,
+                Some((message, landed, k_out)) => {
+                    let (mut out, mut scratch) = scratch.borrow().take_ckks_ciphertext_like_scratch(a);
+                    let w = plan.working_bits();
+                    match real {
+                        true => eval_mod_real(module, &mut out, a, eval_mod, w, tensor_key, keys, &mut scratch)?,
+                        false => eval_mod_complex(module, &mut out, a, plan, eval_mod, w, tensor_key, keys, &mut scratch)?,
+                    }
+                    // The message lifted by the guard bits of both transforms, rounded to its scale.
+                    out.set_slots(message.slots);
+                    out.set_slot_layout(message.slot_layout);
+                    out.set_scale(Scale::Log(landed));
+                    res.set_k(k_out.into());
+                    return module.ckks_round(res, &out, &mut scratch);
+                }
             }
         } else if let Some((eval_mod_ci, ci_keys)) = on_ci {
             eval_mod_on_ci(module, res, a, plan, eval_mod_ci, ci_keys, keys, scratch)?;
@@ -268,15 +330,21 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
 
 impl<BE: Backend> CKKSBootstrapEvalModReference<BE> for Module<BE> {}
 
+/// The message of a run of a plan on a replicated layout, whose output the step rounds with shaping, `None` otherwise.
+fn replicated_message<BE: Backend, F, P: CKKSEvalModInfos<BE, F>>(plan: &P) -> Option<GLWEPlaintextMeta> {
+    plan.message()
+        .filter(|_| plan.eval_mod_plan().slot_layout() != SlotLayout::Full)
+}
+
 /// `eval_mod` on `r0` into `res_real` and on `i0` into `res_imag`, on a parallel executor at once.
 #[allow(clippy::too_many_arguments)]
-fn ckks_bootstrap_eval_mod_halves<BE, F, T, C, R1, R2>(
+fn ckks_bootstrap_eval_mod_halves<BE, F, T, C1, C2, R1, R2>(
     module: &Module<BE>,
-    r0: &mut C,
-    i0: &mut C,
+    r0: &mut C1,
+    i0: &mut C2,
     res_real: &mut R1,
     res_imag: &mut R2,
-    eval_mod: &EvalMod<F, CKKSPlaintextOwned<BE>>,
+    eval_mod: &EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>,
     tensor_key: &T,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -285,7 +353,8 @@ where
     Module<BE>: CKKSEvalModOps<BE>,
     F: Sync,
     T: GetTensorKey<BE> + Sync,
-    C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + Send,
+    C1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + Send,
+    C2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + Send,
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
 {
@@ -311,19 +380,26 @@ where
     Ok(())
 }
 
-/// One EvalMod on the real part of `a`, on the real slots of an S2C-first plan without a bypass.
+/// One EvalMod on the real part of `a`, first rounded `w` bits under its scale when `w > 0`: on the real slots of an
+/// S2C-first plan without a bypass, or on both batches of a packed EvalMod, whose second comes out times `i` and is
+/// rotated onto the first.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the route reads the working bits beside the EvalMod and the tensor key its entry resolved"
+)]
 fn eval_mod_real<BE, F, R, A, T, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
-    eval_mod: &EvalMod<F, CKKSPlaintextOwned<BE>>,
+    eval_mod: &EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>,
+    w: usize,
     tensor_key: &T,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSEvalModOps<BE>,
+    Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSEvalModOps<BE> + CKKSRoundOps<BE> + CKKSRotateOps<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     T: GetTensorKey<BE>,
@@ -333,20 +409,36 @@ where
     let (mut input, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, a.meta());
     input.set_k(a.k());
     ckks_bootstrap_real_part(module, &mut input, a, keys, &mut scratch)?;
-    module.ckks_eval_mod(res, &mut input, eval_mod, tensor_key, &mut scratch)
+    if w == 0 {
+        module.ckks_eval_mod(res, &mut input, eval_mod, tensor_key, &mut scratch)?;
+    } else {
+        let (mut rounded, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, a.meta());
+        rounded.set_k((input.log_budget() + a.log_delta() - w).into());
+        module.ckks_round(&mut rounded, &input, &mut scratch)?;
+        module.ckks_eval_mod(res, &mut rounded, eval_mod, tensor_key, &mut scratch)?;
+    }
+    if let Some(batch) = eval_mod.plan.batch_rotation() {
+        input.set_k(res.k());
+        module.ckks_rotate_into(batch, &mut input, &*res, keys, &mut scratch)?;
+        module.ckks_add_assign(res, &input, &mut scratch)?;
+        res.set_log_sparsity(res.log_sparsity() + 1);
+    }
+    Ok(())
 }
 
-/// The split of `a`, one EvalMod per half and their recombination, from which EvalRound+ takes `K·(re + i·im) = 2K·a`.
+/// The split of `a`, each half first rounded `w` bits under its scale when `w > 0`, one EvalMod per half and their
+/// recombination, from which EvalRound+ takes `K·(re + i·im) = 2K·a`.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the route reads the plan beside the EvalMod and the tensor key its entry resolved"
+    reason = "the route reads the plan and the working bits beside the EvalMod and the tensor key its entry resolved"
 )]
 fn eval_mod_complex<BE, F, R, A, P, T, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
     plan: &P,
-    eval_mod: &EvalMod<F, CKKSPlaintextOwned<BE>>,
+    eval_mod: &EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>,
+    w: usize,
     tensor_key: &T,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
@@ -354,7 +446,13 @@ fn eval_mod_complex<BE, F, R, A, P, T, K>(
 where
     BE: Backend,
     F: Sync,
-    Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE> + CKKSPow2Ops<BE> + CKKSEvalModOps<BE>,
+    Module<BE>: CKKSConjugateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSRoundOps<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: CKKSEvalModInfos<BE, F>,
@@ -368,7 +466,17 @@ where
     r0.set_k(a.k());
     i0.set_k(a.k());
     ckks_split_halves(module, &mut r0, &mut i0, a, keys, &mut scratch)?;
-    ckks_bootstrap_eval_mod_halves(module, &mut r0, &mut i0, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
+    if w == 0 {
+        ckks_bootstrap_eval_mod_halves(module, &mut r0, &mut i0, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
+    } else {
+        // The real half rounded beside the halves, the imaginary half into `r0`.
+        let (mut re, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, a.meta());
+        re.set_k((r0.log_budget() + a.log_delta() - w).into());
+        module.ckks_round(&mut re, &r0, &mut scratch)?;
+        r0.set_k((i0.log_budget() + a.log_delta() - w).into());
+        module.ckks_round(&mut r0, &i0, &mut scratch)?;
+        ckks_bootstrap_eval_mod_halves(module, &mut re, &mut r0, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
+    }
     recombine_halves(module, res, &mut imag, &mut scratch)?;
     if plan.eval_round_plus() {
         let bits = 1 + plan.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
