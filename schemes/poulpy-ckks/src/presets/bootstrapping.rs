@@ -1352,7 +1352,7 @@ mod tests {
         const S2C_11: &[(usize, usize)] = &[(3, 4), (3, 32), (4, 512)];
         let err = wide
             .with_log_n(11, C2S_11, S2C_11)
-            .expect_err("a dense secret of degree 2^11 is certified");
+            .expect_err("a dense secret of degree 2^11 validates");
         let (op, source) = security_refusal(&err);
         assert_eq!(op, "with_log_n");
         assert!(
@@ -1616,7 +1616,7 @@ mod tests {
         const C2S: &[(usize, usize)] = &[(3, 1), (3, 512), (3, 64), (2, 8), (2, 2)];
         const S2C: &[(usize, usize)] = &[(3, 4), (4, 32), (6, 1024)];
         // The weight-32 secret of degree 2^14 is bounded at 77 bits, below a dense-to-sparse key of one digit.
-        // The shaping refuses it before the certification sees a key.
+        // The shaping refuses it before the validation sees a key.
         let Err(err) = n16_d35_k733_p20_s2c().unwrap().with_log_gap(2, C2S, S2C) else {
             panic!("the dense-to-sparse key fits a 77-bit bound");
         };
@@ -1627,12 +1627,12 @@ mod tests {
     }
 
     #[test]
-    fn a_gap_to_a_degree_without_bounds_is_refused_by_the_certification() {
+    fn a_gap_to_a_degree_without_bounds_is_refused_by_the_validation() {
         const C2S: &[(usize, usize)] = &[(3, 1), (3, 64), (2, 8), (2, 2)];
         const S2C: &[(usize, usize)] = &[(3, 4), (3, 32), (4, 512)];
         // The table has no row at degree 2^11, where a gap of 5 puts the sparse secret.
         let Err(err) = n16_d35_k733_p20_s2c().unwrap().with_log_gap(5, C2S, S2C) else {
-            panic!("a sparse secret of degree 2^11 is certified");
+            panic!("a sparse secret of degree 2^11 validates");
         };
         let (op, source) = security_refusal(&err);
         assert_eq!(op, "with_log_gap");
@@ -1721,6 +1721,15 @@ mod tests {
                     .any(|m| m.what == "dense-to-sparse key" && m.secret == preset.sparse_secret())
             );
         }
+        // With a gap, the sparse secret lives on the subring.
+        const C2S: &[(usize, usize)] = &[(3, 1), (3, 1024), (3, 128), (3, 16), (2, 2)];
+        const S2C: &[(usize, usize)] = &[(4, 4), (4, 64), (6, 2048)];
+        let gapped = n16_d35_k733_p20_s2c().unwrap().with_log_gap(1, C2S, S2C).unwrap();
+        assert_eq!(
+            gapped.plan().secrets(gapped.dense_secret()).sparse,
+            SecretSpec::new(1 << 15, Distribution::TernaryFixed(32))
+        );
+        assert_eq!(gapped.validate_security_128(&gapped.dense_secret(), &RlweParams), Ok(()));
     }
 
     #[test]

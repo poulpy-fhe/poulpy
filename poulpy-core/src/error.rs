@@ -22,17 +22,15 @@ pub enum CoreError {
     InvalidReplicatedLayout { detail: &'static str },
     /// A [`SecurityTable`](crate::security::SecurityTable) has no bound for a
     /// secret at `target_bits` bits of security: the table lacks the target, the
-    /// secret's distribution, its degree, or a result for its cell. The message names
-    /// neither the secret's distribution nor its degree, which stay in `secret`,
-    /// since key generation reads them from a secret operand.
+    /// secret's distribution, its degree, or a result for its cell, or the secret
+    /// lives in a larger ring than its object.
     SecurityUnsupported {
         target_bits: usize,
         secret: SecretSpec,
         reason: &'static str,
     },
     /// The modulus of an object, named by `what`, is above the bound of its secret
-    /// at `target_bits` bits of security. The message names neither the secret nor its
-    /// bound, which depends on it: both stay in the fields.
+    /// at `target_bits` bits of security.
     SecurityBoundExceeded {
         target_bits: usize,
         secret: SecretSpec,
@@ -64,17 +62,23 @@ impl fmt::Display for CoreError {
             ),
             CoreError::GGLWEKeyUse { op, detail } => write!(f, "{op}: {detail}"),
             CoreError::InvalidReplicatedLayout { detail } => write!(f, "invalid replicated layout: {detail}"),
-            CoreError::SecurityUnsupported { target_bits, reason, .. } => {
-                write!(f, "{target_bits}-bit security cannot be certified for this secret: {reason}")
-            }
-            CoreError::SecurityBoundExceeded {
+            CoreError::SecurityUnsupported {
                 target_bits,
-                what,
-                log_q,
-                ..
+                secret: SecretSpec { n, dist },
+                reason,
             } => write!(
                 f,
-                "{what}: a modulus of {log_q} bits exceeds the {target_bits}-bit bound for its secret"
+                "no {target_bits}-bit bound for a secret of {dist:?} at degree {n}: {reason}"
+            ),
+            CoreError::SecurityBoundExceeded {
+                target_bits,
+                secret: SecretSpec { n, dist },
+                what,
+                log_q,
+                max_log_q,
+            } => write!(
+                f,
+                "{what}: a modulus of {log_q} bits exceeds the {target_bits}-bit bound of {max_log_q} bits for a secret of {dist:?} at degree {n}"
             ),
         }
     }

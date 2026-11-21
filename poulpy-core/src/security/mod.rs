@@ -1,7 +1,7 @@
 //! Opt-in security validation against tables of secure moduli, by default those of
 //! [rlwe-params](https://github.com/jdumezy/rlwe-params).
 //!
-//! Nothing in the library calls this module on its own: the distribution of a
+//! Nothing in poulpy-core calls this module on its own: the distribution of a
 //! secret, and the moduli of the objects under it, are the caller's to choose. A
 //! caller that wants a level validates its layouts before generating keys from
 //! them.
@@ -53,7 +53,7 @@
 //! A secret of a larger ring than its object is [unsupported](CoreError::SecurityUnsupported).
 //!
 //! The error is not an input: every encryption draws it from [`Noise::ENCRYPTION`](crate::Noise::ENCRYPTION), which a test pins to the error of the table.
-//! [`SecretSpec::of`] takes the distribution recorded on a secret, which the samplers set, as given.
+//! [`SecretSpec::of`] takes the distribution recorded on a secret as given.
 //! The seeds of the random sources are the caller's.
 //!
 //! # The rlwe-params table
