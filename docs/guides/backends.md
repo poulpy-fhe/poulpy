@@ -201,6 +201,5 @@ A backend implementing `CKKSEncodingImpl` keeps this by following one arithmetic
 
 Two tests check the contract.
 `test_reim_fft_bit_exact` in the HAL test suite compares a transform with `EncodingFFTTable` byte for byte, and the oracle's independent `EncodingFft` checks the portable table the same way.
-The determinism tests hash the encodings and setup constants and compare them with `schemes/poulpy-ckks/src/test_suite/determinism.txt`: `ckks_determinism_test_suite!` on the standard ring, which every CKKS backend type registers, and `conjugate_invariant_determinism_test_suite!` on the conjugate-invariant ring, which every CPU backend type registers, so every backend is held to the same bytes.
-The CPU backend crates register both in their `tests/determinism.rs` target.
+The determinism tests hash the encodings and setup constants and compare them with `schemes/poulpy-ckks/src/test_suite/determinism.txt`: `ckks_determinism_test_suite!`, which every CKKS backend type registers on the standard ring, and the encoding fixtures of `conjugate_invariant_ckks_test_suite!` on the conjugate-invariant ring, so every backend is held to the same bytes.
 After an intended change to the encoding or the setup math, `POULPY_UPDATE_FIXTURES=1` records new hashes, and every backend must then pass without the variable.

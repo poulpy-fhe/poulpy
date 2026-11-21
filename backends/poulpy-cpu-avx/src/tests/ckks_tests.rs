@@ -1,6 +1,19 @@
-/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
+use poulpy_ckks::ckks_determinism_test_suite;
+
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx, backend = crate::FFT64Avx, f32);
+
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx, backend = crate::NTT4x30Avx, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avxrayon, backend = crate::FFT64AvxRayon, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avxrayon, backend = crate::NTT4x30AvxRayon, f32);
+
+/// Full logN14 to logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
 /// small S2C-first and C2S-first presets run by default.
 mod bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::replicated_bootstrapping_presets_meet_precision_with_client;
     use poulpy_ckks::test_suite::presets::{
         bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
         small_c2s_preset_meets_precision, small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
@@ -110,23 +123,19 @@ mod bootstrapping_presets {
     fn fft64_presets_meet_precision() {
         bootstrapping_presets_meet_precision::<crate::FFT64Avx>();
     }
-}
 
-mod replicated_bootstrapping_presets {
-    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
-    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
-
+    // FFT64 types do not run the replicated presets: no FFT64 radix is measured against them.
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
-    fn ntt4x30_presets_meet_precision() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
+    fn ntt4x30_replicated_presets_meet_precision() {
+        replicated_bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30Avx, crate::NTT4x30Avx>(52);
     }
 
     #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
-    fn ntt4x30_rayon_presets_meet_precision() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30AvxRayon>(52);
+    fn ntt4x30_rayon_replicated_presets_meet_precision() {
+        replicated_bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30AvxRayon, crate::NTT4x30AvxRayon>(52);
     }
 }
 

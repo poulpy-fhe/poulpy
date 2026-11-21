@@ -18,8 +18,8 @@ use crate::{
         BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSModRaiseInfos, CKKSRightOperandPrepared,
         bootstrapping::bootstrap_layouts,
         validation::{
-            check_encapsulated_raise, check_offset_raise, ensure_encapsulation, ensure_mod_up_widens, ensure_one_base2k,
-            ensure_one_degree, ensure_rank_one, offset_key_window,
+            check_encapsulated_raise, check_offset_raise, check_raise_widths, ensure_encapsulation, ensure_mod_up_widens,
+            ensure_one_base2k, ensure_one_degree, ensure_rank_one, offset_key_window,
         },
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
@@ -131,7 +131,7 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         );
         // C2S-first derives both lifts from EvalMod, and the first one writes `a`: the checks run on what it will leave.
         let (lift_bits, scale_up) = raise.scale_ups(OP, a.k().as_usize(), a.log_delta())?;
-        crate::layouts::validation::check_raise_widths(OP, res, a, scale_up, plan.first_factor(), keys)?;
+        check_raise_widths(OP, res, a, scale_up, plan.first_factor(), keys)?;
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = module.ckks_mod_raise_tmp_bytes_reference(res, a, plan, keys_layout);
             ckks_ensure!(

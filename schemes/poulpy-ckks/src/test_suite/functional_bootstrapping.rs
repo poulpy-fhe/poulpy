@@ -27,8 +27,8 @@ use crate::{
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
         CKKSCiphertextOwned, CKKSEvalModInfos, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, EvalRoundPlus, SparseSecretEncapsulation,
-        eval_mod::{EvalModPlan, EvalModType},
+        EncodedLut, EvalRoundPlus, MaskedCoeffs, SparseSecretEncapsulation,
+        eval_mod::{EvalMod, EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -1092,7 +1092,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         &self.plan
     }
 
-    fn eval_mod_standard(&self) -> Option<&crate::layouts::eval_mod::EvalMod<F, CKKSPlaintextOwned<BE>>> {
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
         self.ctx.eval_mod().filter(|_| self.runs_eval_mod)
     }
 
@@ -1112,7 +1112,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         false
     }
 
-    fn message_slots(&self) -> Option<SlotsKind> {
+    fn message(&self) -> Option<GLWEPlaintextMeta> {
         None
     }
 

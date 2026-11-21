@@ -19,11 +19,12 @@ use super::{
     eval_mod::{encode_bsgs_with, encode_complex_bsgs_with, encode_scalar_constants},
 };
 
-/// Constants of a polynomial for a [`SlotLayout::Replicated`] ciphertext:
-/// the scalar constants, which carry the coefficient metadata, and each
-/// constant `c_j` as the masked plaintext `c_j·π_S`, of degree `2R` in
-/// `Y = X^(N/(2R))` and quantized with shaped rounding at the same scale, so
-/// that its quantization error is suppressed on the data slots.
+/// Constants of a polynomial: the scalar constants, which carry the coefficient
+/// metadata, and for a [`SlotLayout::Replicated`] ciphertext each constant `c_j`
+/// as the masked plaintext `c_j·π_S`, of degree `2R` in `Y = X^(N/(2R))` and
+/// quantized with shaped rounding at the same scale, so that its quantization
+/// error is suppressed on the data slots. A full layout reads the scalars alone
+/// and has no masked plaintexts.
 pub struct MaskedCoeffs<P> {
     scalars: P,
     masked: Vec<P>,
@@ -40,7 +41,7 @@ impl<P> MaskedCoeffs<P> {
         &self.scalars
     }
 
-    /// The masked plaintext of each constant, in constant order.
+    /// The masked plaintext of each constant, in constant order, empty for a full layout.
     pub fn masked(&self) -> &[P] {
         &self.masked
     }
@@ -91,7 +92,7 @@ where
     }
 
     fn carries_masked_constants(&self) -> bool {
-        true
+        !self.masked.is_empty()
     }
 }
 

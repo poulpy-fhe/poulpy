@@ -18,10 +18,20 @@
 //! - `p`: guaranteed output precision in bits (see [`BootstrappingPreset::log2_precision`]);
 //! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), followed by a suffix per further
 //!   technique: `ffr` for the first CoeffsToSlots factor on the raise, `ci` for EvalMod
-//!   on the conjugate-invariant ring, as [`n16_d35_k685_p19_s2c_ffr_ci`] combines them.
+//!   on the conjugate-invariant ring, as [`n16_d35_k685_p19_s2c_ffr_ci`] combines them, and
+//!   `factored` for the factored maps of a replicated layout.
 //!
 //! `n16_d35_k636_p20_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 636-bit ciphertexts at scale `2^35` with at least 20 bits of precision.
+//!
+//! ## Replicated layouts
+//!
+//! [`n14_d20_k109_p21_s2c`], [`n15_d20_k389_p20_s2c`] and [`n16_d20_k763_p19_s2c_factored`] bootstrap the caller's
+//! [replicated layout](crate::SlotLayout::Replicated) with the circuit of
+//! [ePrint 2026/2513](https://eprint.iacr.org/2026/2513) ([`BootstrappingPlan::with_slot_layout`]), whose input and output
+//! widths do not depend on the layout, and whose raised modulus and keys follow the unit's EvalMod scale. They refuse a
+//! unit whose suppression is less than 8 bits above their precision, and re-derive their radix, key digits and output
+//! width only.
 //!
 //! ## Security
 //!
@@ -61,13 +71,15 @@ use poulpy_hal::layouts::{ConjugateInvariant, MaxBase2k, Module, Standard};
 
 use crate::numerics::CKKSFloat;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, SlotsKind,
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIConversion,
         DFTOutputFormat, DFTPlan, DFTType, EvalModPlan, EvalModRing, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
+        replicated::split_depth,
     },
     polynomial::SplitStrategy,
     presets::key_policy::BootstrappingKeyPolicy,
+    shaping::ShapingProfile,
 };
 
 /// Three factors of five layers for the logN16 presets, with the giant steps that
@@ -76,7 +88,7 @@ const C2S_SCHEDULE: [(usize, usize); 3] = [(5, 4096), (5, 256), (5, 8)];
 /// Three factors of four, five and six layers for the logN16 presets.
 const S2C_SCHEDULE: [(usize, usize); 3] = [(4, 4), (5, 128), (6, 4096)];
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct EvalModSpec {
     eval_mod_type: EvalModType,
     degree: usize,
@@ -88,48 +100,50 @@ struct EvalModSpec {
     coeffs_log_delta: usize,
     coeffs_log_budget: usize,
     log_delta: usize,
+    /// [`EvalModPlan::packed`].
+    packed: bool,
 }
 
 /// A secret of a preset: its Hamming weight and the largest modulus, in bits, an
 /// object under it may use (see [Security](self#security)).
-#[derive(Clone, Copy, Debug)]
-pub(super) struct SecretBound {
-    pub(super) hamming_weight: usize,
-    pub(super) max_log_modulus: usize,
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SecretBound {
+    hamming_weight: usize,
+    max_log_modulus: usize,
 }
 
 /// The dense secret of the logN16 presets.
-pub(super) const N16_DENSE_SECRET: SecretBound = SecretBound {
+const N16_DENSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 1024,
     max_log_modulus: 1707,
 };
 /// The ephemeral sparse secret of the logN16 presets.
-pub(super) const N16_SPARSE_SECRET: SecretBound = SecretBound {
+const N16_SPARSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 32,
     max_log_modulus: 345,
 };
 /// The dense secret of the logN15 preset.
-pub(super) const N15_DENSE_SECRET: SecretBound = SecretBound {
+const N15_DENSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 1024,
     max_log_modulus: 851,
 };
 /// The ephemeral sparse secret of the logN15 preset.
-pub(super) const N15_SPARSE_SECRET: SecretBound = SecretBound {
+const N15_SPARSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 32,
     max_log_modulus: 162,
 };
 /// The dense secret of the logN14 replicated preset.
-pub(super) const N14_DENSE_SECRET: SecretBound = SecretBound {
+const N14_DENSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 1024,
     max_log_modulus: 424,
 };
 /// The ephemeral sparse secret of the logN14 replicated preset.
-pub(super) const N14_SPARSE_SECRET: SecretBound = SecretBound {
+const N14_SPARSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 32,
     max_log_modulus: 77,
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct PresetSpec {
     name: &'static str,
     log_n: usize,
@@ -168,6 +182,19 @@ struct PresetSpec {
     /// `log2` of the gap of the plaintexts, see [`BootstrappingPlan::with_log_gap`].
     log_gap: usize,
     eval_mod: EvalModSpec,
+    /// The layout of the messages, see [`BootstrappingPlan::with_slot_layout`].
+    slot_layout: SlotLayout,
+    /// On a replicated layout, the factors of each transform, of near-equal depths over its values, in place of the
+    /// schedules.
+    transform_factors: usize,
+    /// [`DFTPlan::with_placement_factors`] of both transforms.
+    placement_factors: usize,
+    /// [`DFTPlan::with_last_factor_log_delta`] of CoeffsToSlots.
+    c2s_last_log_delta: Option<usize>,
+    /// [`BootstrappingPlan::with_working_bits`].
+    working_bits: usize,
+    /// [`BootstrappingPlan::with_s2c_guard_bits`].
+    s2c_guard_bits: usize,
 }
 
 impl PresetSpec {
@@ -211,14 +238,14 @@ pub struct PresetScales {
 /// The output cannot be drained further: for an S2C-first preset the input
 /// width includes the SlotsToCoeffs evaluated before ModUp, so a larger tail of
 /// the output is reserved than for a C2S-first preset.
-/// The bootstrap allocation is wider than the logical output because it
+/// The bootstrap allocation of the full layout is wider than the logical output because it
 /// also carries the post-ModUp circuit.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPreset {
     spec: PresetSpec,
     n: usize,
     plan: BootstrappingPlan,
-    keys_layout: BootstrappingKeysLayout,
+    pub(crate) keys_layout: BootstrappingKeysLayout,
     input_k: usize,
     output_k: usize,
     bootstrap_k: usize,
@@ -256,16 +283,16 @@ impl BootstrappingPreset {
         self.spec.log_msg_ratio
     }
 
-    /// Modulus immediately around ModUp, after any pre-ModUp stage.
+    /// Modulus immediately around ModUp, after any pre-ModUp stage, its guard and working bits included.
     pub fn log_modulus(&self) -> usize {
-        self.spec.log_delta + self.spec.log_msg_ratio
+        self.spec.log_delta + self.spec.s2c_guard_bits + self.spec.working_bits + self.spec.log_msg_ratio
     }
 
-    /// Advertised output precision in bits: the minimum slot-wise precision
-    /// measured on the reference vector at the nominal shape with `f64` DFT
-    /// matrices, rounded down. Pinned by
-    /// `test_suite::presets::bootstrapping_presets_meet_precision`. `None` once re-derived with other widths or
-    /// precision, which the caller measures.
+    /// Advertised output precision in bits: at most the minimum slot-wise precision measured on the reference vector
+    /// at the nominal shape with `f64` DFT matrices, rounded down, a preset advertising less stating its measurement and
+    /// the margin it keeps, pinned by `bootstrapping_presets_meet_precision` and
+    /// `replicated_bootstrapping_presets_meet_precision_with_client` of `test_suite::presets`. `None` once re-derived
+    /// with other widths or precision, which the caller measures.
     pub fn log2_precision(&self) -> Option<usize> {
         (!self.spec.derived).then_some(self.spec.log2_precision)
     }
@@ -333,6 +360,16 @@ impl BootstrappingPreset {
         build(PresetSpec { base2k, ..self.spec })
     }
 
+    /// `spec` built from this preset, which a replicated preset refuses: it re-derives its radix, key digits, output
+    /// width and maps only.
+    fn rederive(&self, spec: PresetSpec) -> Result<Self> {
+        ensure!(
+            self.spec.slot_layout == SlotLayout::Full,
+            "a replicated preset re-derives its radix, its key digits, its output width and its maps only"
+        );
+        build(spec)
+    }
+
     /// Re-derives the preset with the first CoeffsToSlots factor applied by the
     /// modulus raise ([`DFTPlan::with_first_factor_on_raise`]) and the factor
     /// schedule `c2s_schedule` (`(layers, giant step)` pairs, in evaluation
@@ -342,7 +379,7 @@ impl BootstrappingPreset {
     /// `2^layers` of them for the first factor of a full transform, each with its
     /// rows under the few limbs of a diagonal's term.
     pub fn with_first_factor_on_raise(&self, c2s_schedule: &'static [(usize, usize)]) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             c2s_schedule,
             c2s_first_factor_on_raise: true,
             ..self.spec
@@ -354,7 +391,7 @@ impl BootstrappingPreset {
     /// same schedule at `2^bypass_log_delta`, which shares its rotation keys,
     /// gives the output its precision.
     pub fn with_eval_round_plus(&self, c2s_log_delta: usize, bypass_log_delta: usize) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             c2s_log_delta,
             c2s_bypass_log_delta: Some(bypass_log_delta),
             ..self.spec
@@ -366,7 +403,7 @@ impl BootstrappingPreset {
     /// same key switches, half the CoeffsToSlots and SlotsToCoeffs keys, each
     /// switching several ciphertexts at once, and a product through more switches.
     pub fn with_power_of_two_keys(&self) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             power_of_two_keys: true,
             ..self.spec
         })
@@ -375,7 +412,7 @@ impl BootstrappingPreset {
     /// Re-derives the preset with EvalMod on `eval_mod_ring`: the conversions to
     /// the conjugate-invariant ring widen the raised width by their scales.
     pub fn with_eval_mod_ring(&self, eval_mod_ring: EvalModRing) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             eval_mod_ring,
             ..self.spec
         })
@@ -397,7 +434,7 @@ impl BootstrappingPreset {
     /// Re-derives the preset with the scales `scales`, without a name or an advertised precision: a caller that lowers
     /// a scale measures what it gets.
     pub fn with_scales(&self, scales: PresetScales) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             derived: true,
             log_delta: scales.log_delta,
             log_msg_ratio: scales.log_msg_ratio,
@@ -420,7 +457,7 @@ impl BootstrappingPreset {
     /// wrong. That integer has a standard deviation of about `sqrt((h + 1) / 12)` for a sparse secret of Hamming weight
     /// `h`, and the bound is the caller's to size to the coefficients it raises.
     pub fn with_eval_mod_polynomial(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             derived: true,
             eval_mod: EvalModSpec {
                 eval_mod_type: EvalModType::CosHKEven,
@@ -442,7 +479,7 @@ impl BootstrappingPreset {
     ///
     /// Fails on a C2S-first preset or one with EvalRound+.
     pub fn with_eval_mod_exponential(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             derived: true,
             eval_mod: EvalModSpec {
                 eval_mod_type: EvalModType::ExpCmplx,
@@ -468,7 +505,7 @@ impl BootstrappingPreset {
     /// Re-derives the preset with the SlotsToCoeffs schedule `s2c_schedule` (`(layers, giant step)` pairs, in evaluation
     /// order): each factor spends one SlotsToCoeffs scale from the input width.
     pub fn with_slots_to_coeffs(&self, s2c_schedule: &'static [(usize, usize)]) -> Result<Self> {
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             s2c_schedule,
             derived: true,
             ..self.spec
@@ -485,7 +522,7 @@ impl BootstrappingPreset {
             self.spec.pipeline == BootstrappingPipeline::S2CFirst,
             "only an S2C-first bootstrap runs a circuit between SlotsToCoeffs and the raise"
         );
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             input_headroom: bits,
             derived: true,
             ..self.spec
@@ -506,7 +543,7 @@ impl BootstrappingPreset {
         s2c_schedule: &'static [(usize, usize)],
     ) -> Result<Self> {
         let (_, sparse_secret) = self.secret_bounds(self.spec.log_n.saturating_sub(log_gap))?;
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             log_gap,
             derived: true,
             sparse_secret,
@@ -529,7 +566,7 @@ impl BootstrappingPreset {
     ) -> Result<Self> {
         let (dense_secret, _) = self.secret_bounds(log_n)?;
         let (_, sparse_secret) = self.secret_bounds(log_n.saturating_sub(self.spec.log_gap))?;
-        build(PresetSpec {
+        self.rederive(PresetSpec {
             log_n,
             derived: true,
             dense_secret,
@@ -553,12 +590,36 @@ impl BootstrappingPreset {
         })
     }
 
+    /// Re-derives a replicated preset with dense maps at the same levels, each transform one factor merged with the
+    /// placement, CoeffsToSlots at the scale of its last factor: the output width moves with the bits SlotsToCoeffs
+    /// consumes, without a name or an advertised precision. Fails on a preset of the full layout.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub(crate) fn with_dense_maps(&self) -> Result<Self> {
+        ensure!(
+            self.spec.slot_layout != SlotLayout::Full,
+            "only a replicated preset selects its maps"
+        );
+        let spec = PresetSpec {
+            derived: true,
+            transform_factors: 1,
+            placement_factors: 0,
+            c2s_log_delta: self.spec.c2s_last_log_delta.unwrap_or(self.spec.c2s_log_delta),
+            c2s_last_log_delta: None,
+            ..self.spec
+        };
+        let s2c_bits = build(spec)?.plan.slots_to_coeffs().consumed_bits();
+        build(PresetSpec {
+            output_k: spec.output_k + s2c_bits - self.plan.slots_to_coeffs().consumed_bits(),
+            ..spec
+        })
+    }
+
     /// Largest limb radix at which every accumulation of the bootstrap stays
     /// within the extended precision of backend `BE`, on the conjugate-invariant ring
     /// for EvalMod there, with a failure probability of at most
     /// `2^-failure_bits` over the whole bootstrap, by the model of
     /// [`Module::max_base2k`](poulpy_hal::layouts::Module::max_base2k); zero when
-    /// no radix fits.
+    /// no radix fits, and on a replicated preset, whose maps the model does not cover.
     ///
     /// The widest accumulations are the giant-step passes of the transforms: an
     /// output limb sums, without normalizing, the product of every diagonal of a
@@ -574,6 +635,9 @@ impl BootstrappingPreset {
     /// The failure budget is split over the outputs of every pass, and the radix
     /// ignores the security bounds, which [`Self::with_backend_base2k`] applies.
     pub fn max_backend_base2k<BE: MaxBase2k>(&self, failure_bits: usize) -> usize {
+        if self.spec.slot_layout != SlotLayout::Full {
+            return 0;
+        }
         let n = self.n;
         let ci = self.plan.eval_mod_ring() != EvalModRing::Standard;
         for base2k in (1..=62).rev() {
@@ -685,7 +749,7 @@ impl BootstrappingPreset {
         self.output_k
     }
 
-    /// Physical width at ModUp and required bootstrap allocation width.
+    /// Physical width at ModUp, and the bootstrap allocation width of the full layout.
     pub fn bootstrap_k(&self) -> usize {
         self.bootstrap_k
     }
@@ -719,6 +783,11 @@ impl BootstrappingPreset {
     }
 
     fn ciphertext_layout(&self, k: usize) -> CKKSLayout {
+        // A replicated batch repeats every `kR` slots: its message lies in the subring of that many slots.
+        let log_sparsity = match self.spec.slot_layout {
+            SlotLayout::Full => 0,
+            SlotLayout::Replicated(layout) => (self.spec.log_n - 1).saturating_sub(layout.log_k() + layout.log_r()),
+        };
         CKKSLayout {
             glwe_layout: GLWELayout {
                 n: Degree(self.n as u32),
@@ -729,8 +798,8 @@ impl BootstrappingPreset {
             meta: GLWEPlaintextMeta {
                 scale: Scale::Log(self.spec.log_delta),
                 slots: SlotsKind::Complex,
-                log_sparsity: 0,
-                slot_layout: SlotLayout::Full,
+                log_sparsity,
+                slot_layout: self.spec.slot_layout,
             },
         }
     }
@@ -773,6 +842,12 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         input_headroom: 0,
         log_gap: 0,
         eval_mod: optimized_han_ki(),
+        slot_layout: SlotLayout::Full,
+        transform_factors: 0,
+        placement_factors: 0,
+        c2s_last_log_delta: None,
+        working_bits: 0,
+        s2c_guard_bits: 0,
     })
 }
 
@@ -815,6 +890,12 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         input_headroom: 0,
         log_gap: 0,
         eval_mod: optimized_han_ki(),
+        slot_layout: SlotLayout::Full,
+        transform_factors: 0,
+        placement_factors: 0,
+        c2s_last_log_delta: None,
+        working_bits: 0,
+        s2c_guard_bits: 0,
     })
 }
 
@@ -857,6 +938,12 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
             log_delta: 53,
             ..optimized_han_ki()
         },
+        slot_layout: SlotLayout::Full,
+        transform_factors: 0,
+        placement_factors: 0,
+        c2s_last_log_delta: None,
+        working_bits: 0,
+        s2c_guard_bits: 0,
     })
 }
 
@@ -906,6 +993,12 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         input_headroom: 0,
         log_gap: 0,
         eval_mod: optimized_han_ki(),
+        slot_layout: SlotLayout::Full,
+        transform_factors: 0,
+        placement_factors: 0,
+        c2s_last_log_delta: None,
+        working_bits: 0,
+        s2c_guard_bits: 0,
     })
 }
 
@@ -967,6 +1060,163 @@ pub fn all() -> Result<Vec<BootstrappingPreset>> {
     PRESETS.iter().map(|build| build()).collect()
 }
 
+/// Replicated preset at `N = 2^14` for batches at the leveled scale `2^20`: 2 levels, outputs of 109 bits, at least 21
+/// bits of precision on the data slots. The input and raised widths are 59 and 391 bits, 407 on `U8_40`. It measures
+/// 21.39 bits at least, on 64 values of `U8_40` (22.93 on `U32_45`), and keeps 0.39 bit of margin for the batch sizes
+/// and the units of 29 bits of suppression or more that its check admits and the precision test does not run.
+pub fn n14_d20_k109_p21_s2c(layout: ReplicatedLayout) -> Result<BootstrappingPreset> {
+    let secrets = [N14_DENSE_SECRET, N14_SPARSE_SECRET];
+    build(paper_spec("n14_d20_k109_p21_s2c", 14, 109, 21, secrets, layout))
+}
+
+/// Replicated preset at `N = 2^15`: 16 levels at `2^20`, outputs of 389 bits, at least 20 bits of precision. The input
+/// and raised widths are 59 and 671 bits, 687 on `U8_40`. It measures 21.61 bits at least, on 64 values of `U8_40`
+/// (22.99 on `U32_45`), and keeps 1.61 bits of margin for the batch sizes and the units of 28 bits of suppression or
+/// more that its check admits and the precision test does not run.
+pub fn n15_d20_k389_p20_s2c(layout: ReplicatedLayout) -> Result<BootstrappingPreset> {
+    let secrets = [N15_DENSE_SECRET, N15_SPARSE_SECRET];
+    build(paper_spec("n15_d20_k389_p20_s2c", 15, 389, 20, secrets, layout))
+}
+
+/// Replicated preset at `N = 2^16`: 30 levels at `2^20`, outputs of 763 bits, at least 19 bits of precision. Each map
+/// is factored into two DFT factors and two placement factors, the `SlotsToCoeffs` diagonals at `2^30` and the inner
+/// `CoeffsToSlots` ones at `2^54`, for batches of 4 to `2^10` values with `R = 16`. The input and raised widths are
+/// 153 and 1207 bits, 1223 on `U8_40`. It measures 22.30 bits at least, on `2^10` values of `U32_45` (23.00 on 64
+/// values of `U8_40`), and keeps 3.30 bits of margin for the batch sizes and the units of 27 bits of suppression or
+/// more that its check admits and the precision test does not run.
+pub fn n16_d20_k763_p19_s2c_factored(layout: ReplicatedLayout) -> Result<BootstrappingPreset> {
+    let secrets = [N16_DENSE_SECRET, N16_SPARSE_SECRET];
+    let paper = paper_spec("n16_d20_k763_p19_s2c_factored", 16, 763, 19, secrets, layout);
+    build(PresetSpec {
+        transform_factors: 2,
+        placement_factors: 2,
+        c2s_log_delta: 54,
+        c2s_last_log_delta: Some(paper.c2s_log_delta),
+        s2c_log_delta: 30,
+        ..paper
+    })
+}
+
+/// Insecure replicated preset at `N = 2^11` for the test suite: the circuit of [`n14_d20_k109_p21_s2c`] on a ring
+/// small enough for a default test run, under the placeholder secret bounds of [`insecure_n11_d35_k180_p20_s2c`]. It
+/// measures 23.28 bits on 8 values of `U16_40` at radix 52, 0.28 bit above the 23 it advertises.
+#[cfg(feature = "test-utils")]
+pub(crate) fn insecure_n11_d20_k109_p23_s2c(layout: ReplicatedLayout) -> Result<BootstrappingPreset> {
+    let s2c = insecure_n11_d35_k180_p20_s2c()?.spec;
+    let secrets = [s2c.dense_secret, s2c.sparse_secret];
+    build(paper_spec("insecure_n11_d20_k109_p23_s2c", 11, 109, 23, secrets, layout))
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+const REPLICATED: [fn(ReplicatedLayout) -> Result<BootstrappingPreset>; 3] =
+    [n14_d20_k109_p21_s2c, n15_d20_k389_p20_s2c, n16_d20_k763_p19_s2c_factored];
+
+/// Every replicated preset, for `layout`, in a stable order.
+#[cfg(any(test, feature = "test-utils"))]
+pub(crate) fn all_replicated(layout: ReplicatedLayout) -> Result<Vec<BootstrappingPreset>> {
+    REPLICATED.iter().map(|build| build(layout)).collect()
+}
+
+/// The spec of the circuit of [ePrint 2026/2513](https://eprint.iacr.org/2026/2513) for `layout` at degree `2^log_n`:
+/// inputs at `2^20` lifted by 10 bits to `2^30` with a message ratio of `2^13`, dense maps at `2^26` and `2^34`, the
+/// raise lifted by 6 bits beside the 8 working bits, and the EvalMod of [`paper_eval_mod_spec`], packed when its two
+/// batches fit the ring.
+fn paper_spec(
+    name: &'static str,
+    log_n: usize,
+    output_k: usize,
+    log2_precision: usize,
+    [dense_secret, sparse_secret]: [SecretBound; 2],
+    layout: ReplicatedLayout,
+) -> PresetSpec {
+    PresetSpec {
+        name,
+        log_n,
+        base2k: 52,
+        rank: 1,
+        log_delta: 20,
+        output_k,
+        log2_precision,
+        derived: false,
+        dense_secret,
+        sparse_secret,
+        max_dsize: None,
+        dense_to_sparse_dsize: 1,
+        pipeline: BootstrappingPipeline::S2CFirst,
+        log_msg_ratio: 13,
+        c2s_schedule: &[],
+        c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
+        eval_mod_ring: EvalModRing::Standard,
+        c2s_guard_bits: 14,
+        c2s_log_delta: 34,
+        c2s_log_budget: 0,
+        c2s_bypass_log_delta: None,
+        s2c_schedule: &[],
+        s2c_log_delta: 26,
+        s2c_log_budget: 0,
+        input_headroom: 0,
+        log_gap: 0,
+        eval_mod: EvalModSpec {
+            packed: 4 << (layout.log_k() + layout.log_r()) <= 1usize << log_n,
+            ..paper_eval_mod_spec(&layout)
+        },
+        slot_layout: SlotLayout::Replicated(layout),
+        transform_factors: 1,
+        placement_factors: 0,
+        c2s_last_log_delta: None,
+        working_bits: 8,
+        s2c_guard_bits: 10,
+    }
+}
+
+/// The EvalMod of [`paper_spec`] for `layout`: the even cosine of degree 30 on `K = 16` with 3 double angles at `2^28`,
+/// or at `ceil(guard_bits) + 15` bits for a unit whose guards grow by more than 13 bits (`U4_15`, `U8_40`), constants at
+/// `2^26`. Entering EvalMod rounds with shaping at this scale, which leaves noise of about
+/// `2^(guard_bits + log2(sqrt(N)))` units on the guard slots; the polynomial and the double angles square the guards,
+/// which must stay well below one.
+fn paper_eval_mod_spec(layout: &ReplicatedLayout) -> EvalModSpec {
+    let guard_bits = ShapingProfile::<Standard>::new(layout).guard_bits();
+    EvalModSpec {
+        coeffs_log_delta: 26,
+        log_delta: 28.max(guard_bits.ceil() as usize + 15),
+        ..optimized_han_ki()
+    }
+}
+
+/// The plan of [`paper_eval_mod_spec`], at the message ratio `2^13` of [`paper_spec`].
+#[cfg(any(test, feature = "test-utils"))]
+pub(crate) fn paper_eval_mod(layout: &ReplicatedLayout) -> EvalModPlan {
+    paper_eval_mod_spec(layout).plan(13)
+}
+
+/// Bits by which a unit's suppression must exceed a replicated preset's precision. The bootstrapping falls short of
+/// the suppression by up to 5 bits: units of about 20 bits measure 16 to 19 bits on the logN14 preset.
+const SUPPRESSION_MARGIN_BITS: usize = 8;
+
+impl EvalModSpec {
+    /// The EvalMod plan of this spec at the message ratio `2^log_msg_ratio`.
+    fn plan(&self, log_msg_ratio: usize) -> EvalModPlan {
+        EvalModPlan {
+            eval_mod_type: self.eval_mod_type,
+            log_msg_ratio,
+            f_mod_degree: self.degree,
+            f_mod_interval: self.interval,
+            f_mod_log_interval_reduction: self.log_interval_reduction,
+            f_mod_inv_degree: self.inverse_degree,
+            scaling: match self.eval_mod_type {
+                // The relabel by the message ratio that ends the raise lands on the unit circle.
+                EvalModType::ExpCmplx => Some(std::f64::consts::TAU / (log_msg_ratio as f64).ckks_exp2()),
+                _ => self.scaling,
+            },
+            split_strategy: self.split_strategy,
+            coeffs_meta: CoeffsMeta::from_delta_budget(self.coeffs_log_delta, self.coeffs_log_budget),
+            f_mod_log_delta: self.log_delta,
+            packed: self.packed,
+        }
+    }
+}
+
 const fn optimized_han_ki() -> EvalModSpec {
     EvalModSpec {
         eval_mod_type: EvalModType::CosHKEven,
@@ -979,6 +1229,7 @@ const fn optimized_han_ki() -> EvalModSpec {
         coeffs_log_delta: 42,
         coeffs_log_budget: 4,
         log_delta: 58,
+        packed: false,
     }
 }
 
@@ -998,24 +1249,48 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         .checked_shl(log_n)
         .context("bootstrapping preset ring degree overflow")?;
     ensure!(n <= u32::MAX as usize, "bootstrapping preset ring degree does not fit u32");
+    if let SlotLayout::Replicated(layout) = spec.slot_layout {
+        let suppression = ShapingProfile::<Standard>::new(&layout).suppression_bits();
+        let needed = spec.log2_precision + SUPPRESSION_MARGIN_BITS;
+        ensure!(
+            suppression >= needed as f64,
+            "{} guarantees {} bits, which needs a unit suppressing {needed} bits, but it suppresses {suppression:.2}",
+            spec.name,
+            spec.log2_precision
+        );
+    }
+    let schedule = |fixed: &[(usize, usize)]| match spec.slot_layout {
+        SlotLayout::Full => fixed.to_vec(),
+        SlotLayout::Replicated(layout) => split_depth(layout.log_k(), spec.transform_factors)
+            .into_iter()
+            .map(|depth| (depth, 1))
+            .collect(),
+    };
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
-        spec.s2c_schedule.to_vec(),
+        schedule(spec.s2c_schedule),
         DFTOutputFormat::SplitRealAndImag,
         CoeffsMeta::from_delta_budget(spec.s2c_log_delta, spec.s2c_log_budget),
     )?
-    .with_scaling(match spec.pipeline {
-        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).ckks_exp2(),
-        BootstrappingPipeline::S2CFirst => 0.5,
+    .with_scaling(match (spec.slot_layout, spec.pipeline) {
+        (SlotLayout::Replicated(_), _) => 1.0,
+        (_, BootstrappingPipeline::C2SFirst) => (spec.log_msg_ratio as f64).ckks_exp2(),
+        (_, BootstrappingPipeline::S2CFirst) => 0.5,
     })?
-    .with_power_of_two_keys(spec.power_of_two_keys);
+    .with_power_of_two_keys(spec.power_of_two_keys)
+    .with_placement_factors(spec.placement_factors);
     let coeffs_to_slots = DFTPlan::new(
         DFTType::Encode,
-        spec.c2s_schedule.to_vec(),
+        schedule(spec.c2s_schedule),
         DFTOutputFormat::SplitRealAndImag,
         CoeffsMeta::from_delta_budget(spec.c2s_log_delta, spec.c2s_log_budget),
     )?
-    .with_power_of_two_keys(spec.power_of_two_keys);
+    .with_power_of_two_keys(spec.power_of_two_keys)
+    .with_placement_factors(spec.placement_factors);
+    let coeffs_to_slots = match spec.c2s_last_log_delta {
+        Some(log_delta) => coeffs_to_slots.with_last_factor_log_delta(log_delta),
+        None => coeffs_to_slots,
+    };
     let coeffs_to_slots = if spec.c2s_first_factor_on_raise {
         coeffs_to_slots.with_first_factor_on_raise()
     } else {
@@ -1042,22 +1317,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
             },
         },
         coeffs_to_slots,
-        EvalModPlan {
-            eval_mod_type: spec.eval_mod.eval_mod_type,
-            log_msg_ratio: spec.log_msg_ratio,
-            f_mod_degree: spec.eval_mod.degree,
-            f_mod_interval: spec.eval_mod.interval,
-            f_mod_log_interval_reduction: spec.eval_mod.log_interval_reduction,
-            f_mod_inv_degree: spec.eval_mod.inverse_degree,
-            scaling: match spec.eval_mod.eval_mod_type {
-                // The relabel by the message ratio that ends the raise lands on the unit circle.
-                EvalModType::ExpCmplx => Some(std::f64::consts::TAU / (spec.log_msg_ratio as f64).ckks_exp2()),
-                _ => spec.eval_mod.scaling,
-            },
-            split_strategy: spec.eval_mod.split_strategy,
-            coeffs_meta: CoeffsMeta::from_delta_budget(spec.eval_mod.coeffs_log_delta, spec.eval_mod.coeffs_log_budget),
-            f_mod_log_delta: spec.eval_mod.log_delta,
-        },
+        spec.eval_mod.plan(spec.log_msg_ratio),
         slots_to_coeffs,
     )?;
     let plan = if spec.c2s_guard_bits == 0 {
@@ -1065,19 +1325,20 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
     } else {
         plan.with_c2s_guard_bits(spec.c2s_guard_bits)?
     };
-    let plan = plan.with_eval_mod_ring(spec.eval_mod_ring)?.with_log_gap(spec.log_gap)?;
-    let log_slots = spec
-        .log_n
-        .checked_sub(1 + spec.log_gap)
-        .context("bootstrapping preset log_n must exceed its gap")?;
-    ensure!(
-        plan.coeffs_to_slots().log_slots() == log_slots && plan.slots_to_coeffs().log_slots() == log_slots,
-        "bootstrapping preset DFT schedules must cover {log_slots} slot layers"
-    );
+    let plan = plan
+        .with_eval_mod_ring(spec.eval_mod_ring)?
+        .with_log_gap(spec.log_gap)?
+        .with_slot_layout(spec.slot_layout, spec.log_n)?
+        .with_working_bits(spec.working_bits)?
+        .with_s2c_guard_bits(spec.s2c_guard_bits)?;
+    finish(spec, n, plan)
+}
 
+/// The preset of `plan`: its widths, and its keys under the modulus bounds of `spec`.
+fn finish(spec: PresetSpec, n: usize, plan: BootstrappingPlan) -> Result<BootstrappingPreset> {
     let log_modulus = spec
         .log_delta
-        .checked_add(spec.log_msg_ratio)
+        .checked_add(spec.s2c_guard_bits + spec.working_bits + spec.log_msg_ratio)
         .context("bootstrapping preset input modulus overflow")?;
     let input_k = plan.input_k(log_modulus) + spec.input_headroom;
     let output_k = spec.output_k;
@@ -1150,6 +1411,7 @@ mod tests {
     use super::*;
     use crate::CKKSInfos;
     use crate::presets::first_factor::FIRST_FACTOR_GUARD_BITS;
+    use crate::{CKKSCompositionError::InvalidOperand, layouts::validation::check_offset_raise, shaping::ShapingUnit};
 
     #[test]
     fn n15_d35_k180_p18_c2s_is_composable_and_within_bounds() {
@@ -1712,6 +1974,127 @@ mod tests {
                     .eq(preset.keys_layout().rotation_key_layouts())
             );
             assert!(preset.with_dsizes(1, 7).is_err());
+        }
+    }
+
+    #[test]
+    fn paper_eval_mod_scale_covers_the_guards() {
+        for (unit, log_delta) in [
+            (ShapingUnit::U4_10, 28),
+            (ShapingUnit::U4_15, 31),
+            (ShapingUnit::U8_30, 28),
+            (ShapingUnit::U8_40, 30),
+            (ShapingUnit::U16_60, 28),
+            (ShapingUnit::U32_45, 28),
+        ] {
+            let eval_mod = paper_eval_mod(&unit.layout(4).unwrap());
+            assert_eq!(eval_mod.f_mod_log_delta, log_delta, "{unit:?}");
+        }
+    }
+
+    /// The replicated presets for a batch of 64 values of `unit`.
+    fn replicated(unit: ShapingUnit) -> Vec<BootstrappingPreset> {
+        all_replicated(unit.layout(6).unwrap()).unwrap()
+    }
+
+    /// The widths of the replicated presets (the input at the leveled scale, the input of the raise, the output, the
+    /// raised width) and the gadgets `(dnum, k_digit, k_aux)` of the widest rotation key, of the tensor key,
+    /// of the key to the ephemeral secret and of the key back, for a unit at the default EvalMod scale and for `U8_40`,
+    /// whose EvalMod runs two bits wider: the digits of fewest rows under the modulus bounds, off a limb boundary where
+    /// no whole limb fits.
+    #[test]
+    fn replicated_presets_pin_their_widths_and_key_gadgets() {
+        let gadget = |key: &dyn GGLWEInfos| {
+            let layout = key.gglwe_layout();
+            (layout.dnum.0, layout.k_digit.0, layout.k_aux.0)
+        };
+        let widths = [[59, 51, 109], [59, 51, 389], [153, 51, 763]];
+        for (unit, pins) in [
+            (
+                ShapingUnit::U32_45,
+                [
+                    (391, [(14, 28, 32), (7, 52, 60), (3, 17, 26), (2, 29, 33)]),
+                    (671, [(7, 104, 119), (3, 208, 223), (1, 52, 67), (1, 104, 119)]),
+                    (1207, [(3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 104, 120)]),
+                ],
+            ),
+            (
+                ShapingUnit::U8_40,
+                [
+                    (407, [(34, 12, 16), (7, 52, 60), (3, 17, 26), (4, 15, 17)]),
+                    (687, [(7, 104, 119), (7, 104, 119), (1, 52, 67), (1, 104, 119)]),
+                    (1223, [(3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 104, 120)]),
+                ],
+            ),
+        ] {
+            for ((preset, (raised, gadgets)), widths) in replicated(unit).iter().zip(pins).zip(widths) {
+                let (keys, at_raise) = (preset.keys_layout(), preset.log_modulus());
+                let encapsulation = keys.encapsulation.unwrap();
+                let got = [
+                    gadget(preset.widest_rotation_key()),
+                    gadget(&keys.tensor_key),
+                    gadget(&encapsulation.dense_to_sparse),
+                    gadget(&encapsulation.sparse_to_dense.unwrap()),
+                ];
+                let w = ([preset.input_k(), at_raise, preset.output_k()], preset.bootstrap_k());
+                assert_eq!((w, got), ((widths, raised), gadgets), "{:?} {unit:?}", preset.name());
+            }
+        }
+    }
+
+    /// Every replicated preset takes the units of at least 30 bits of suppression and refuses those of `R = 2` and those
+    /// targeting 20 bits, stating the suppression it needs. A setting it does not re-derive is refused, and so are
+    /// maps for a preset of the full layout.
+    #[test]
+    fn replicated_presets_refuse_weak_units_and_other_settings() {
+        for unit in ShapingUnit::ALL {
+            let strong = unit.log_r > 1 && unit.target_bits >= 30;
+            for build in REPLICATED {
+                match build(unit.layout(6).unwrap()) {
+                    Ok(_) => assert!(strong, "{unit:?} accepted"),
+                    Err(err) => assert!(!strong && err.to_string().contains("which needs a unit suppressing"), "{err}"),
+                }
+            }
+        }
+        let preset = &replicated(ShapingUnit::U32_45)[1];
+        assert!(preset.with_dsizes(7, 1).is_ok() && preset.with_output_k(preset.output_k() - 20).is_ok());
+        for err in [preset.with_power_of_two_keys(), preset.with_eval_round_plus(30, 50)].map(Result::unwrap_err) {
+            let reason = "a replicated preset re-derives its radix, its key digits, its output width and its maps only";
+            assert_eq!(err.to_string(), reason);
+        }
+        let err = n15_d35_k180_p18_c2s().unwrap().with_dense_maps();
+        assert_eq!(err.unwrap_err().to_string(), "only a replicated preset selects its maps");
+    }
+
+    /// With dense maps, the logN16 replicated preset on `2^10` values keeps its levels on a narrower input, without a
+    /// name or an advertised precision: 69 rotation keys and a raised width of 955 bits, against 83 and 1207 factored.
+    #[test]
+    fn dense_maps_keep_the_levels_of_n16_d20_k763_p19_s2c_factored() {
+        let factored = n16_d20_k763_p19_s2c_factored(ShapingUnit::U32_45.layout(10).unwrap()).unwrap();
+        let dense = factored.with_dense_maps().unwrap();
+        for (preset, rotation_keys, raised, precision) in [(&factored, 83, 1207, Some(19)), (&dense, 69, 955, None)] {
+            assert_eq!(preset.keys_layout().rotation_keys.len(), rotation_keys);
+            assert_eq!((preset.bootstrap_k(), preset.log2_precision()), (raised, precision));
+            assert_eq!(preset.output_k() - preset.input_k(), 610);
+        }
+    }
+
+    /// At every radix, the key back to the dense secret of a replicated preset has a row offset and ends its rows at the
+    /// raised width: the raise of the preset takes it, and a raise one bit wider does not.
+    #[test]
+    fn replicated_offset_keys_cover_the_raise() {
+        for preset in [ShapingUnit::U32_45, ShapingUnit::U8_40].into_iter().flat_map(replicated) {
+            for base2k in [18, 19, 28, 52, 54] {
+                let preset = preset.with_base2k(base2k).unwrap();
+                let return_key = preset.keys_layout().encapsulation.unwrap().sparse_to_dense.unwrap();
+                let (raised, lift) = (preset.bootstrap_k(), preset.plan().mod_raise().c2s_guard_bits());
+                assert!(return_key.k_offset.0 > 0);
+                assert_eq!(return_key.k_offset.as_usize() + gadget_k(&return_key), raised);
+                let raise = |k| check_offset_raise("preset", k, preset.log_modulus(), lift, &return_key);
+                raise(raised).unwrap();
+                let err = raise(raised + 1).unwrap_err();
+                assert!(matches!(err.composition(), Some(InvalidOperand { op: "preset", .. })));
+            }
         }
     }
 }

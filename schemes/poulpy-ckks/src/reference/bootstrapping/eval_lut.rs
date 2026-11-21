@@ -167,7 +167,7 @@ pub trait CKKSEvalLutReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         }
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = bootstrap_layouts(&res[0], a).0.glwe_layout;
-        let message_slots = plan.message_slots().unwrap_or(a.slots());
+        let message_slots = plan.message().map_or(a.slots(), |message| message.slots);
         scratch.scope(|scratch| {
             if message_slots.is_real() && plan.real_part_on_real_slots() {
                 let (mut r0, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());

@@ -14,7 +14,7 @@
 //! | [`test_replicated_product_key_width`] | a shaped product looks its key up at the operands' width on the one-pass path and at its tensor's on the tensor path, and refuses another before any write |
 //! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, constant sums and `ckks_add_many`, and a product into a reused replicated destination |
 //! | [`test_replicated_plain_rounding_is_rejected`] | operations that round plainly (dot products of prepared operands, affine maps, linear transformations, inner sums), and layouts or scales without a shaped encoding |
-//! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants keeps the message far above CKKS: an input above the plan scale rounded at entry with a fused last squaring, and one below it evaluated in place with an inverse and a shaped return; a packed EvalMod refused on real slots |
+//! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants keeps the message far above CKKS: an input above the plan scale rounded at entry with a fused last squaring, and one below it evaluated in place with an inverse and a shaped return; a packed plan refused off a replicated layout of two values, with an inverse, and on real slots |
 //! | [`test_replicated_complex_eval_mod_is_shaped`] | the complex EvalMod with a fused last squaring keeps the message far above CKKS |
 //! | [`test_replicated_polynomials_are_shaped`] | monomial and Chebyshev polynomials keep the data slots far above CKKS, on either ring, and constants without masked plaintexts or of another layout are refused at entry |
 //! | [`test_replicated_polynomial_fallback_is_shaped`] | a baby step whose masked constants differ in scale takes the products term by term, which keep the shaping |
@@ -23,7 +23,9 @@
 //! | [`test_replicated_rotations_are_shaped`] | rotations keep the data slots far above CKKS, on either ring |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
 //! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
-//! | [`test_replicated_conversions_round_trip`] | CKKS to the replicated layout and back keeps the input's precision |
+//! | [`test_replicated_conversions_round_trip`] | CKKS to the replicated layout and back keeps the input's precision, with dense and factored maps |
+//! | [`test_replicated_bootstrap`] | the bootstrapping of a replicated layout per unit, period and maps, and every refusal of it and of its steps |
+//! | [`test_replicated_embedding_matches_the_encoder`] | the dense maps of a replicated layout against the encoder's slots |
 //! | [`test_replicated_ci_bootstrap`] | the bootstrapping of a conjugate-invariant replicated layout through the standard ring |
 //! | [`test_replicated_transforms_apply_matrices`] | a complex matrix onto the data slots, and gathered then traced back to period `k` |
 
@@ -34,43 +36,50 @@ use poulpy_core::{
     GLWECIKeyEncryptSk, GLWEMulPreparedPlainSum, GLWETrace,
     api::GLWECIKeyPreparedFactory,
     layouts::{
-        Base2K, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        BackendGLWESecret, Base2K, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretAlloc,
+        GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, ConjugateInvariant, HostBytesBackend, Module, PrepareHint, Ring, ScratchOwned, Standard, ZnxView},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{
+        Backend, ConjugateInvariant, HostBytesBackend, Module, PrepareHint, Ring, ScratchArena, ScratchOwned, Standard, ZnxView,
+    },
     source::Source,
 };
 
-use super::helpers::{LoggedBootstrappingKeys, QueryLog};
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
-    ckks_pt_cst_full, ckks_spec, gen_atk, gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, next_test_seed, upload_pt,
+    LoggedBootstrappingKeys, PT_PREC, QueryLog, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar,
+    alloc_ct, alloc_scratch, assert_ckks_error, assert_entry_then_widest, ckks_pt_cst_full, ckks_spec, dirty_ct, gen_atk,
+    gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, next_test_seed, upload_pt,
 };
-use super::parity::helpers::{snapshot, with_scratch};
+use super::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
+use super::presets::compile_context;
 use crate::{
-    CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
-    SlotLayout, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos,
+    SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSCIRingMapOps,
         CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory,
-        CKKSDFTOps, CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps,
-        CKKSInnerSumOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps, CKKSRightOperandPreparedFactory, CKKSRotateOps,
-        CKKSRoundOps, CKKSSubOps,
+        CKKSDFTOps, CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps,
+        CKKSEvalModOps, CKKSInnerSumOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps, CKKSModuleInfos,
+        CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps,
+        CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        BootstrappingContextPrepared, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc, CKKSCiphertextOwned,
-        CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedConversion,
-        ReplicatedRoute, ReplicatedTransform, ReplicatedTransforms, SparseSecretEncapsulation, ckks_eval_mod_compile,
-        ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated,
-        encode_complex_bsgs_replicated, replicated::ReplicatedEncodeModule,
+        BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingKeysLayout, BootstrappingKeysPrepared,
+        BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc, CKKSCiphertextOwned,
+        CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, DFTPlan, DFTType, Decode, Encode, EvalModPlan, EvalModPoly,
+        EvalModType, ReplicatedConversion, SparseSecretEncapsulation, ckks_eval_mod_compile,
+        dft::DFTOutputFormat,
+        dft_matrices::one_factor_matrix,
+        encode_bsgs_replicated, encode_complex_bsgs_replicated,
+        replicated::{ReplicatedChain, ReplicatedConversionModule, gather_factor, period_factor, split_depth},
     },
-    oep::CKKSEncapsulatedModUpImpl,
     polynomial::{Basis, CKKSPolynomialEncode, ComplexPolynomial, Polynomial, SplitStrategy},
-    shaping::{ShapingUnit, conjugate_invariant},
+    presets::{bootstrapping::paper_eval_mod, key_policy::BootstrappingKeyPolicy},
+    shaping::{ShapingProfile, ShapingUnit, conjugate_invariant},
     test_suite::CKKSTestParams,
 };
 
@@ -1799,7 +1808,7 @@ where
     Ok(())
 }
 
-/// Full-layout encryption of `values` with period `values.len()`.
+/// Full-layout encryption of `values` with period `values.len()` at the scale `2^log_delta`.
 fn encrypt_full<BE, F, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
@@ -1813,17 +1822,8 @@ where
     F: TestScalar,
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
 {
-    let mut pt = module.ckks_plaintext_alloc_from_slots::<Rg>(
-        slots_of::<BE, Rg>(module, SlotLayout::Full, values.0.len()),
-        Base2K(params.base2k as u32),
-        TorusPrecision((log_delta + 4) as u32),
-    );
-    pt.set_meta(GLWEPlaintextMeta {
-        scale: Scale::Log(log_delta),
-        slots: SlotsKind::Complex,
-        log_sparsity: 0,
-        slot_layout: SlotLayout::Full,
-    });
+    let mut pt = plaintext(params, module, SlotLayout::Full, values.0.len());
+    pt.set_scale(Scale::Log(log_delta));
     encoded(module, &mut pt, values.0, values.1)?;
     let mut ct = alloc_ct(params, module, k);
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encrypt_sk_tmp_bytes(&ct));
@@ -1832,6 +1832,8 @@ where
     Ok(ct)
 }
 
+/// CKKS to the replicated layout and back keeps the input's precision, with the maps dense and factored into
+/// placements of two-bit groups, at the module's degree and at half of it.
 pub fn test_replicated_conversions_round_trip<BE, F, Rg: Ring>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1839,65 +1841,20 @@ pub fn test_replicated_conversions_round_trip<BE, F, Rg: Ring>(
 ) -> Result<()>
 where
     BE: TestContextBackend,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextSharedModule<BE, Rg>
-        + CKKSEncodingOps<BE, F, Rg>
-        + CKKSReplicatedOps<BE, Rg>
-        + CKKSLinearTransformationOps<BE, Rg>
-        + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + ReplicatedConversionModule<BE, F, Rg> + CKKSReplicatedOps<BE, Rg>,
     F: TestScalar,
 {
-    conversions_round_trip_with::<BE, F, Rg>(params, module, host_module, None)
-}
-
-/// [`test_replicated_conversions_round_trip`] with the conversions factored
-/// into placements of two-bit groups.
-pub fn test_replicated_conversions_round_trip_factored<BE, F, Rg: Ring>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) -> Result<()>
-where
-    BE: TestContextBackend,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextSharedModule<BE, Rg>
-        + CKKSEncodingOps<BE, F, Rg>
-        + CKKSReplicatedOps<BE, Rg>
-        + CKKSLinearTransformationOps<BE, Rg>
-        + CnvPVecAlloc<BE>,
-    F: TestScalar,
-{
-    conversions_round_trip_with::<BE, F, Rg>(params, module, host_module, Some(2))
-}
-
-/// [`conversions_round_trip_at`] at the module's degree and at half of it.
-fn conversions_round_trip_with<BE, F, Rg: Ring>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-    placement_factors: Option<usize>,
-) -> Result<()>
-where
-    BE: TestContextBackend,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextSharedModule<BE, Rg>
-        + CKKSEncodingOps<BE, F, Rg>
-        + CKKSReplicatedOps<BE, Rg>
-        + CKKSLinearTransformationOps<BE, Rg>
-        + CnvPVecAlloc<BE>,
-    F: TestScalar,
-{
-    conversions_round_trip_at::<BE, F, Rg>(params, module, host_module, placement_factors)?;
     let half = CKKSTestParams {
         n: params.n / 2,
         hw: params.hw.min(params.n / 4),
         ..params
     };
     let half_host = Module::<HostBytesBackend>::new(half.n as u64);
-    conversions_round_trip_at::<BE, F, Rg>(half, module, &half_host, placement_factors)
+    for placement_factors in [None, Some(2)] {
+        conversions_round_trip_at::<BE, F, Rg>(params, module, host_module, placement_factors)?;
+        conversions_round_trip_at::<BE, F, Rg>(half, module, &half_host, placement_factors)?;
+    }
+    Ok(())
 }
 
 /// The conversions of `layout` for ciphertexts of degree `n`, at the scales `(log_delta, log_delta_diag,
@@ -1907,12 +1864,12 @@ pub(crate) fn conversion<BE, F, Rg: Ring>(
     (n, layout, base2k): (usize, ReplicatedLayout, Base2K),
     (log_delta, log_delta_diag, inner_log_delta_diag, extra_bits): (usize, usize, usize, usize),
     placement_factors: Option<usize>,
-    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) -> anyhow::Result<ReplicatedConversion<BE, Rg>>
 where
     BE: Backend,
-    F: crate::api::CKKSEncodingScalar,
-    Module<BE>: crate::layouts::replicated::ReplicatedTransformModule<BE, F, Rg>,
+    F: CKKSEncodingScalar,
+    Module<BE>: ReplicatedConversionModule<BE, F, Rg>,
 {
     match placement_factors {
         None => ReplicatedConversion::new::<F>(
@@ -1949,13 +1906,7 @@ fn conversions_round_trip_at<BE, F, Rg: Ring>(
 ) -> Result<()>
 where
     BE: TestContextBackend,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextSharedModule<BE, Rg>
-        + CKKSEncodingOps<BE, F, Rg>
-        + CKKSReplicatedOps<BE, Rg>
-        + CKKSLinearTransformationOps<BE, Rg>
-        + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + ReplicatedConversionModule<BE, F, Rg> + CKKSReplicatedOps<BE, Rg>,
     F: TestScalar,
 {
     // `R = 8` divides `k = 8`. The return lands on `20 + extra + log2(S/k)`
@@ -1967,33 +1918,24 @@ where
     let len = 1usize << log_k;
     let base2k = Base2K(params.base2k as u32);
     // The inner factors of `to` are quantized plainly, a few bits above the working precision.
-    let inner_log_delta_diag = log_delta + extra_bits + 4;
-    let mut setup = ScratchOwned::<BE>::alloc(ReplicatedConversion::<BE, Rg>::new_tmp_bytes::<F>(
-        module,
-        &layout,
-        base2k,
-        log_delta_diag.max(inner_log_delta_diag),
-    )?);
-    let conv = conversion::<BE, F, Rg>(
-        module,
-        (params.n, layout, base2k),
-        (log_delta, log_delta_diag, inner_log_delta_diag, extra_bits),
-        placement_factors,
-        &mut setup.borrow(),
-    )?;
-    let from_bits_consumed = conv.from.as_ref().map_or(0, ReplicatedTransform::consumed_bits);
+    let inner_diag = log_delta + extra_bits + 4;
+    let bytes = ReplicatedConversion::<BE, Rg>::new_tmp_bytes::<F>(module, &layout, base2k, log_delta_diag.max(inner_diag))?;
+    let mut setup = ScratchOwned::<BE>::alloc(bytes);
+    let shape = (params.n, layout, base2k);
+    let scales = (log_delta, log_delta_diag, inner_diag, extra_bits);
+    let conv = conversion::<BE, F, Rg>(module, shape, scales, placement_factors, &mut setup.borrow())?;
+    let from_bits_consumed = conv.from.as_ref().map_or(0, |from| from.consumed);
     // Room for both conversions and a margin of one diagonal scale, and keys covering it.
-    let k = log_delta_ckks + conv.to.consumed_bits() + from_bits_consumed + log_delta_diag;
+    let k = log_delta_ckks + conv.to.consumed + from_bits_consumed + log_delta_diag;
     let params = CKKSTestParams {
-        k: params.k.max(k + extra_bits + conv.trace.len()),
+        k: params.k.max(k + extra_bits + conv.trace_levels),
         ..params
     };
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch::<BE, Rg>(&params, module);
     let mut atks = HashMap::new();
-    for r in conv.rotations() {
-        let gal = crate::operand_rotation_galois_element::<_, Rg>("test", module, params.n, r)?;
+    for gal in conv.galois_elements() {
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
 
@@ -2002,21 +1944,37 @@ where
     let fresh = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &ckks, len);
     let fresh_bits = precision((&fresh.0, &fresh.1), (&values.0, &values.1));
 
+    // `ckks_to_replicated` when `$to`, else `ckks_from_replicated`, through `conv` on `$bytes` of scratch.
+    macro_rules! convert {
+        ($to:expr, $res:expr, $a:expr, $keys:expr, $bytes:expr) => {
+            with_scratch::<BE, _>($bytes, |s| {
+                if $to {
+                    module.ckks_to_replicated($res, $a, &conv, $keys, s)
+                } else {
+                    module.ckks_from_replicated($res, $a, &conv, $keys, s)
+                }
+            })
+        };
+    }
     let atk_infos = params.atk_layout();
     let conv_bytes = module.ckks_replicated_conversion_tmp_bytes(&ckks, &ckks, &atk_infos, &conv);
-    let mut scratch = ScratchOwned::<BE>::alloc(conv_bytes);
     let mut replicated = alloc_ct(&params, module, k);
-    let mut to_workspace = conv.alloc_to_workspace(module, &ckks);
     // The map consumes its diagonals' bits and lands at the replicated scale, at most `res.k()` wide.
-    let to_k = (ckks.log_budget() - conv.to.consumed_bits() + log_delta).min(replicated.k().as_usize());
-    let to_lookups = crate::oep::derived::replicated::to_key_lookups(&conv, &to_workspace, &ckks);
+    let to_k = (ckks.log_budget() - conv.to.consumed + log_delta).min(replicated.k().as_usize());
+    // The map keeps the source's slots, on the sparsity of the period `kR`.
+    let to_slots = (ckks.slots(), conv.trace_levels - layout.log_r());
     let logged = QueryLog::new(&atks);
-    with_scratch::<BE, _>(conv_bytes, |s| {
-        module.ckks_to_replicated(&mut replicated, &ckks, &conv, &mut to_workspace, &logged, s)
-    })?;
-    assert_conversion_lookups::<BE, Rg>("to", module, params.n, &to_lookups, logged.take());
+    // The entry check looks every key of `chain` up at its widest use on a working copy of `start` bits.
+    let lookups = |label, chain: &ReplicatedChain<BE, Rg>, start: usize| {
+        let entry: Vec<_> = chain.keys.iter().map(|&(p, below)| (p, start - below)).collect();
+        let seen: Vec<_> = logged.take().into_iter().map(|(p, k)| (p, k.as_usize())).collect();
+        assert_entry_then_widest(label, &seen, &entry);
+    };
+    convert!(true, &mut replicated, &ckks, &logged, conv_bytes)?;
+    lookups("to", &conv.to, ckks.k().as_usize() + extra_bits);
     assert_eq!(replicated.slot_layout(), SlotLayout::Replicated(layout));
     assert_eq!((replicated.k().as_usize(), replicated.log_delta()), (to_k, log_delta));
+    assert_eq!((replicated.slots(), replicated.log_sparsity()), to_slots);
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &replicated, len);
     let to_bits = precision((&got.0, &got.1), (&values.0, &values.1));
     // The map runs `extra_bits` under the replicated scale, which bounds the
@@ -2030,260 +1988,172 @@ where
 
     let mut back = alloc_ct(&params, module, k);
     // The gather consumes its diagonals' bits, and the trace moves `L` budget bits under the scale.
-    let trace_bits = conv.trace.len();
+    let trace_bits = conv.trace_levels;
     let from_log_delta = replicated.log_delta() + extra_bits + trace_bits;
     let from_k = (replicated.log_budget() - from_bits_consumed - trace_bits + from_log_delta).min(back.k().as_usize());
-    let mut from_workspace = conv.alloc_from_workspace(module, &replicated)?;
-    let from_lookups = crate::oep::derived::replicated::from_key_lookups(
-        &conv,
-        conv.from.as_ref().unwrap(),
-        &from_workspace,
-        &replicated,
-        replicated.log_budget() - from_bits_consumed - trace_bits,
-    );
-    with_scratch::<BE, _>(conv_bytes, |s| {
-        module.ckks_from_replicated(&mut back, &replicated, &conv, &mut from_workspace, &logged, s)
-    })?;
-    assert_conversion_lookups::<BE, Rg>("from", module, params.n, &from_lookups, logged.take());
+    // The trace closes the slot cycle at its levels.
+    let from_slots = (replicated.slots(), trace_bits);
+    convert!(false, &mut back, &replicated, &logged, conv_bytes)?;
+    let from_start = replicated.k().as_usize() + extra_bits;
+    lookups("from", conv.from.as_ref().unwrap(), from_start);
     assert_eq!(back.slot_layout(), SlotLayout::Full);
     assert_eq!((back.k().as_usize(), back.log_delta()), (from_k, from_log_delta));
+    assert_eq!((back.slots(), back.log_sparsity()), from_slots);
     assert_eq!(back.log_delta(), log_delta_ckks);
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &back, len);
     let from_bits = precision((&got.0, &got.1), (&values.0, &values.1));
-    // The gather's diagonals are quantized plainly, which bounds the return
-    // to about `log_delta_diag` bits.
+    // Plain gather diagonals bound the return near `log_delta_diag` bits: 26.63 measured at least (CI ring, n = 256, factored).
     assert!(
-        from_bits >= fresh_bits.min(log_delta_diag as f64) - 3.0,
+        from_bits >= fresh_bits.min(log_delta_diag as f64) - 4.0,
         "from replicated: {from_bits:.2} bits from {fresh_bits:.2}"
     );
 
     // Destinations narrower than the results, off the limb grid, take them through a modulus drop at the same scale
     // and precision.
-    let mut narrow = alloc_ct(&params, module, to_k - 7);
-    let bytes = module.ckks_replicated_conversion_tmp_bytes(&narrow, &ckks, &atk_infos, &conv);
-    with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_to_replicated(&mut narrow, &ckks, &conv, &mut to_workspace, &atks, s)
-    })?;
-    assert_eq!((narrow.k().as_usize(), narrow.log_delta()), (to_k - 7, log_delta));
-    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &narrow, len);
-    let narrow_bits = precision((&got.0, &got.1), (&values.0, &values.1));
-    assert!(
-        (narrow_bits - to_bits).abs() < 0.5,
-        "to replicated, narrow: {narrow_bits:.2} bits against {to_bits:.2}"
-    );
+    let (to, from) = ("ckks_to_replicated", "ckks_from_replicated");
+    let op = |to_dir: bool| if to_dir { to } else { from };
+    let source = |to_dir: bool| if to_dir { &ckks } else { &replicated };
     let narrow_from_k = from_log_delta + (from_k - from_log_delta) / 2;
-    let mut narrow = alloc_ct(&params, module, narrow_from_k);
-    let bytes = module.ckks_replicated_conversion_tmp_bytes(&narrow, &replicated, &atk_infos, &conv);
-    with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_from_replicated(&mut narrow, &replicated, &conv, &mut from_workspace, &atks, s)
-    })?;
-    assert_eq!((narrow.k().as_usize(), narrow.log_delta()), (narrow_from_k, from_log_delta));
-    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &narrow, len);
-    let narrow_bits = precision((&got.0, &got.1), (&values.0, &values.1));
-    assert!(
-        (narrow_bits - from_bits).abs() < 0.5,
-        "from replicated, narrow: {narrow_bits:.2} bits against {from_bits:.2}"
-    );
+    for (to_dir, res_k, scale, slots, bits) in [
+        (true, to_k - 7, log_delta, to_slots, to_bits),
+        (false, narrow_from_k, from_log_delta, from_slots, from_bits),
+    ] {
+        let mut narrow = alloc_ct(&params, module, res_k);
+        let bytes = module.ckks_replicated_conversion_tmp_bytes(&narrow, source(to_dir), &atk_infos, &conv);
+        convert!(to_dir, &mut narrow, source(to_dir), &atks, bytes)?;
+        assert_eq!((narrow.k().as_usize(), narrow.log_delta()), (res_k, scale));
+        assert_eq!((narrow.slots(), narrow.log_sparsity()), slots);
+        let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &narrow, len);
+        let narrow_bits = precision((&got.0, &got.1), (&values.0, &values.1));
+        assert!(
+            (narrow_bits - bits).abs() < 0.5,
+            "{}, narrow: {narrow_bits:.2} bits against {bits:.2}",
+            op(to_dir)
+        );
+    }
 
     if params.n != module.n() {
         return Ok(());
     }
     use crate::CKKSCompositionError as E;
-    // `ckks_to_replicated` when `$to`, else `ckks_from_replicated`, through `conv` and its workspaces.
-    macro_rules! convert {
-        ($to:expr, $res:expr, $a:expr, $keys:expr) => {
-            if $to {
-                module.ckks_to_replicated($res, $a, &conv, &mut to_workspace, $keys, &mut scratch.borrow())
-            } else {
-                module.ckks_from_replicated($res, $a, &conv, &mut from_workspace, $keys, &mut scratch.borrow())
-            }
-        };
-    }
-    let (to, from) = ("ckks_to_replicated", "ckks_from_replicated");
-    let op = |to_dir: bool| if to_dir { to } else { from };
-    let source = |to_dir: bool| if to_dir { &ckks } else { &replicated };
-    let capacity = |op: &'static str| move |e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op: got, .. } if *got == op);
-    let mut out = alloc_ct(&params, module, k);
-    let rank = ckks.rank().as_usize();
-    for (n, rank, reason) in [
-        (
-            params.n,
-            rank + 1,
-            format!("takes a source and a destination of one rank, got {rank} and {}", rank + 1),
-        ),
-        (
-            params.n / 2,
-            rank,
-            "takes ciphertexts of one degree, which the module serves".to_string(),
-        ),
-    ] {
-        let mut bad = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Rg>(&GLWELayout {
+    let dirty = |n: usize, rank: usize, seed: u8| {
+        let glwe_layout = GLWELayout {
             n: n.into(),
             rank: rank.into(),
             ..ckks.glwe_layout()
-        });
-        bad.set_meta(ckks.meta());
+        };
+        fixture_ciphertext::<BE, Rg>(
+            module,
+            &CKKSLayout {
+                glwe_layout,
+                meta: ckks.meta(),
+            },
+            seed,
+        )
+    };
+    let rank = ckks.rank().as_usize();
+    for (n, rank, reason) in [
+        (params.n, rank + 1, format!("of one rank, got {rank} and {}", rank + 1)),
+        (params.n / 2, rank, "of one degree, which the module serves".to_string()),
+    ] {
+        let mut bad = dirty(n, rank, 31);
         for to_dir in [true, false] {
             refused!(
                 Rg,
                 op(to_dir),
-                convert!(to_dir, &mut bad, source(to_dir), &atks),
+                convert!(to_dir, &mut bad, source(to_dir), &atks, 0),
                 [bad, ckks, replicated],
                 operand(op(to_dir), reason.as_str())
             );
         }
     }
     // Operands below the module's degree, which the compiled slots do not fit.
-    let half = GLWELayout {
-        n: (params.n / 2).into(),
-        ..ckks.glwe_layout()
-    };
-    let mut half_src = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Rg>(&half);
-    half_src.set_meta(ckks.meta());
-    let mut half_dst = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Rg>(&half);
-    half_dst.set_meta(ckks.meta());
-    refused!(
-        Rg,
-        to,
-        convert!(true, &mut half_dst, &half_src, &atks),
-        [half_dst],
-        operand(
-            to,
-            format!(
-                "takes ciphertexts of degree {}, the degree of its context, got {}",
-                params.n,
-                params.n / 2
-            )
-        )
-    );
-    let mut wrong_width = conv.alloc_to_workspace(
-        module,
-        &GLWELayout {
-            k: (ckks.k().as_usize() - 1).into(),
-            ..ckks.glwe_layout()
-        },
-    );
-    let mut wrong_rotations = conv.alloc_to_workspace(module, &ckks);
-    wrong_rotations.babies[0] = LinearTransformationBabySteps::alloc(module, &[1], &wrong_rotations.input);
-    for workspace in [&mut wrong_width, &mut wrong_rotations] {
+    let (half_src, mut half_dst) = (dirty(params.n / 2, rank, 32), dirty(params.n / 2, rank, 33));
+    for to_dir in [true, false] {
         refused!(
             Rg,
-            to,
-            module.ckks_to_replicated(&mut out, &ckks, &conv, workspace, &atks, &mut scratch.borrow()),
-            [out, ckks],
-            operand(to, "the workspace does not match the transform's input layout or rotations")
+            op(to_dir),
+            convert!(to_dir, &mut half_dst, &half_src, &atks, 0),
+            [half_dst],
+            operand(op(to_dir), format!("the degree of its context, got {}", params.n / 2))
         );
     }
-    // The source's layout, in each direction.
-    refused!(
-        Rg,
-        "to, replicated source",
-        convert!(true, &mut out, &replicated, &atks),
-        [out],
-        operand(to, "does not support a replicated slot layout")
-    );
-    refused!(
-        Rg,
-        "from, full source",
-        convert!(false, &mut out, &ckks, &atks),
-        [out],
-        operand(from, "the conversion's replicated layout")
-    );
-    // A source scale more than the working bits under the replicated scale.
+    // Conversions at a degree off a power of two or above the module's, of a layout past the slots of its degree, and
+    // factored into a placement count off `1..=log2(k)`.
+    let slots = module.ckks_slots_of_degree::<Rg>(params.n);
+    let past = ShapingUnit::U16_40.layout(((2 * slots) >> layout.log_r()).ilog2() as u8)?;
+    let off_degree = |d: usize| format!("the degree {d} is not a power of two at most the module's {}", params.n);
+    let factor_count = format!("the placement takes between one and log2(k) = {log_k} factors");
+    for (n, layout, factors, reason) in [
+        (3 * params.n / 4, layout, placement_factors, off_degree(3 * params.n / 4)),
+        (2 * params.n, layout, placement_factors, off_degree(2 * params.n)),
+        (
+            params.n,
+            past,
+            placement_factors,
+            format!(
+                "{} values of period {} need more than the {slots} slots of degree {}",
+                1 << past.log_k(),
+                1 << past.log_r(),
+                params.n
+            ),
+        ),
+        (params.n, layout, Some(0), factor_count.clone()),
+        (params.n, layout, Some(log_k as usize + 1), factor_count),
+    ] {
+        let err = with_scratch::<BE, _>(0, |s| {
+            conversion::<BE, F, Rg>(module, (n, layout, base2k), scales, factors, s).err()
+        });
+        assert_eq!(err.expect("a refused conversion").to_string(), reason);
+    }
+    // A source of the other layout, at a scale more than the working bits under the replicated scale, or without the
+    // budget of the map or of the gather and the trace; a destination narrower than the result's scale, where no
+    // modulus drop lands it; and a key set lacking the keys the run looks up.
+    let capacity = |op: &'static str| move |e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op: got, .. } if *got == op);
+    let missing = |op: &'static str| move |e: &E| matches!(e, E::MissingAutomorphismKey { op: got, .. } if *got == op);
     let mut coarse = ckks.clone();
     coarse.set_log_delta(log_delta - extra_bits - 1);
-    refused!(
-        Rg,
-        "to, coarse scale",
-        convert!(true, &mut out, &coarse, &atks),
-        [out],
-        operand(to, "exceeds the working scale")
-    );
-    // A source without the budget of the map, and one without the budget of the gather and the trace.
-    let mut spent = ckks.clone();
-    spent.set_log_budget(conv.to.consumed_bits() - 1);
-    let mut spent_workspace = conv.alloc_to_workspace(module, &spent);
-    refused!(
-        Rg,
-        "to, spent budget",
-        module.ckks_to_replicated(&mut out, &spent, &conv, &mut spent_workspace, &atks, &mut scratch.borrow()),
-        [out],
-        capacity(to)
-    );
-    let mut spent = replicated.clone();
-    spent.set_log_budget(from_bits_consumed + trace_bits - 1);
-    let mut spent_workspace = conv.alloc_from_workspace(module, &spent)?;
-    refused!(
-        Rg,
-        "from, spent budget",
-        module.ckks_from_replicated(&mut out, &spent, &conv, &mut spent_workspace, &atks, &mut scratch.borrow()),
-        [out],
-        capacity(from)
-    );
-    // A destination narrower than the result's scale, where no modulus drop lands it, and a key set lacking the keys
-    // the run looks up.
-    let no_keys: HashMap<i64, poulpy_core::layouts::prepared::GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
-    for (to_dir, res_k) in [(true, log_delta - 1), (false, from_log_delta - 1)] {
-        let mut small = alloc_ct(&params, module, res_k);
-        refused!(
-            Rg,
-            op(to_dir),
-            convert!(to_dir, &mut small, source(to_dir), &atks),
-            [small],
-            capacity(op(to_dir))
-        );
-        refused!(
-            Rg,
-            op(to_dir),
-            convert!(to_dir, &mut out, source(to_dir), &no_keys),
-            [out],
-            |e: &E| matches!(e, E::MissingAutomorphismKey { op: got, .. } if *got == op(to_dir))
-        );
+    let (mut spent_to, mut spent_from) = (ckks.clone(), replicated.clone());
+    spent_to.set_log_budget(conv.to.consumed - 1);
+    spent_from.set_log_budget(from_bits_consumed + trace_bits - 1);
+    let no_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
+    for (to_dir, res_k, a, keys, matches) in [
+        (true, k, &spent_to, &atks, &capacity(to) as &dyn Fn(&E) -> bool),
+        (false, k, &spent_from, &atks, &capacity(from)),
+        (true, log_delta - 1, &ckks, &atks, &capacity(to)),
+        (false, from_log_delta - 1, &replicated, &atks, &capacity(from)),
+        (true, k, &replicated, &atks, &operand(to, "support a replicated slot layout")),
+        (false, k, &ckks, &atks, &operand(from, "the conversion's replicated layout")),
+        (true, k, &coarse, &atks, &operand(to, "exceeds the working scale")),
+        (true, k, &ckks, &no_keys, &missing(to)),
+        (false, k, &replicated, &no_keys, &missing(from)),
+    ] {
+        let mut res = dirty_ct(module, &ckks, res_k);
+        refused!(Rg, op(to_dir), convert!(to_dir, &mut res, a, keys, 0), [res], matches);
     }
     // An arena a byte below the query of each direction.
+    let mut out = dirty_ct(module, &ckks, k);
     for to_dir in [true, false] {
         let bytes = module.ckks_replicated_conversion_tmp_bytes(&out, source(to_dir), &atk_infos, &conv);
-        let before = snapshot::<BE, _, Rg>(&out);
-        let err = with_scratch::<BE, _>(bytes - 1, |s| {
-            if to_dir {
-                module.ckks_to_replicated(&mut out, &ckks, &conv, &mut to_workspace, &atks, s)
-            } else {
-                module.ckks_from_replicated(&mut out, &replicated, &conv, &mut from_workspace, &atks, s)
-            }
-        })
-        .unwrap_err();
-        assert!(
-            err.to_string().contains(&format!("{} needs a scratch arena", op(to_dir))),
-            "short arena: {err}"
+        let short = format!("{} needs a scratch arena", op(to_dir));
+        refused!(
+            Rg,
+            op(to_dir),
+            convert!(to_dir, &mut out, source(to_dir), &atks, bytes - 1),
+            [out],
+            message = short
         );
-        assert_eq!(snapshot::<BE, _, Rg>(&out), before);
     }
     // A period above the batch: the conversion has no gather.
     let wide = ShapingUnit::U16_40.layout(2)?;
-    let ungathered = ReplicatedConversion::<BE, Rg>::new::<F>(
-        module,
-        params.n.into(),
-        wide,
-        base2k,
-        log_delta,
-        log_delta_diag,
-        extra_bits,
-        &mut setup.borrow(),
-    )?;
+    let ungathered = conversion::<BE, F, Rg>(module, (params.n, wide, base2k), scales, None, &mut setup.borrow())?;
     assert!(ungathered.from.is_none());
     let mut other = replicated.clone();
     other.set_slot_layout(SlotLayout::Replicated(wide));
     refused!(
         Rg,
         "from, no gather",
-        module.ckks_from_replicated(
-            &mut out,
-            &other,
-            &ungathered,
-            &mut from_workspace,
-            &atks,
-            &mut scratch.borrow()
-        ),
+        with_scratch::<BE, _>(0, |s| module.ckks_from_replicated(&mut out, &other, &ungathered, &atks, s)),
         [out],
         operand(from, "the gather needs the period")
     );
@@ -2320,70 +2190,50 @@ pub fn test_replicated_transforms_apply_matrices<BE, F, Rg: Ring>(
 ) -> Result<()>
 where
     BE: TestContextBackend,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextSharedModule<BE, Rg>
-        + CKKSEncodingOps<BE, F, Rg>
-        + CKKSReplicatedOps<BE, Rg>
-        + CKKSLinearTransformationOps<BE, Rg>
-        + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + ReplicatedConversionModule<BE, F, Rg> + CKKSReplicatedOps<BE, Rg>,
     F: TestScalar,
 {
     let log_k = 3u8;
     let (len, base2k) = (1usize << log_k, Base2K(params.base2k as u32));
     let layout = ShapingUnit::U16_40.layout(log_k)?;
     let (log_delta_diag, extra_bits) = (36, 16);
-    let mut setup = ScratchOwned::<BE>::alloc(
-        ReplicatedTransform::<BE, Rg>::encode_tmp_bytes::<F>(module, &layout, base2k, 14)?.max(
-            ReplicatedTransform::<BE, Rg>::encode_tmp_bytes::<F>(module, &layout, base2k, log_delta_diag)?,
-        ),
-    );
+    let n = params.n.into();
+    let bytes = ReplicatedConversion::<BE, Rg>::new_tmp_bytes::<F>(module, &layout, base2k, log_delta_diag)?;
+    let mut setup = ScratchOwned::<BE>::alloc(bytes);
+    let conversion = |to, from, scratch: &mut ScratchArena<'_, BE>| {
+        ReplicatedConversion::<BE, Rg>::from_factors(module, n, layout, base2k, LOG_DELTA, extra_bits, to, from, scratch)
+    };
     if real_slots::<Rg>() {
         let imaginary = |_: usize, _: usize| (F::zero(), F::one());
-        assert!(
-            ReplicatedTransform::<BE, Rg>::from_period(module, layout, base2k, 14, true, imaginary, &mut setup.borrow()).is_err()
+        let to = vec![period_factor(layout, len, 14, imaginary)?];
+        let err = conversion(to, None, &mut setup.borrow())
+            .err()
+            .expect("complex diagonals on real slots");
+        assert_ckks_error(
+            "complex diagonals on real slots",
+            &err.into(),
+            crate::CKKSCompositionError::InvalidOperand {
+                op: "ckks_linear_transformation_encode_from_diagonals",
+                reason: "complex linear-transformation diagonals cannot be encoded into real slots".into(),
+            },
         );
     }
     // Shaped diagonals far coarser than the result: each BSGS giant step needs
     // its own rotated shaping polynomial to keep their error off the data slots.
-    let to = ReplicatedTransform::<BE, Rg>::from_period(
-        module,
-        layout,
-        base2k,
-        14,
-        true,
-        |s, j| {
-            if s % (1 << layout.log_r()) == 0 {
-                matrix::<Rg, F>((s >> layout.log_r()) % len, j)
-            } else {
-                (F::zero(), F::zero())
-            }
-        },
-        &mut setup.borrow(),
-    )?;
-    let gather = ReplicatedTransform::<BE, Rg>::gather(
-        module,
-        layout,
-        base2k,
-        log_delta_diag,
-        false,
-        matrix::<Rg, F>,
-        &mut setup.borrow(),
-    )?;
-    let trace: Vec<i64> = (0..(module.ckks_max_slots::<Rg>() / len).trailing_zeros())
-        .map(|l| (len << l) as i64)
-        .collect();
+    let to = period_factor(layout, len, 14, |s, j| {
+        if s % (1 << layout.log_r()) == 0 {
+            matrix::<Rg, F>((s >> layout.log_r()) % len, j)
+        } else {
+            (F::zero(), F::zero())
+        }
+    })?;
+    let gather = gather_factor(layout, log_delta_diag, matrix::<Rg, F>)?;
+    let conv = conversion(vec![to], Some(vec![gather]), &mut setup.borrow())?;
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch::<BE, Rg>(&params, module);
     let mut atks = HashMap::new();
-    for r in to
-        .rotations()
-        .into_iter()
-        .chain(gather.rotations())
-        .chain(trace.iter().copied())
-    {
-        let gal = module.ckks_galois_element::<Rg>(r);
+    for gal in conv.galois_elements() {
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
     let values = unit_batch::<Rg, F>(len, 0);
@@ -2391,43 +2241,25 @@ where
     let k = 40 + 2 * log_delta_diag;
     let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), 40, k)?;
     let atk_infos = params.atk_layout();
-    let conv = ReplicatedConversion {
-        n: params.n.into(),
-        layout,
-        log_delta: LOG_DELTA,
-        extra_bits,
-        to,
-        from: Some(gather),
-        trace,
-    };
     let mut onto = alloc_ct(&params, module, k);
-    let mut to_workspace = conv.alloc_to_workspace(module, &ckks);
     let bytes = module.ckks_replicated_conversion_tmp_bytes(&onto, &ckks, &atk_infos, &conv);
-    with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_to_replicated(&mut onto, &ckks, &conv, &mut to_workspace, &atks, s)
-    })?;
+    with_scratch::<BE, _>(bytes, |s| module.ckks_to_replicated(&mut onto, &ckks, &conv, &atks, s))?;
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &onto, len);
     let onto_bits = precision((&got.0, &got.1), (&want.0, &want.1));
+    // 33.96 bits measured at least on the portable, oracle and rayon backends, both rings: 3.96 bits of margin.
     assert!(onto_bits >= 30.0, "period-k map onto the data slots: {onto_bits:.2} bits");
 
-    let replicated = encrypt_batch(
-        &params,
-        module,
-        &sk,
-        SlotLayout::Replicated(layout),
-        (&values.0, &values.1),
-        k,
-        3,
-    )?;
+    let slot_layout = SlotLayout::Replicated(layout);
+    let replicated = encrypt_batch(&params, module, &sk, slot_layout, (&values.0, &values.1), k, 3)?;
     let mut gathered = alloc_ct(&params, module, k);
-    let mut gather_workspace = conv.alloc_from_workspace(module, &replicated)?;
     let bytes = module.ckks_replicated_conversion_tmp_bytes(&gathered, &replicated, &atk_infos, &conv);
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_from_replicated(&mut gathered, &replicated, &conv, &mut gather_workspace, &atks, s)
+        module.ckks_from_replicated(&mut gathered, &replicated, &conv, &atks, s)
     })?;
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &gathered, len);
     let gather_bits = precision((&got.0, &got.1), (&want.0, &want.1));
-    // Plainly quantized diagonals weighted `R·M(c, j)` over `k` terms.
+    // Plainly quantized diagonals weighted `R·M(c, j)` over `k` terms: 28.53 bits measured at least on the portable,
+    // oracle and rayon backends, both rings: 2.53 bits of margin.
     assert!(gather_bits >= 26.0, "gather and trace: {gather_bits:.2} bits");
     Ok(())
 }
@@ -2444,6 +2276,7 @@ fn eval_mod_plan() -> EvalModPlan {
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(26, 20),
         f_mod_log_delta: 28,
+        packed: false,
     }
 }
 
@@ -2580,36 +2413,19 @@ where
     let base2k = Base2K(params.base2k as u32);
     let mut res = alloc_ct(&test_params, module, k);
     let tsk_layout = test_params.tsk_layout();
-    // The evaluation runs on exactly its query's bytes; the host polynomials and range-extension scale come back.
-    macro_rules! run {
-        ($eval_mod:expr) => {{
-            let eval_mod = $eval_mod;
-            with_scratch::<BE, _>(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout), |s| {
-                module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, s)
-            })?;
-            let scale = eval_mod.range_extension_scale();
-            (eval_mod.f_mod_poly, eval_mod.f_mod_inv_poly, scale)
-        }};
-    }
-    let (f_mod_poly, f_mod_inv_poly, scale) =
-        match slot_layout {
-            SlotLayout::Replicated(layout) if matches!(mode, EvalModMode::Packed) => run!(
-                ckks_eval_mod_replicated_packed_compile::<BE, F, Rg>(base2k, plan, layout, module, &mut compile.borrow())?
-            ),
-            SlotLayout::Replicated(layout) => run!(ckks_eval_mod_replicated_compile::<BE, F, Rg>(
-                base2k,
-                plan,
-                layout,
-                module,
-                &mut compile.borrow()
-            )?),
-            SlotLayout::Full => run!(ckks_eval_mod_compile::<BE, F, Rg>(
-                base2k,
-                plan,
-                module,
-                &mut compile.borrow()
-            )?),
-        };
+    // The evaluation runs on exactly its query's bytes.
+    let packed = matches!(mode, EvalModMode::Packed);
+    let eval_mod = ckks_eval_mod_compile::<BE, F, Rg>(
+        base2k,
+        plan.with_slot_layout(slot_layout).with_packed(packed),
+        module,
+        &mut compile.borrow(),
+    )?;
+    with_scratch::<BE, _>(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout), |s| {
+        module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, s)
+    })?;
+    let scale = eval_mod.range_extension_scale();
+    let (f_mod_poly, f_mod_inv_poly) = (eval_mod.f_mod_poly, eval_mod.f_mod_inv_poly);
     assert_eq!(res.slot_layout(), slot_layout);
     assert_eq!(res.log_delta(), log_delta_in);
 
@@ -2694,19 +2510,41 @@ where
         shaped >= 30.0 && shaped >= full + 25.0,
         "EvalMod with an inverse from 2^24: {shaped:.2} bits against {full:.2} for a full layout"
     );
+    // A packed plan off a replicated layout of two values or more, or other than a cosine without inverse.
+    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
+    let mut compiled = |plan: EvalModPlan| {
+        ckks_eval_mod_compile::<BE, F, Rg>(Base2K(params.base2k as u32), plan, module, &mut compile.borrow()).err()
+    };
+    let packed = eval_mod_plan().with_packed(true);
+    let one_value = SlotLayout::Replicated(ShapingUnit::U32_45.layout(0)?);
+    let inverse = EvalModPlan {
+        f_mod_inv_degree: Some(3),
+        ..packed.with_slot_layout(SlotLayout::Replicated(layout()))
+    };
+    for (plan, reason) in [
+        (packed, "a packed EvalMod takes a replicated layout"),
+        (packed.with_slot_layout(one_value), "a packed EvalMod needs two batches"),
+        (inverse, "a packed EvalMod needs a cosine EvalMod without inverse"),
+    ] {
+        let err = compiled(plan).expect(reason);
+        let want = crate::CKKSCompositionError::InvalidPlan {
+            plan: "EvalModPlan",
+            reason: reason.into(),
+        };
+        assert_eq!(err.downcast_ref::<crate::CKKSCompositionError>(), Some(&want), "{err}");
+    }
     // Real slots have no imaginary parts to pack a second batch on.
     if real_slots::<Rg>() {
-        let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
-        let err = ckks_eval_mod_replicated_packed_compile::<BE, F, Rg>(
-            Base2K(params.base2k as u32),
-            eval_mod_plan(),
-            ShapingUnit::U32_45.layout(LOG_K + 1)?,
-            module,
-            &mut compile.borrow(),
-        )
-        .err()
-        .expect("a packed EvalMod on real slots");
-        assert_invalid_encoding(&err, "ckks_eval_mod_replicated_packed_compile");
+        let two_batches = SlotLayout::Replicated(ShapingUnit::U32_45.layout(LOG_K + 1)?);
+        let err = compiled(packed.with_slot_layout(two_batches)).expect("a packed EvalMod on real slots");
+        let ckks = err.downcast_ref::<crate::CKKSError>().and_then(crate::CKKSError::composition);
+        assert!(
+            ckks.is_some_and(operand(
+                "ckks_eval_mod_compile",
+                "a packed EvalMod needs the complex slots of the standard ring"
+            )),
+            "{err}"
+        );
         return Ok(());
     }
     let full = eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModCase::rounded(), EvalModMode::Full)?;
@@ -2741,98 +2579,101 @@ where
     Ok(())
 }
 
-/// One bootstrapping of `k = 8` values with the parameters of the paper, from
-/// the leveled scale, with full-width and row-offset return keys, at the module's degree and at half of it.
+/// One bootstrapping of `k = 2^log_k` values per row with the parameters of the paper, from the leveled scale, with
+/// full-width and row-offset return keys: dense maps of `U16_40` at the module's degree, with every refusal of the
+/// bootstrapping and of its steps, at half of it, unpacked, and unpacked on real messages, which take one EvalMod on the
+/// real part; the periods `R = 4` and `R = 2`, whose precision the units' suppression bounds, `U4_15` also on `k = 2`
+/// values, a subring of degree 4, below the smallest degree of every backend; and `SlotsToCoeffs` and `CoeffsToSlots`
+/// factored into two DFT factors each, the placements in groups of two bits.
 pub fn test_replicated_bootstrap<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + ReplicatedBootstrapModule<BE, F>
-        + GLWETrace<BE>
-        + GLWECIKeyPreparedFactory<BE>
-        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    BE: TestContextBackend,
+    Module<BE>: ReplicatedBootstrapModule<BE, F>,
     F: TestScalar,
-    E: ReimNew<F>,
 {
-    replicated_bootstrap_with::<BE, F>(
-        params,
-        module,
-        host_module,
-        ShapingUnit::U16_40,
-        3,
-        ReplicatedTransforms::Dense,
-        19.0,
-        true,
-    )?;
-    // A route compiled at half the module's degree bootstraps ciphertexts of that degree.
     let half = CKKSTestParams {
         n: params.n / 2,
         hw: params.hw.min(params.n / 4),
         ..params
     };
     let half_host = Module::<HostBytesBackend>::new(half.n as u64);
-    replicated_bootstrap_with::<BE, F>(
-        half,
-        module,
-        &half_host,
-        ShapingUnit::U16_40,
-        3,
-        ReplicatedTransforms::Dense,
-        19.0,
-        false,
-    )
-}
-
-/// [`test_replicated_bootstrap`] at the periods `R = 4` and `R = 2`, whose
-/// precision the units' suppression bounds: 41 bits for `U8_40`, 15 for `U4_15`,
-/// and at `R = 2` on a batch of `k = 2` values.
-pub fn test_replicated_bootstrap_small_periods<BE, F, E>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) -> Result<()>
-where
-    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + ReplicatedBootstrapModule<BE, F>
-        + GLWETrace<BE>
-        + GLWECIKeyPreparedFactory<BE>
-        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
-    F: TestScalar,
-    E: ReimNew<F>,
-{
-    // `U4_15` suppresses 15.26 bits, which caps its precision: the noise draws move it by a few tenths. Its batch
-    // of `k = 2` values has a subring of degree 4, below the smallest degree of every backend.
-    for (unit, log_k, min_bits) in [
-        (ShapingUnit::U8_40, 3, 21.0),
-        (ShapingUnit::U4_15, 3, 14.5),
-        (ShapingUnit::U4_15, 1, 14.5),
+    let (dense, factored) = (false, true);
+    let (packed, unpacked, real_messages) = ((true, false), (false, false), (false, true));
+    // Least precision on the portable and oracle backends over both key sets, against each row's floor: `U16_40` 23.26
+    // bits (4.26 bits of margin), 23.27 at half the degree (4.27), 23.26 unpacked (4.26), 23.33 unpacked on real
+    // messages (4.33) and 23.33 factored (4.33), and `U8_40` 23.11 (4.11), the 40-bit units bounded alike by the
+    // bootstrapping; `U4_15`, whose 15.26 bits of suppression bound it, 18.21 on 8 values (3.71) and 19.39 on 2 (4.89).
+    for (params, host_module, unit, log_k, transforms, (pack, real), min_bits, refusals) in [
+        (params, host_module, ShapingUnit::U16_40, 3, dense, packed, 19.0, true),
+        (half, &half_host, ShapingUnit::U16_40, 3, dense, packed, 19.0, false),
+        (params, host_module, ShapingUnit::U16_40, 3, dense, unpacked, 19.0, false),
+        (params, host_module, ShapingUnit::U16_40, 3, dense, real_messages, 19.0, false),
+        (params, host_module, ShapingUnit::U8_40, 3, dense, packed, 19.0, false),
+        (params, host_module, ShapingUnit::U4_15, 3, dense, packed, 14.5, false),
+        (params, host_module, ShapingUnit::U4_15, 1, dense, packed, 14.5, false),
+        (params, host_module, ShapingUnit::U16_40, 3, factored, packed, 19.0, false),
     ] {
-        replicated_bootstrap_with::<BE, F>(
-            params,
-            module,
-            host_module,
-            unit,
-            log_k,
-            ReplicatedTransforms::Dense,
-            min_bits,
-            false,
-        )?;
+        let layout = unit.layout(log_k)?;
+        let plan = replicated_plan(layout, params.n.ilog2() as usize, transforms, pack, Some(16))?;
+        let ctx = compile_context::<BE, F>(module, Base2K(params.base2k as u32), &plan);
+        let (k, r) = (1usize << log_k, 1usize << layout.log_r());
+        assert_eq!(ctx.eval_mod_plan().packed, pack && 4 * k * r <= params.n);
+        let k_in = replicated_input_k(&plan);
+        let k_out = k_in + plan.s2c_guard_bits() + LOG_DELTA;
+        let (key_layouts, widths) = replicated_test_keys(&params, &plan, k_out)?;
+        // The output keeps the input's slots, on the sparsity of the period `kR`.
+        let sparsity = (params.n / (2 * k * r)).ilog2() as usize;
+        let (sk_raw, sk) = gen_sk_with_raw::<_, Standard>(&params, module, host_module, [0u8; 32]);
+        let values = match real {
+            true => unit_batch::<ConjugateInvariant, F>(k, 0),
+            false => unit_batch::<Standard, F>(k, 0),
+        };
+        let slot_layout = SlotLayout::Replicated(layout);
+        let mut input = encrypt_batch(&params, module, &sk, slot_layout, (&values.0, &values.1), k_in, 1)?;
+        if real {
+            input.set_slots(SlotsKind::Real);
+        }
+        let mut full_layouts = key_layouts.clone();
+        let full = full_layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
+        full.k_offset = 0usize.into();
+        full.dnum = GGLWELayout::dnum_for_input(plan.bootstrap_k(k_out, 0).into(), full.k_digit);
+        let mut decoded = Vec::new();
+        for (offset_keys, layouts) in [(false, &full_layouts), (true, &key_layouts)] {
+            let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
+            let mut keygen = ScratchOwned::<BE>::alloc(layouts.generate_tmp_bytes(module).max(layouts.prepare_tmp_bytes(module)));
+            let keys = ctx
+                .generate_keys(module, &sk_raw, layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
+                .prepare(module, &mut keygen.borrow())?;
+            let mut out = alloc_ct::<_, Standard>(&params, module, plan.bootstrap_k(k_out, 0));
+            let boot_bytes = module.ckks_bootstrap_tmp_bytes(&out, &input, &ctx, layouts);
+            let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
+            with_scratch::<BE, _>(boot_bytes, |s| module.ckks_bootstrap(&mut out, &input, &ctx, &logged, s))?;
+            logged.assert_lookups_at(&widths, &format!("{unit:?} at degree {}", params.n));
+            assert_eq!(out.slot_layout(), slot_layout);
+            assert_eq!((out.slots(), out.log_sparsity()), (input.slots(), sparsity));
+            assert_eq!((out.log_delta(), out.k().as_usize()), (LOG_DELTA, k_out));
+            let got = decrypt_batch::<BE, F, Standard>(&params, module, &sk, &out, k);
+            let bits = precision((&got.0, &got.1), (&values.0, &values.1));
+            assert!(bits >= min_bits, "2^{log_k} values of {unit:?}: {bits:.2} bits");
+            decoded.push(got);
+            if refusals && offset_keys {
+                replicated_bootstrap_refusals(&params, module, &ctx, &sk_raw, &keys, layouts, &input, k_out)?;
+            }
+        }
+        let bits = precision((&decoded[0].0, &decoded[0].1), (&decoded[1].0, &decoded[1].1));
+        // Least agreement on the same backends: `U16_40` 31.23 bits (13.23 bits of margin), 32.38 at half the degree
+        // (14.38), 31.64 unpacked (13.64), 32.25 unpacked on real messages (14.25) and 30.42 factored (12.42), `U8_40`
+        // 31.97 (13.97), and `U4_15` 17.79 on 8 values (4.29) and 19.35 on 2 (5.85).
+        assert!(bits >= min_bits - 1.0, "{unit:?}: the key sets differ by {bits:.2} bits");
     }
     Ok(())
 }
 
-/// The dense maps of the replicated route against the slots the encoder decodes from each monomial `Y'^j` of the
+/// The dense maps of a replicated layout against the slots the encoder decodes from each monomial `Y'^j` of the
 /// subring of degree `2k`, `V[c][j]`: `SlotsToCoeffs` is `V·BR`, the generator's one-factor `Decode`, and
 /// `CoeffsToSlots` is `BR·V^H/(2Kk)`, its `Encode` scaled by `1/(2K)`, at every degree `2k` from the backend's smallest
 /// to the module's.
@@ -2843,41 +2684,25 @@ pub fn test_replicated_embedding_matches_the_encoder<BE, F, E>(
 ) -> Result<()>
 where
     BE: TestContextBackend,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: ReimNew<F>,
 {
-    let (base2k, log_delta) = (Base2K(params.base2k as u32), 40);
     let max_slots = module.ckks_max_slots::<Standard>();
+    let off = |(re, im): (F, F), (x, y): (f64, f64)| (re.to_f64().unwrap() - x).abs().max((im.to_f64().unwrap() - y).abs());
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(max_slots));
     let mut k = (BE::MIN_DEGREE / 2).max(1);
     while k <= max_slots {
         let log_k = k.trailing_zeros() as usize;
-        let route = ReplicatedRoute::paper(ShapingUnit::U4_15.layout(log_k as u8)?, module.log_n());
-        let eval_mod = ReplicatedRoute::paper_eval_mod(&route.layout);
-        let (c2s, s2c) = route.dft_plans(&eval_mod)?;
-        let decode =
-            crate::layouts::bootstrapping::replicated::one_factor_matrix::<F>(crate::layouts::DFTType::Decode, log_k, &s2c)?;
-        let encode =
-            crate::layouts::bootstrapping::replicated::one_factor_matrix::<F>(crate::layouts::DFTType::Encode, log_k, &c2s)?;
+        let eval_mod = paper_eval_mod(&ShapingUnit::U4_15.layout(log_k as u8)?);
+        let meta = CoeffsMeta::from_delta_budget(26, 0);
+        let dft = |kind| DFTPlan::new(kind, vec![(log_k, 1)], DFTOutputFormat::SplitRealAndImag, meta);
+        let decode = one_factor_matrix::<F>(&dft(DFTType::Decode)?);
+        let encode = one_factor_matrix::<F>(&dft(DFTType::Encode)?.with_scaling(eval_mod.input_scaling()?)?);
         let scale = 1.0 / (2 * k * eval_mod.f_mod_interval) as f64;
-        let bit_reversed = |j: usize| {
-            if log_k == 0 {
-                0
-            } else {
-                j.reverse_bits() >> (usize::BITS as usize - log_k)
-            }
-        };
+        let bit_reversed = |j: usize| j.reverse_bits().checked_shr(usize::BITS - log_k as u32).unwrap_or(0);
         for j in 0..k {
-            let mut pt = module.ckks_plaintext_alloc_from_slots(k, base2k, TorusPrecision((log_delta + 2) as u32));
-            pt.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(log_delta),
-                slots: SlotsKind::Complex,
-                log_sparsity: 0,
-                slot_layout: SlotLayout::Full,
-            });
+            let mut pt = plaintext::<BE, Standard>(&params, module, SlotLayout::Full, k);
+            pt.set_scale(Scale::Log(40));
             let mut coeffs = vec![F::zero(); 2 * k];
             coeffs[bit_reversed(j)] = F::one();
             module.ckks_encode_coeffs_host_into(&mut pt, &coeffs, &mut scratch.borrow())?;
@@ -2885,11 +2710,6 @@ where
             module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
             for c in 0..k {
                 let (v_re, v_im) = (re[c].to_f64().unwrap(), im[c].to_f64().unwrap());
-                let off = |(got_re, got_im): (F, F), (want_re, want_im): (f64, f64)| {
-                    (got_re.to_f64().unwrap() - want_re)
-                        .abs()
-                        .max((got_im.to_f64().unwrap() - want_im).abs())
-                };
                 // The encoding rounds the monomial at `2^40`.
                 let err = off(decode[c][j], (v_re, v_im));
                 assert!(err < 1e-9, "k = {k}: SlotsToCoeffs at ({c}, {j}) is off by {err:e}");
@@ -2902,116 +2722,52 @@ where
     Ok(())
 }
 
-/// [`test_replicated_bootstrap`] with `SlotsToCoeffs` and `CoeffsToSlots`
-/// factored: two DFT factors each, the placements in groups of two bits.
-pub fn test_replicated_bootstrap_factored<BE, F, E>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) -> Result<()>
-where
-    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + ReplicatedBootstrapModule<BE, F>
-        + GLWETrace<BE>
-        + GLWECIKeyPreparedFactory<BE>
-        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
-    F: TestScalar,
-    E: ReimNew<F>,
-{
-    let transforms = ReplicatedTransforms::Factored {
-        s2c_factors: 2,
-        c2s_factors: 2,
-        placement_factors: 2,
-        c2s_inner_log_delta_diag: 44,
-    };
-    replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, 3, transforms, 19.0, false)
-}
-
-/// What compiling and running a replicated bootstrapping at the scalar `F` needs of a module.
+/// What compiling, keying and running a replicated bootstrapping at the scalar `F` needs of a module.
 pub trait ReplicatedBootstrapModule<BE: Backend, F: TestScalar>:
-    ReplicatedKeysModule<BE>
+    TestContextModule<BE>
+    + TestContextSharedModule<BE, ConjugateInvariant>
+    + CKKSEncodingOps<BE, F>
+    + CKKSEncodingOps<BE, F, ConjugateInvariant>
     + CKKSBootstrappingOps<BE>
     + CKKSDFTOps<BE>
     + CKKSDFTMatrixOps<BE, F>
     + CKKSDFTMatrixPreparedFactory<BE>
-    + CKKSRightOperandPreparedFactory<BE>
-    + CKKSEncodingOps<BE, F>
-    + CKKSEncodingOps<BE, F, ConjugateInvariant>
-    + ReplicatedEncodeModule<BE, F>
+    + GLWETrace<BE>
+    + GLWECIKeyEncryptSk<BE>
+    + GLWECIKeyPreparedFactory<BE>
 {
 }
 
 impl<BE: Backend, F: TestScalar, M> ReplicatedBootstrapModule<BE, F> for M where
-    M: ReplicatedKeysModule<BE>
+    M: TestContextModule<BE>
+        + TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEncodingOps<BE, F, ConjugateInvariant>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSDFTMatrixPreparedFactory<BE>
-        + CKKSRightOperandPreparedFactory<BE>
-        + CKKSEncodingOps<BE, F>
-        + CKKSEncodingOps<BE, F, ConjugateInvariant>
-        + ReplicatedEncodeModule<BE, F>
-{
-}
-
-/// What generating the keys of a replicated route needs of a module.
-pub trait ReplicatedKeysModule<BE: Backend>:
-    poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-    + poulpy_hal::layouts::CyclotomicOrder
-    + GLWETrace<BE>
-    + poulpy_core::GLWEAutomorphismKeyEncryptSk<BE>
-    + poulpy_core::GLWETensorKeyEncryptSk<BE>
-    + poulpy_core::GLWESwitchingKeyEncryptSk<BE>
-    + poulpy_core::GLWESecretSampling<BE>
-    + poulpy_hal::api::VecZnxAutomorphism<BE>
-    + poulpy_hal::api::VecZnxSwitchRing<BE>
-    + GLWECIKeyEncryptSk<BE>
-    + poulpy_core::GLWETensorKeyEncryptSk<BE, ConjugateInvariant>
-    + poulpy_core::GLWESecretSampling<BE, ConjugateInvariant>
-{
-}
-
-impl<BE: Backend, M> ReplicatedKeysModule<BE> for M where
-    M: poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + poulpy_hal::layouts::CyclotomicOrder
         + GLWETrace<BE>
-        + poulpy_core::GLWEAutomorphismKeyEncryptSk<BE>
-        + poulpy_core::GLWETensorKeyEncryptSk<BE>
-        + poulpy_core::GLWESwitchingKeyEncryptSk<BE>
-        + poulpy_core::GLWESecretSampling<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + poulpy_hal::api::VecZnxSwitchRing<BE>
         + GLWECIKeyEncryptSk<BE>
-        + poulpy_core::GLWETensorKeyEncryptSk<BE, ConjugateInvariant>
-        + poulpy_core::GLWESecretSampling<BE, ConjugateInvariant>
+        + GLWECIKeyPreparedFactory<BE>
 {
 }
 
-/// The key layouts of `ctx` for an output of `k_out` bits, each key covering its width in the route's width model
-/// ([`BootstrappingContextPrepared::replicated_key_widths`]), shaped by the shared policy under bounds that every
-/// test width fits, and the widths.
-fn replicated_test_keys<BE, F>(
+/// The width of an input of `plan` at the leveled scale `2^LOG_DELTA`.
+fn replicated_input_k(plan: &BootstrappingPlan) -> usize {
+    plan.input_k(LOG_DELTA + plan.s2c_guard_bits() + plan.working_bits() + plan.eval_mod().log_msg_ratio)
+}
+
+/// The key layouts of `plan` for an output of `k_out` bits and an input at the leveled scale, each key covering its
+/// width ([`BootstrappingPlan::key_widths`]), shaped by the shared policy under bounds that every test width fits, and
+/// the widths.
+fn replicated_test_keys(
     params: &CKKSTestParams,
-    module: &Module<BE>,
-    ctx: &BootstrappingContextPrepared<BE, F>,
+    plan: &BootstrappingPlan,
     k_out: usize,
-) -> Result<(
-    crate::layouts::BootstrappingKeysLayout,
-    crate::layouts::BootstrappingKeyWidths,
-)>
-where
-    BE: Backend,
-    Module<BE>: GLWETrace<BE> + poulpy_hal::layouts::CyclotomicOrder,
-{
-    let plan = &ctx.plan;
-    let route = plan.replicated_route().unwrap();
-    let widths = ctx.replicated_key_widths(module, k_out).unwrap();
-    let raise_input_k = route.log_delta + plan.eval_mod().log_msg_ratio;
-    let policy = crate::presets::key_policy::BootstrappingKeyPolicy {
+) -> Result<(BootstrappingKeysLayout, BootstrappingKeyWidths)> {
+    let (raised, k_in) = (plan.bootstrap_k(k_out, 0), replicated_input_k(plan));
+    let policy = BootstrappingKeyPolicy {
         log_n: params.n.ilog2() as usize,
         base2k: params.base2k,
         rank: 1,
@@ -3020,428 +2776,246 @@ where
         max_dsize: None,
         dense_to_sparse_dsize: 1,
     };
-    let raised = plan.replicated_raised_k(k_out).unwrap();
-    let layout = policy.keys_layout_at(
-        &widths,
-        Some((raise_input_k, Some((raise_input_k + route.raise_bits(), raised)))),
-    )?;
-    Ok((layout, widths))
+    let layout = policy.keys_layout(plan, raised, k_in, LOG_DELTA)?;
+    Ok((layout, plan.key_widths(policy.log_n, raised, k_in, LOG_DELTA)))
 }
 
-/// The replicated plan of ePrint 2026/2513 for `layout` at degree `2^log_n` with `transforms`, packed when the two
-/// batches fit, and its sparse secret of weight 16.
-fn replicated_plan(layout: ReplicatedLayout, log_n: usize, transforms: ReplicatedTransforms) -> Result<BootstrappingPlan> {
-    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
-    BootstrappingPlan::replicated(
-        ReplicatedRoute {
-            transforms,
-            packed: 4 * k * r <= 1 << log_n,
-            ..ReplicatedRoute::paper(layout, log_n)
-        },
-        ReplicatedRoute::paper_eval_mod(&layout),
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 16 }),
-            eval_round_plus: None,
-        },
-    )
-}
-
-/// `plan` compiled on `module`, then prepared.
-pub(crate) fn compile_replicated<BE, F>(
-    module: &Module<BE>,
-    base2k: Base2K,
-    plan: &BootstrappingPlan,
-) -> Result<BootstrappingContextPrepared<BE, F>>
-where
-    BE: Backend,
-    F: TestScalar,
-    Module<BE>: ReplicatedBootstrapModule<BE, F>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + crate::CKKSCtBounds + poulpy_core::GLWEDiagonalProd<BE>,
-{
-    let mut compile = ScratchOwned::<BE>::alloc(BootstrappingContextPrepared::<BE, F>::compile_unprepared_tmp_bytes(
-        module, plan,
-    )?);
-    let unprepared = BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, base2k, plan, &mut compile.borrow())?;
-    let mut prepare = ScratchOwned::<BE>::alloc(unprepared.prepare_tmp_bytes(module));
-    unprepared.prepare(module, &mut prepare.borrow())
-}
-
-/// One bootstrapping of `k = 2^log_k` values of `unit`, with full-width and
-/// row-offset return keys, each at least `min_bits` precise, and with `refusals` at the module's degree the refusals
-/// of [`replicated_bootstrap_refusals`].
-#[allow(clippy::too_many_arguments)]
-fn replicated_bootstrap_with<BE, F>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-    unit: ShapingUnit,
-    log_k: u8,
-    transforms: ReplicatedTransforms,
-    min_bits: f64,
-    refusals: bool,
-) -> Result<()>
-where
-    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
-        + ReplicatedBootstrapModule<BE, F>
-        + GLWETrace<BE>
-        + GLWECIKeyPreparedFactory<BE>
-        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
-    F: TestScalar,
-{
-    let layout = unit.layout(log_k)?;
-    let plan = replicated_plan(layout, params.n.ilog2() as usize, transforms)?;
-    let route = *plan.replicated_route().unwrap();
-    let base2k = Base2K(params.base2k as u32);
-    let ctx = compile_replicated::<BE, F>(module, base2k, &plan)?;
-    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
-    assert_eq!(ctx.replicated().unwrap().packed.is_some(), 4 * k * r <= params.n);
-    let k_in = plan.replicated_input_k().unwrap();
-    let k_out = k_in + route.level_log_delta;
-    let (key_layouts, widths) = replicated_test_keys(&params, module, &ctx, k_out)?;
-
-    let (sk_raw, sk) = gen_sk_with_raw::<_, Standard>(&params, module, host_module, [0u8; 32]);
-
-    let len = 1 << layout.log_k();
-    let values = unit_batch::<Standard, F>(len, 0);
-    let input = encrypt_batch(
-        &params,
-        module,
-        &sk,
-        SlotLayout::Replicated(layout),
-        (&values.0, &values.1),
-        k_in - (route.log_delta - route.level_log_delta),
-        1,
-    )?;
-    let mut full_layouts = key_layouts.clone();
-    let full = full_layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
-    full.k_offset = 0usize.into();
-    full.dnum = poulpy_core::layouts::GGLWELayout::dnum_for_input(plan.replicated_raised_k(k_out).unwrap().into(), full.k_digit);
-    let mut decoded = Vec::new();
-    for (offset_keys, key_layouts) in [(false, &full_layouts), (true, &key_layouts)] {
-        let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
-        let mut keygen = ScratchOwned::<BE>::alloc(
-            key_layouts
-                .generate_tmp_bytes(module)
-                .max(key_layouts.prepare_tmp_bytes(module)),
-        );
-        let keys = ctx
-            .generate_replicated_keys(module, &sk_raw, key_layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
-            .prepare(module, &mut keygen.borrow())?;
-        let mut out = alloc_ct::<_, Standard>(&params, module, k_out);
-        let boot_bytes = module.ckks_bootstrap_tmp_bytes(&out, &input, &ctx, key_layouts);
-        let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
-        with_scratch::<BE, _>(boot_bytes, |s| module.ckks_bootstrap(&mut out, &input, &ctx, &logged, s))?;
-        logged.assert_lookups_at(
-            &widths,
-            &format!("replicated bootstrapping of {unit:?} at degree {}", params.n),
-        );
-        assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
-        assert_eq!((out.log_delta(), out.k().as_usize()), (route.level_log_delta, k_out));
-        let got = decrypt_batch::<BE, F, Standard>(&params, module, &sk, &out, len);
-        let bits = precision((&got.0, &got.1), (&values.0, &values.1));
-        assert!(
-            bits >= min_bits,
-            "replicated bootstrapping of 2^{log_k} values of {unit:?}: {bits:.2} bits"
-        );
-        decoded.push(got);
-        if refusals && offset_keys && params.n == module.n() {
-            replicated_bootstrap_refusals(&params, module, &ctx, &sk_raw, &keys, key_layouts, &input, k_out)?;
-        }
-    }
-    let bits = precision((&decoded[0].0, &decoded[0].1), (&decoded[1].0, &decoded[1].1));
-    assert!(
-        bits >= min_bits - 1.0,
-        "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
-    );
-    Ok(())
+/// The replicated plan of ePrint 2026/2513 for `layout` at degree `2^log_n`, the maps in one factor each, or `factored`
+/// into two DFT factors and two placement factors with the inner CoeffsToSlots factors at `2^44`, `packed` when the two
+/// batches fit, and its sparse secret of weight `hamming_weight`.
+pub(crate) fn replicated_plan(
+    layout: ReplicatedLayout,
+    log_n: usize,
+    factored: bool,
+    packed: bool,
+    hamming_weight: Option<usize>,
+) -> Result<BootstrappingPlan> {
+    let factors = 1 + usize::from(factored);
+    let dft = |kind, log_delta| -> Result<DFTPlan> {
+        let schedule: Vec<_> = split_depth(layout.log_k(), factors)
+            .into_iter()
+            .map(|depth| (depth, 1))
+            .collect();
+        let meta = CoeffsMeta::from_delta_budget(log_delta, 0);
+        let placement = if factored { factors } else { 0 };
+        Ok(DFTPlan::new(kind, schedule, DFTOutputFormat::SplitRealAndImag, meta)?.with_placement_factors(placement))
+    };
+    let coeffs_to_slots = match factored {
+        true => dft(DFTType::Encode, 44)?.with_last_factor_log_delta(34),
+        false => dft(DFTType::Encode, 34)?,
+    };
+    let packed = packed && 4 << (layout.log_k() + layout.log_r()) <= 1usize << log_n;
+    let techniques = BootstrappingTechniques {
+        sparse_secret_encapsulation: hamming_weight.map(|hamming_weight| SparseSecretEncapsulation { hamming_weight }),
+        eval_round_plus: None,
+    };
+    let eval_mod = paper_eval_mod(&layout).with_packed(packed);
+    BootstrappingPlan::new(
+        BootstrappingPipeline::S2CFirst,
+        techniques,
+        coeffs_to_slots,
+        eval_mod,
+        dft(DFTType::Decode, 26)?,
+    )?
+    .with_slot_layout(SlotLayout::Replicated(layout), log_n)?
+    .with_c2s_guard_bits(14)?
+    .with_working_bits(8)?
+    .with_s2c_guard_bits(10)
 }
 
 /// Every refusal of a replicated bootstrapping and of its steps fires before any write, each with its variant, `op`
-/// and reason, `res` left as it was: an input off the route's layout, of another scale or without the budget of the
-/// input width; an output of another rank, degree or radix, or narrower than the leveled scale; keys whose encapsulation
-/// the plan does not have, a rotation key or a tensor key short of its width; an arena a byte below the query; and the
-/// operands of the replicated SlotsToCoeffs, CoeffsToSlots and EvalMod steps.
+/// and reason, `res` left as it was: an input off the plan's layout or without the budget of SlotsToCoeffs; an output
+/// of another rank, degree or radix, or narrower than the stages; keys whose encapsulation the plan does not have, a
+/// rotation key or a tensor key short of its width; an arena a byte below the query; the operands of the replicated
+/// SlotsToCoeffs, CoeffsToSlots and EvalMod steps, the keys of both transforms, a plain EvalMod and the tensor key of
+/// EvalMod; and, before any draw, key generation from a secret of another degree than the plan's.
 #[allow(clippy::too_many_arguments)]
 fn replicated_bootstrap_refusals<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     ctx: &BootstrappingContextPrepared<BE, F>,
-    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
-    keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
-    key_layouts: &crate::layouts::BootstrappingKeysLayout,
+    sk_raw: &BackendGLWESecret<BE>,
+    keys: &BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
+    key_layouts: &BootstrappingKeysLayout,
     input: &CKKSCiphertextOwned<BE>,
     k_out: usize,
 ) -> Result<()>
 where
-    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
-        + ReplicatedBootstrapModule<BE, F>
-        + GLWECIKeyPreparedFactory<BE>
-        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
-    F: TestScalar + Sync,
+    BE: TestContextBackend,
+    Module<BE>: ReplicatedBootstrapModule<BE, F>,
+    F: TestScalar,
 {
     use crate::CKKSCompositionError as E;
-    use crate::layouts::{Decode, Encode};
-    use crate::reference::bootstrapping::replicated::check_stage_keys;
-    use poulpy_core::layouts::GGLWEInfos;
     const OP: &str = "ckks_bootstrap";
-    let route = *ctx.plan.replicated_route().unwrap();
-    let alloc = |k: usize, rank: usize, n: usize, base2k: usize| {
-        module.ckks_ciphertext_alloc_from_glwe_infos::<_, Standard>(&GLWELayout {
-            n: n.into(),
-            base2k: base2k.into(),
-            k: k.into(),
-            rank: rank.into(),
-        })
+    let (n, b, level) = (params.n, params.base2k, LOG_DELTA);
+    let shape = |k: usize, rank: usize, n: usize, base2k: usize| GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: k.into(),
+        rank: rank.into(),
     };
-    let bytes = module.ckks_bootstrap_tmp_bytes(&alloc(k_out, 1, params.n, params.base2k), input, ctx, key_layouts);
+    let zero = |k: usize, n: usize| module.ckks_ciphertext_alloc_from_glwe_infos::<_, Standard>(&shape(k, 1, n, b));
+    // A refused destination holds a fixture, at the input's metadata where its width holds the scale.
+    let alloc = |k: usize, rank: usize, n: usize, base2k: usize| {
+        let meta = if k >= input.log_delta() {
+            input.meta()
+        } else {
+            GLWEPlaintextMeta::default()
+        };
+        let glwe_layout = shape(k, rank, n, base2k);
+        fixture_ciphertext::<BE, Standard>(module, &CKKSLayout { glwe_layout, meta }, 7)
+    };
+    let raised_k = ctx.plan.bootstrap_k(k_out, 0);
+    let out = || alloc(raised_k, 1, n, b);
     let refuses = |label: &str,
                    mut res: CKKSCiphertextOwned<BE>,
                    a: &CKKSCiphertextOwned<BE>,
                    ctx: &BootstrappingContextPrepared<BE, F>,
-                   keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
-                   bytes: usize,
+                   keys: &BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
                    matches: &dyn Fn(&E) -> bool| {
         let before = snapshot::<BE, _, Standard>(&res);
-        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut res, a, ctx, keys, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut res, a, ctx, keys, s)).unwrap_err();
         assert!(err.composition().is_some_and(matches), "{label}: unexpected refusal {err}");
         assert_eq!(snapshot::<BE, _, Standard>(&res), before, "{label}: the refusal wrote res");
-        err
     };
-    let out = || alloc(k_out, 1, params.n, params.base2k);
 
-    let mut full = input.clone();
+    // An input off the plan's layout and one without the budget of its chain, which the SlotsToCoeffs step refuses too.
+    let run = ctx.run(input.meta());
+    let (chain, eval_mod) = ("ckks_dft_matrix_eval_assign", "ckks_bootstrap_eval_mod");
+    let (mut full, mut spent_input) = (input.clone(), input.clone());
     full.set_slot_layout(SlotLayout::Full);
-    refuses(
-        "full layout",
-        out(),
-        &full,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "the bootstrapping's replicated layout"),
-    );
-    let mut off_scale = input.clone();
-    off_scale.set_log_delta(route.level_log_delta + 1);
-    refuses(
-        "off scale",
-        out(),
-        &off_scale,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "the bootstrapping or the leveled scale"),
-    );
-    let mut spent = input.clone();
-    spent.set_log_budget(1);
-    refuses(
-        "spent input",
-        out(),
-        &spent,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "of the input width"),
-    );
-    refuses(
-        "rank 2",
-        alloc(k_out, 2, params.n, params.base2k),
-        input,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "rank-1"),
-    );
-    refuses(
-        "half degree",
-        alloc(k_out, 1, params.n / 2, params.base2k),
-        input,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "one degree"),
-    );
-    refuses(
-        "other radix",
-        alloc(k_out, 1, params.n, params.base2k - 1),
-        input,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "one base2k"),
-    );
-    refuses(
-        "narrow output",
-        alloc(route.level_log_delta - 1, 1, params.n, params.base2k),
-        input,
-        ctx,
-        keys,
-        bytes,
-        &operand(OP, "narrower than the leveled scale"),
-    );
-    let plain = BootstrappingPlan::replicated(route, *ctx.plan.eval_mod(), Default::default())?;
-    let plain_ctx = compile_replicated::<BE, F>(module, Base2K(params.base2k as u32), &plain)?;
-    refuses(
-        "encapsulation",
-        out(),
-        input,
-        &plain_ctx,
-        keys,
-        bytes,
-        &operand(OP, "encapsulation"),
-    );
+    spent_input.set_log_budget(1);
+    let off_layout = "the replicated layout of SlotsToCoeffs";
+    let spent = |op: &'static str| move |e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op: o, .. } if *o == op);
+    for (mut a, at_entry, in_step) in [
+        (
+            full,
+            &operand(OP, off_layout) as &dyn Fn(&E) -> bool,
+            &operand(chain, off_layout) as &dyn Fn(&E) -> bool,
+        ),
+        (spent_input, &spent(OP), &spent(chain)),
+    ] {
+        let mut res = out();
+        let bytes = module.ckks_bootstrap_tmp_bytes(&res, &a, ctx, key_layouts);
+        refused!(
+            Standard,
+            "SlotsToCoeffs input",
+            with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut res, &a, ctx, keys, s)),
+            [res],
+            at_entry
+        );
+        refused!(
+            Standard,
+            "SlotsToCoeffs input",
+            with_scratch::<BE, _>(0, |s| module.ckks_slots_to_coeffs_assign(&mut a, &run, keys, s)),
+            [a],
+            in_step
+        );
+    }
+    for (res, reason) in [
+        (alloc(raised_k, 2, n, b), "rank-1"),
+        (alloc(raised_k, 1, n / 2, b), "one degree"),
+        (alloc(raised_k, 1, n, b - 1), "one base2k"),
+        (alloc(level - 1, 1, n, b), "narrower than the bits its stages consume"),
+    ] {
+        refuses(reason, res, input, ctx, keys, &operand(OP, reason));
+    }
+    let log_n = n.ilog2() as usize;
+    let SlotLayout::Replicated(layout) = input.slot_layout() else {
+        unreachable!("a replicated input")
+    };
+    let plain = replicated_plan(layout, log_n, false, true, None)?;
+    let plain_ctx = compile_context::<BE, F>(module, Base2K(b as u32), &plain);
+    refuses("encapsulation", out(), input, &plain_ctx, keys, &operand(OP, "encapsulation"));
     // An output wide enough that a rotation key falls short of its width.
+    let (input_k, log_delta) = (input.k().as_usize(), input.log_delta());
+    let widths_at = |k: usize| ctx.plan.key_widths(log_n, ctx.plan.bootstrap_k(k, 0), input_k, log_delta);
     let covered = |k: usize| {
-        ctx.replicated_key_widths(module, k).is_some_and(|widths| {
-            widths
-                .rotation_keys
-                .iter()
-                .all(|(p, &w)| w <= key_layouts.rotation_keys[p].gglwe_layout().max_input_k().as_usize())
-        })
+        widths_at(k)
+            .rotation_keys
+            .iter()
+            .all(|(p, &w)| w <= key_layouts.rotation_keys[p].gglwe_layout().max_input_k().as_usize())
     };
     let wide_k = (k_out..).find(|&k| !covered(k)).unwrap();
-    let wide = alloc(wide_k, 1, params.n, params.base2k);
-    let wide_bytes = module.ckks_bootstrap_tmp_bytes(&wide, input, ctx, key_layouts);
-    refuses(
-        "rotation key short",
-        wide,
-        input,
-        ctx,
-        keys,
-        wide_bytes,
-        &|e: &E| matches!(e, E::MissingAutomorphismKey { op, .. } if *op == OP),
-    );
-    // Keys whose tensor key digits cover less than EvalMod's widest product.
-    let widths = ctx.replicated_key_widths(module, k_out).unwrap();
-    let mut short_tensor = key_layouts.clone();
-    let tensor = &mut short_tensor.tensor_key;
-    tensor.k_digit = ((widths.tensor_key - 1) / tensor.dnum.as_usize()).into();
-    let (mut xs, mut xe, mut xa) = (Source::new([6; 32]), Source::new([7; 32]), Source::new([8; 32]));
-    let mut keygen = ScratchOwned::<BE>::alloc(
-        short_tensor
-            .generate_tmp_bytes(module)
-            .max(short_tensor.prepare_tmp_bytes(module)),
-    );
-    let short_keys = ctx
-        .generate_replicated_keys(module, sk_raw, &short_tensor, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
-        .prepare(module, &mut keygen.borrow())?;
-    assert!(short_tensor.tensor_key.gglwe_layout().max_input_k().as_usize() < widths.tensor_key);
-    refuses(
-        "tensor key short",
-        out(),
-        input,
-        ctx,
-        &short_keys,
-        bytes,
-        &|e: &E| matches!(e, E::MissingRelinearizationKey { op, .. } if *op == OP),
-    );
-    // Keys whose encapsulation leaves the raise short: the ephemeral key narrower than the raise's input, and the
-    // return key's rows ending below the raised width. The entry refuses them, before SlotsToCoeffs runs.
-    let raise_input_k = ctx.plan.replicated_raise_input_k().unwrap();
-    let short_raise = |shorten: &dyn Fn(&mut crate::layouts::BootstrappingKeysLayout)| -> Result<_> {
+    let missing = |e: &E| matches!(e, E::MissingAutomorphismKey { op, .. } if *op == OP);
+    let wide = alloc(ctx.plan.bootstrap_k(wide_k, 0), 1, n, b);
+    refuses("rotation key short", wide, input, ctx, keys, &missing);
+    // Keys whose tensor key digits cover less than EvalMod's widest product, and keys whose encapsulation leaves the
+    // raise short: the ephemeral key narrower than the raise's input, and the return key's rows ending below the raised
+    // width, which the entry refuses before SlotsToCoeffs runs.
+    let shortened = |shorten: &dyn Fn(&mut BootstrappingKeysLayout)| -> Result<_> {
         let mut layouts = key_layouts.clone();
         shorten(&mut layouts);
         let (mut xs, mut xe, mut xa) = (Source::new([9; 32]), Source::new([10; 32]), Source::new([11; 32]));
         let mut keygen = ScratchOwned::<BE>::alloc(layouts.generate_tmp_bytes(module).max(layouts.prepare_tmp_bytes(module)));
-        ctx.generate_replicated_keys(module, sk_raw, &layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
+        ctx.generate_keys(module, sk_raw, &layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
             .prepare(module, &mut keygen.borrow())
     };
+    let tensor_k = widths_at(k_out).tensor_key;
+    let short_tensor = shortened(&|layouts| {
+        let tensor = &mut layouts.tensor_key;
+        tensor.k_digit = ((tensor_k - 1) / tensor.dnum.as_usize()).into();
+    })?;
+    let relinearization = |e: &E| matches!(e, E::MissingRelinearizationKey { op, .. } if *op == OP);
+    refuses("tensor key short", out(), input, ctx, &short_tensor, &relinearization);
+    let lift = ctx.plan.s2c_guard_bits() + ctx.plan.working_bits();
+    let raise_input_k = level + lift + ctx.plan.eval_mod().log_msg_ratio;
     let raise_refusal = &|e: &E| matches!(e, E::InvalidOperand { op, .. } if *op == OP);
-    let narrow_ephemeral = short_raise(&|layouts| {
+    let ephemeral = shortened(&|layouts| {
         let key = &mut layouts.encapsulation.as_mut().unwrap().dense_to_sparse;
         key.k_digit = ((raise_input_k - 1) / key.dnum.as_usize()).into();
     })?;
-    refuses(
-        "ephemeral key short",
-        out(),
-        input,
-        ctx,
-        &narrow_ephemeral,
-        bytes,
-        raise_refusal,
-    );
-    let short_return = short_raise(&|layouts| {
+    refuses("ephemeral key short", out(), input, ctx, &ephemeral, raise_refusal);
+    let short_return = shortened(&|layouts| {
         let key = layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
         key.k_digit = (key.k_digit.as_usize() - 1).into();
     })?;
-    refuses("return key short", out(), input, ctx, &short_return, bytes, raise_refusal);
-    // An arena a byte below the query.
+    refuses("return key short", out(), input, ctx, &short_return, raise_refusal);
+    // Key generation from a secret of another degree than the plan's.
+    let sk = module.glwe_secret_alloc_from_infos(&shape(1, 1, n / 2, b));
+    let fresh = || [12, 13, 14].map(|b| Source::new([b; 32]));
+    let [xs, xe, xa] = &mut fresh();
+    let result = with_scratch::<BE, _>(0, |s| ctx.generate_keys(module, &sk, key_layouts, xs, xe, xa, s));
+    let off_degree = E::InvalidPlan {
+        plan: "BootstrappingPlan",
+        reason: "a replicated layout takes the degree it states".into(),
+    };
+    assert_eq!(result.err().unwrap().downcast_ref::<E>(), Some(&off_degree));
+    assert!([xs, xe, xa].map(|s| s.new_seed()) == fresh().map(|mut s| s.new_seed()));
+    // An arena a byte below the query, then EvalMod on an input off the layout CoeffsToSlots writes.
+    let bytes = module.ckks_bootstrap_tmp_bytes(&out(), input, ctx, key_layouts);
     let mut res = out();
-    let before = snapshot::<BE, _, Standard>(&res);
-    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_bootstrap(&mut res, input, ctx, keys, s)).unwrap_err();
-    assert!(
-        err.to_string().contains("ckks_bootstrap needs a scratch arena"),
-        "short arena: {err}"
-    );
-    assert_eq!(
-        snapshot::<BE, _, Standard>(&res),
-        before,
-        "short arena: the refusal wrote res"
-    );
-
-    // The steps on operands off the run's route, refused before any write.
-    let run = ctx.run(input.meta());
-    let (s2c, c2s, eval_mod) = (
-        "ckks_slots_to_coeffs_assign",
-        "ckks_coeffs_to_slots_assign",
-        "ckks_bootstrap_eval_mod",
-    );
-    for (label, a, reason) in [
-        ("SlotsToCoeffs, full layout", &full, "the layout of its route"),
-        (
-            "SlotsToCoeffs, off scale",
-            &off_scale,
-            "the bootstrapping or the leveled scale",
-        ),
-        ("SlotsToCoeffs, spent input", &spent, "less budget than the input width"),
-    ] {
-        let mut a = a.clone();
-        refused!(
-            Standard,
-            label,
-            with_scratch::<BE, _>(bytes, |s| module.ckks_slots_to_coeffs_assign(&mut a, &run, keys, s)),
-            [a],
-            operand(s2c, reason)
-        );
-    }
-    let mut a = input.clone();
     refused!(
         Standard,
-        "CoeffsToSlots, replicated layout",
-        with_scratch::<BE, _>(bytes, |s| module.ckks_coeffs_to_slots_assign(&mut a, &run, keys, s)),
-        [a],
-        operand(c2s, "of the full layout")
+        "short arena",
+        with_scratch::<BE, _>(bytes - 1, |s| module.ckks_bootstrap(&mut res, input, ctx, keys, s)),
+        [res],
+        message = "ckks_bootstrap needs a scratch arena"
     );
-    let mut res = out();
     refused!(
         Standard,
         "EvalMod, replicated layout",
-        with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap_eval_mod(&mut res, input, &run, keys, s)),
+        with_scratch::<BE, _>(0, |s| module.ckks_bootstrap_eval_mod(&mut res, input, &run, keys, s)),
         [res],
         operand(eval_mod, "the output of the replicated CoeffsToSlots")
     );
 
-    // The steps on the operands of a bootstrapping: each checks its keys and its arena, a byte below its query, before
-    // it writes.
-    let stages = ctx.replicated().unwrap();
-    let log_msg_ratio = ctx.plan.eval_mod().log_msg_ratio;
-    let k_in = ctx.plan.replicated_input_k().unwrap();
-    let mut coeffs = alloc(input.k().as_usize().max(k_in), 1, params.n, params.base2k);
+    // The steps on the operands of a bootstrapping, before any write: the chain of each transform refuses its degree,
+    // budget and keys, then its arena, a byte below the query over the keys it uses. SlotsToCoeffs runs on a copy of the
+    // input lifted by the S2C guard and working bits, as the bootstrap composes it.
+    let mut coeffs = zero(input.k().as_usize() + lift, n);
     with_scratch::<BE, _>(bytes, |s| module.ckks_copy(&mut coeffs, input, s))?;
-    let s2c_bytes = check_stage_keys::<_, Decode, _, _, _>(
-        s2c,
-        module,
-        &coeffs,
-        &run,
-        stages.s2c_stage(log_msg_ratio),
-        k_in + route.extra_bits,
-        keys,
-    )?;
+    coeffs.set_log_delta(input.log_delta() + lift);
+    let offsets = ctx.rotation_key_offsets();
+    let step_bytes = |decode: bool, query: &dyn Fn(&GLWEAutomorphismKeyLayout) -> usize| {
+        let used = offsets
+            .iter()
+            .filter(|key| (if decode { key.slots_to_coeffs } else { key.raised }).is_some());
+        used.map(|key| query(&key_layouts.rotation_keys[&key.p])).max().unwrap()
+    };
+    let s2c_bytes = step_bytes(true, &|key| {
+        module.ckks_dft_tmp_bytes::<Decode, _, _, _, _, _>(&coeffs, &coeffs, &run, key)
+    });
     let short_arena = |op: &str| format!("{op} needs a scratch arena");
     let mut a = coeffs.clone();
     refused!(
@@ -3449,81 +3023,147 @@ where
         "SlotsToCoeffs, short arena",
         with_scratch::<BE, _>(s2c_bytes - 1, |s| module.ckks_slots_to_coeffs_assign(&mut a, &run, keys, s)),
         [a],
-        message = short_arena(s2c)
+        message = short_arena(chain)
     );
-    with_scratch::<BE, _>(bytes, |s| module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys, s))?;
-    let mut raised = alloc(ctx.plan.replicated_raised_k(k_out).unwrap(), 1, params.n, params.base2k);
-    with_scratch::<BE, _>(bytes, |s| module.ckks_mod_raise(&mut raised, &mut coeffs, &run, keys, s))?;
-    // A key of the CoeffsToSlots transform that its trace does not use, hidden.
-    use crate::layouts::CKKSDFTFactors;
-    let trace = module.glwe_trace_galois_elements(params.n.into(), stages.top_skip..params.n.ilog2() as usize, false);
-    let chain = crate::layouts::validation::chain_galois_lookups(
-        "test",
-        module,
-        params.n,
-        ctx.coeffs_to_slots().factor_plans(),
-        &stages.c2s_consumed,
-        raised.k().as_usize(),
-    )?;
-    let hidden = chain
-        .iter()
-        .map(|&(p, _)| p)
-        .find(|p| !trace.contains(p))
-        .expect("CoeffsToSlots rotates by a key its trace does not use");
-    let hiding = HidingKey { keys, hidden };
+    let mut decoded = coeffs.clone();
+    with_scratch::<BE, _>(s2c_bytes, |s| module.ckks_slots_to_coeffs_assign(&mut decoded, &run, keys, s))?;
+    let mut raised = zero(ctx.plan.bootstrap_k(k_out, 0), n);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mod_raise(&mut raised, &mut decoded, &run, keys, s))?;
+    let half = CKKSLayout {
+        glwe_layout: shape(raised.k().as_usize(), 1, n / 2, b),
+        meta: raised.meta(),
+    };
+    let (half, mut spent) = (fixture_ciphertext::<BE, Standard>(module, &half, 8), raised.clone());
+    spent.set_log_budget(1);
+    let layout = operand(chain, "replicated slot layout");
+    let degree = operand(chain, "the slots of the input's degree must hold the layout of the plan");
+    let budget = |e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op, .. } if *op == chain);
+    for (label, a, matches) in [
+        ("CoeffsToSlots, replicated layout", input, &layout as &dyn Fn(&E) -> bool),
+        ("CoeffsToSlots, half degree", &half, &degree),
+        ("CoeffsToSlots, spent input", &spent, &budget),
+    ] {
+        let mut a = a.clone();
+        refused!(
+            Standard,
+            label,
+            with_scratch::<BE, _>(0, |s| module.ckks_coeffs_to_slots_assign(&mut a, &run, keys, s)),
+            [a],
+            matches
+        );
+    }
+    // A key of each step's trace, and one of its transform that the trace does not use, hidden one at a time.
+    let mut hiding = shortened(&|_| {})?;
+    for (decode, start) in [(true, &coeffs), (false, &raised)] {
+        let dft = if decode {
+            ctx.plan.slots_to_coeffs()
+        } else {
+            ctx.plan.coeffs_to_slots()
+        };
+        let trace = module.glwe_trace_galois_elements(n.into(), dft.trace_levels(log_n).unwrap(), false);
+        let transform = offsets
+            .iter()
+            .find(|key| (if decode { key.slots_to_coeffs } else { key.raised }).is_some() && !trace.contains(&key.p));
+        let transform = transform.expect("each transform rotates by a key its trace does not use").p;
+        for p in [trace[0], transform] {
+            let key = hiding.rotation_keys.remove(&p).unwrap();
+            let mut a = start.clone();
+            refused!(
+                Standard,
+                "hidden key",
+                with_scratch::<BE, _>(0, |s| match decode {
+                    true => module.ckks_slots_to_coeffs_assign(&mut a, &run, &hiding, s),
+                    false => module.ckks_coeffs_to_slots_assign(&mut a, &run, &hiding, s),
+                }),
+                [a],
+                |e: &E| matches!(e, E::MissingAutomorphismKey { op, rotation, .. } if *op == chain && *rotation == p)
+            );
+            hiding.rotation_keys.insert(p, key);
+        }
+    }
+    let c2s_bytes = step_bytes(false, &|key| {
+        module.ckks_dft_tmp_bytes::<Encode, _, _, _, _, _>(&raised, &raised, &run, key)
+    });
     let mut a = raised.clone();
-    refused!(
-        Standard,
-        "CoeffsToSlots without a transform key",
-        with_scratch::<BE, _>(bytes, |s| module.ckks_coeffs_to_slots_assign(&mut a, &run, &hiding, s)),
-        [a],
-        |e: &E| matches!(e, E::MissingAutomorphismKey { op, rotation, .. } if *op == c2s && *rotation == hidden)
-    );
-    let c2s_bytes = check_stage_keys::<_, Encode, _, _, _>(
-        c2s,
-        module,
-        &raised,
-        &run,
-        stages.c2s_stage(log_msg_ratio),
-        raised.k().as_usize(),
-        keys,
-    )?;
     refused!(
         Standard,
         "CoeffsToSlots, short arena",
         with_scratch::<BE, _>(c2s_bytes - 1, |s| module.ckks_coeffs_to_slots_assign(&mut a, &run, keys, s)),
         [a],
-        message = short_arena(c2s)
+        message = short_arena(chain)
     );
-    with_scratch::<BE, _>(bytes, |s| module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s))?;
-    // EvalMod on an output of another rank, degree or width, and on an input short of its working bits.
+    with_scratch::<BE, _>(c2s_bytes, |s| module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s))?;
+    // EvalMod on an output of another rank, degree or width, on an input short of its working bits, and on one without
+    // the budget EvalMod consumes.
     let mut cooled = raised.clone();
-    cooled.set_log_delta(route.log_delta + route.mod_up_extra_bits + route.extra_bits - 1);
-    for (label, mut res, a, reason) in [
-        ("EvalMod, rank 2", alloc(k_out, 2, params.n, params.base2k), &raised, "rank-1"),
+    cooled.set_log_delta(level + ctx.plan.s2c_guard_bits() + ctx.plan.c2s_guard_bits() - 1);
+    let mut starved = raised.clone();
+    starved.set_log_budget(ctx.plan.eval_mod().consumed_bits() - 1);
+    let (rank, degree, narrow) = (
+        operand(eval_mod, "rank-1"),
+        operand(eval_mod, "one degree"),
+        operand(eval_mod, "lands the result in an output of"),
+    );
+    let working = operand(eval_mod, "bits under the raised scale");
+    let capacity = |e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op, .. } if *op == eval_mod);
+    for (label, mut res, a, matches) in [
         (
-            "EvalMod, half degree",
-            alloc(k_out, 1, params.n / 2, params.base2k),
+            "EvalMod, rank 2",
+            alloc(k_out, 2, n, b),
             &raised,
-            "one degree",
+            &rank as &dyn Fn(&E) -> bool,
         ),
-        (
-            "EvalMod, wide output",
-            alloc(k_out + 1, 1, params.n, params.base2k),
-            &raised,
-            "at the leveled scale",
-        ),
-        ("EvalMod, off its working bits", out(), &cooled, "bits under the raised scale"),
+        ("EvalMod, half degree", alloc(k_out, 1, n / 2, b), &raised, &degree),
+        ("EvalMod, narrow", alloc((k_out - 1) / b * b, 1, n, b), &raised, &narrow),
+        ("EvalMod, off its working bits", out(), &cooled, &working),
+        ("EvalMod, spent input", out(), &starved, &capacity),
     ] {
         refused!(
             Standard,
             label,
-            with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap_eval_mod(&mut res, a, &run, keys, s)),
+            with_scratch::<BE, _>(0, |s| module.ckks_bootstrap_eval_mod(&mut res, a, &run, keys, s)),
             [res],
-            operand(eval_mod, reason)
+            matches
         );
     }
-    // A byte below the step's query, which an override's own workspace is part of.
+    // A plain EvalMod, which has no message to land the output at.
+    let mut res = out();
+    refused!(
+        Standard,
+        "EvalMod, plain",
+        with_scratch::<BE, _>(0, |s| module.ckks_bootstrap_eval_mod(
+            &mut res,
+            &raised,
+            ctx.eval_mod().unwrap(),
+            keys,
+            s
+        )),
+        [res],
+        operand(eval_mod, "a plain EvalMod takes the full layout")
+    );
+    // A tensor key of another radix covering EvalMod's widest product, but not the tensor intermediate its products
+    // then carve under the shaping depth.
+    let widest = ctx.plan.eval_mod().relinearization_k(raised.log_budget());
+    let other_radix = shortened(&|layouts| {
+        let tensor = &mut layouts.tensor_key;
+        tensor.base2k = (b - 1).into();
+        tensor.k_digit = widest.div_ceil(tensor.dnum.as_usize()).into();
+    })?;
+    let mut res = out();
+    refused!(
+        Standard,
+        "EvalMod, tensor key short of the intermediate",
+        with_scratch::<BE, _>(0, |s| module.ckks_bootstrap_eval_mod(
+            &mut res,
+            &raised,
+            &run,
+            &other_radix,
+            s
+        )),
+        [res],
+        |e: &E| matches!(e, E::MissingRelinearizationKey { op, .. } if *op == eval_mod)
+    );
+    // A byte below the step's query, which an override's own workspace is part of, then exactly the query.
     let mut res = out();
     let eval_mod_bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&res, &raised, &run, key_layouts);
     refused!(
@@ -3534,53 +3174,10 @@ where
         [res],
         message = short_arena(eval_mod)
     );
+    with_scratch::<BE, _>(eval_mod_bytes, |s| {
+        module.ckks_bootstrap_eval_mod(&mut res, &raised, &run, keys, s)
+    })?;
     Ok(())
-}
-
-/// [`assert_entry_then_widest`](super::helpers::assert_entry_then_widest) of the lookups `seen` of a conversion on
-/// operands of degree `n`, its entry check modelled by the rotations and widths of `model`.
-fn assert_conversion_lookups<BE: Backend, Rg: Ring>(
-    label: &str,
-    module: &Module<BE>,
-    n: usize,
-    model: &[(i64, usize)],
-    seen: Vec<(i64, poulpy_core::layouts::TorusPrecision)>,
-) {
-    let entry: Vec<(i64, usize)> = model
-        .iter()
-        .map(|&(r, k)| {
-            (
-                crate::operand_rotation_galois_element::<_, Rg>("test", module, n, r).unwrap(),
-                k,
-            )
-        })
-        .collect();
-    let seen: Vec<(i64, usize)> = seen.into_iter().map(|(p, k)| (p, k.as_usize())).collect();
-    super::helpers::assert_entry_then_widest(label, &seen, &entry);
-}
-
-/// `keys` without the automorphism key of the Galois element `hidden`.
-struct HidingKey<'a, K> {
-    keys: &'a K,
-    hidden: i64,
-}
-
-impl<BE: Backend, K: poulpy_core::layouts::GetAutomorphismKey<BE>> poulpy_core::layouts::GetAutomorphismKey<BE>
-    for HidingKey<'_, K>
-{
-    fn lookup_automorphism_key(
-        &self,
-        p: i64,
-        k: poulpy_core::layouts::TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Standard>> {
-        if p == self.hidden {
-            return Err(poulpy_core::CoreError::GGLWEKeyUse {
-                op: "get_automorphism_key",
-                detail: format!("no automorphism key for p={p}"),
-            });
-        }
-        self.keys.lookup_automorphism_key(p, k)
-    }
 }
 
 /// [`test_replicated_bootstrap`] on the conjugate-invariant ring of degree `N` on one `module` of degree `2N`: the input
@@ -3588,17 +3185,8 @@ impl<BE: Backend, K: poulpy_core::layouts::GetAutomorphismKey<BE>> poulpy_core::
 /// and traced back by `ckks_ci_trace`, each ring map at the shaping depth.
 pub fn test_replicated_ci_bootstrap<BE>(params: CKKSTestParams, module: &Module<BE>) -> Result<()>
 where
-    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
-        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
-        + TestContextModule<BE>
-        + ReplicatedBootstrapModule<BE, f64>
-        + CKKSCIRingMapOps<BE>
-        + GLWECIKeyEncryptSk<BE>
-        + GLWECIKeyPreparedFactory<BE>
-        + GLWETrace<BE>,
+    BE: TestContextBackend,
+    Module<BE>: ReplicatedBootstrapModule<BE, f64> + CKKSCIRingMapOps<BE>,
 {
     assert_eq!(module.n(), 2 * params.n, "the module serves both rings at degrees N and 2N");
     let standard_params = CKKSTestParams {
@@ -3607,34 +3195,25 @@ where
     };
     let host = Module::<HostBytesBackend>::new(standard_params.n as u64);
     let layout = ShapingUnit::U16_40.layout(3)?;
-    let plan = replicated_plan(layout, standard_params.n.ilog2() as usize, ReplicatedTransforms::Dense)?;
-    let route = *plan.replicated_route().unwrap();
+    let plan = replicated_plan(layout, standard_params.n.ilog2() as usize, false, true, Some(16))?;
     let base2k = Base2K(params.base2k as u32);
-    let ctx = compile_replicated::<BE, f64>(module, base2k, &plan)?;
+    let ctx = compile_context::<BE, f64>(module, base2k, &plan);
 
     // The standard bootstrapping runs one bit wider than the output, for the trace to spend.
-    let k_in_boot = plan.replicated_input_k().unwrap();
-    let k_out = k_in_boot + route.level_log_delta;
-    let (key_layouts, _) = replicated_test_keys(&standard_params, module, &ctx, k_out + 1)?;
+    let k_in = replicated_input_k(&plan);
+    let k_out = k_in + plan.s2c_guard_bits() + LOG_DELTA;
+    let (key_layouts, _) = replicated_test_keys(&standard_params, &plan, k_out + 1)?;
     let (ci_sk_raw, ci_sk) = gen_sk_with_raw::<_, ConjugateInvariant>(&params, module, &host, [0u8; 32]);
     let (sk_raw, _) = gen_sk_with_raw::<_, Standard>(&standard_params, module, &host, [1u8; 32]);
 
     let len = 1 << layout.log_k();
     let values = unit_batch::<ConjugateInvariant, f64>(len, 0);
-    let k_in = k_in_boot - (route.log_delta - route.level_log_delta);
-    let input = encrypt_batch(
-        &params,
-        module,
-        &ci_sk,
-        SlotLayout::Replicated(layout),
-        (&values.0, &values.1),
-        k_in,
-        1,
-    )?;
+    let slot_layout = SlotLayout::Replicated(layout);
+    let input = encrypt_batch(&params, module, &ci_sk, slot_layout, (&values.0, &values.1), k_in, 1)?;
 
     // The conversion keys cover the ring maps at the shaping depth.
-    let profile = crate::shaping::ShapingProfile::new(&layout);
-    let width = (k_in + profile.shaping_depth(input.log_delta())).max(k_out + 1 + profile.shaping_depth(route.level_log_delta));
+    let profile = ShapingProfile::new(&layout);
+    let width = (k_in + profile.shaping_depth(input.log_delta())).max(k_out + 1 + profile.shaping_depth(LOG_DELTA));
     let conversion_layout = standard_params.ksk_layout(width);
     let mut keygen = ScratchOwned::<BE>::alloc(
         module
@@ -3646,25 +3225,24 @@ where
     let (embed_key, trace_key) = gen_ci_keys(&standard_params, module, &ci_sk_raw, &sk_raw, width, &mut keygen.borrow());
     let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
     let keys = ctx
-        .generate_replicated_keys(module, &sk_raw, &key_layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
+        .generate_keys(module, &sk_raw, &key_layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
         .prepare(module, &mut keygen.borrow())?;
 
     let mut embedded = alloc_ct::<_, Standard>(&standard_params, module, k_in);
-    let mut refreshed = alloc_ct::<_, Standard>(&standard_params, module, k_out + 1);
+    let mut refreshed = alloc_ct::<_, Standard>(&standard_params, module, plan.bootstrap_k(k_out + 1, 0));
     let mut out = alloc_ct::<_, ConjugateInvariant>(&params, module, k_out);
-    let bytes = module
-        .ckks_ci_embed_tmp_bytes(&embedded, &input, &conversion_layout)
-        .max(module.ckks_bootstrap_tmp_bytes(&refreshed, &embedded, &ctx, &key_layouts))
-        .max(module.ckks_ci_trace_tmp_bytes(&out, &refreshed, &conversion_layout));
-    let mut scratch = ScratchOwned::<BE>::alloc(bytes);
-    module.ckks_ci_embed(&mut embedded, &input, &embed_key, &mut scratch.borrow())?;
-    module.ckks_bootstrap(&mut refreshed, &embedded, &ctx, &keys, &mut scratch.borrow())?;
-    module.ckks_ci_trace(&mut out, &refreshed, &trace_key, &mut scratch.borrow())?;
-    assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+    let bytes = module.ckks_ci_embed_tmp_bytes(&embedded, &input, &conversion_layout);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_ci_embed(&mut embedded, &input, &embed_key, s))?;
+    let bytes = module.ckks_bootstrap_tmp_bytes(&refreshed, &embedded, &ctx, &key_layouts);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut refreshed, &embedded, &ctx, &keys, s))?;
+    let bytes = module.ckks_ci_trace_tmp_bytes(&out, &refreshed, &conversion_layout);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_ci_trace(&mut out, &refreshed, &trace_key, s))?;
+    assert_eq!(out.slot_layout(), slot_layout);
     assert_eq!(out.slots(), SlotsKind::Real);
-    assert_eq!((out.log_delta(), out.k().as_usize()), (route.level_log_delta, k_out));
+    assert_eq!((out.log_delta(), out.k().as_usize()), (LOG_DELTA, k_out));
     let got = decrypt_batch::<BE, f64, ConjugateInvariant>(&params, module, &ci_sk, &out, len);
     let bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    // 23.33 bits measured at least on the portable, oracle and rayon backends: 4.33 bits of margin.
     assert!(bits >= 19.0, "conjugate-invariant replicated bootstrapping: {bits:.2} bits");
     Ok(())
 }

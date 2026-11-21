@@ -4,10 +4,11 @@
 //!
 //! All test logic lives in `poulpy_ckks::test_suite` as backend-generic
 //! functions; this file only instantiates that suite for each concrete
-//! `(backend, scalar, encoder, params)` combination via `ckks_backend_test_suite!`.
+//! `(backend, scalar, encoder, params)` combination via `ckks_backend_test_suite!`,
+//! and the determinism fixtures of each type via `ckks_determinism_test_suite!`.
 //! There should be no hand-written test here.
 
-use poulpy_ckks::{ckks_backend_rank2_test_suite, ckks_backend_test_suite};
+use poulpy_ckks::{ckks_backend_rank2_test_suite, ckks_backend_test_suite, ckks_determinism_test_suite};
 
 const ATK_ROTATIONS: &[i64] = &[1, 7];
 
@@ -37,6 +38,10 @@ ckks_backend_test_suite!(
     params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
     rotations = super::ATK_ROTATIONS,
 );
+
+ckks_determinism_test_suite!(mod ckks_determinism_fft64oracle, backend = crate::FFT64Oracle, f32);
+
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30oracle, backend = crate::NTT4x30Oracle, f32);
 
 // Rank-2 coverage: the rank-generic arithmetic subset (the full suite's
 // bootstrapping/EvalMod/DFT/PaCo pipelines are rank-1 by construction).
@@ -89,9 +94,10 @@ fn ntt4x30_small_c2s_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Oracle>();
 }
 
-/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
+/// Full logN14 to logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::replicated_bootstrapping_presets_meet_precision_with_client;
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
@@ -104,17 +110,12 @@ mod bootstrapping_presets {
     fn fft64_presets_meet_precision() {
         bootstrapping_presets_meet_precision::<crate::FFT64Oracle>();
     }
-}
 
-/// Full logN14 to logN16 replicated bootstraps per preset: slow, so opt in with `--ignored`.
-mod replicated_bootstrapping_presets {
-    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
-    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
-
+    // FFT64 types do not run the replicated presets: no FFT64 radix is measured against them.
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
-    fn ntt4x30_presets_meet_precision() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle>(52);
+    fn ntt4x30_replicated_presets_meet_precision() {
+        replicated_bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30Oracle, crate::NTT4x30Oracle>(52);
     }
 }
 

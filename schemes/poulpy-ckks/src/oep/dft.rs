@@ -36,8 +36,6 @@ pub unsafe trait CKKSDFTImpl:
     + super::CKKSSubImpl
     + super::CKKSImagImpl
     + super::CKKSRotateImpl
-    + super::CKKSRoundImpl
-    + poulpy_core::oep::GLWETraceImpl
 {
     /// Scratch bound of [`Self::ckks_dft_matrix_prepare`] and [`Self::ckks_dft_matrix_prepare_alloc`]; may report less
     /// than the reference, never less than the body takes.
@@ -106,7 +104,7 @@ pub unsafe trait CKKSDFTImpl:
         H: GetAutomorphismKey<Self>;
 
     /// Default body: `ckks_encoding_buffer_coeffs_to_slots_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the encode
-    /// matrix.
+    /// matrix, then [`CKKSDFTFactors::stamp_transform_output`].
     fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,

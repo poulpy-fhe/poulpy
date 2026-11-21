@@ -1,7 +1,8 @@
 use crate::FFT64Portable;
 use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::api::{
-    CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LtDiagonalMeta,
+    CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar,
+    CKKSLinearTransformationOps, LtDiagonalMeta,
 };
 use poulpy_ckks::layouts::{
     BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSEvalModInfos,
@@ -342,7 +343,9 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
 use super::OverrideBackend;
 use super::carry::assert_query_takes_extra;
 use poulpy_ckks::reference::bootstrapping::{CKKSBootstrapEvalModReference, CKKSEvalLutReference, CKKSModRaiseReference};
-use poulpy_ckks::test_suite::parity::{run_bootstrap, run_refused_bootstraps};
+use poulpy_ckks::test_suite::parity::{
+    replicated_bootstrap_case, run_bootstrap, run_refused_bootstraps, run_replicated_bootstrap,
+};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::GLWEDiagonalProd;
 use std::cell::{Cell, RefCell};
@@ -626,7 +629,6 @@ unsafe impl<F: CKKSEncodingScalar + DftScalar> CKKSDFTMatrixImpl<F> for Override
 /// The bootstrap queries take the selected DFT's workspace and each step hook's extra one for one.
 #[test]
 fn bootstrap_sizing_includes_selected_dft_workspace() {
-    use poulpy_ckks::api::CKKSBootstrappingOps;
     use poulpy_ckks::layouts::DFTType;
     use poulpy_ckks::layouts::eval_mod::{EvalModPlan, EvalModType};
     use poulpy_ckks::layouts::{
@@ -902,32 +904,45 @@ fn bootstrap_enters_each_step_hook() {
     assert_eq!(got, want, "the probe's bootstraps differ from the base backend's");
 }
 
+/// The derived `ckks_bootstrap` of the replicated parity case, each on exactly its query poisoned, enters each step
+/// hook behind its marked region and gives the base backend's outputs; its query takes each step hook's extra.
 #[test]
 fn replicated_bootstrap_enters_each_step_hook() {
-    let params = poulpy_ckks::test_suite::BASE19_PARAMS_F64;
-    let module = Module::<OverrideBackend>::new(params.n as u64);
-    let host = Module::<HostBytesBackend>::new(params.n as u64);
+    let params = CKKSTestParams {
+        n: 64,
+        hw: 48,
+        base2k: 12,
+        ..poulpy_ckks::test_suite::BASE19_PARAMS_F64
+    };
+    let module = Module::<OverrideBackend>::new(64);
+    let case = replicated_bootstrap_case::<OverrideBackend, f64>(params, &module);
+    for (input, output) in &case.layouts {
+        for (extra, default) in [
+            (&DFT_EXTRA, DFT_EXTRA_DEFAULT),
+            (&RAISE_EXTRA, RAISE_EXTRA_DEFAULT),
+            (&BOOTSTRAP_EVAL_MOD_EXTRA, BOOTSTRAP_EVAL_MOD_EXTRA_DEFAULT),
+        ] {
+            assert_query_takes_extra(
+                "ckks_bootstrap_tmp_bytes",
+                |bytes| extra.set(bytes),
+                || module.ckks_bootstrap_tmp_bytes(output, input, &case.ctx, &case.keys_layout),
+            );
+            extra.set(default);
+        }
+    }
     let counters = [&RAISE_CALLS, &BOOTSTRAP_EVAL_MOD_CALLS, &DFT_CALLS, &super::EVAL_MOD_CALLS];
-    let counts = || counters.map(|counter| counter.get());
     counters.iter().for_each(|counter| counter.set(0));
     DFT_FORWARD.set(true);
     DFT_EXTRA.set(PROBE_DFT_EXTRA);
     super::EVAL_MOD_FORWARD.set(true);
-    // Every bootstrapping of the suite runs on an arena of exactly its query, so each hook's marked extra fits only
-    // if the query takes it.
-    let result = poulpy_ckks::test_suite::replicated::test_replicated_bootstrap::<
-        OverrideBackend,
-        f64,
-        crate::ckks_encoding::EncodingFFTTable<f64>,
-    >(params, &module, &host);
-    let got = counts();
+    let got = run_replicated_bootstrap(&module, &case);
+    let counts = counters.map(|counter| counter.get());
     DFT_FORWARD.set(false);
     DFT_EXTRA.set(DFT_EXTRA_DEFAULT);
     super::EVAL_MOD_FORWARD.set(false);
-    result.unwrap();
-    // Four bootstrappings, two key sets at the module degree, packed, and two at half of it: a raise and two
-    // transforms each, and EvalMod once packed and once per half otherwise. The refusals then drive the steps of a
-    // fifth by hand: its raise and transforms run, and its EvalMod step refuses a short arena. The six EvalMod step
-    // refusals enter their hook, which refuses, and the transform step refusals refuse before evaluating.
-    assert_eq!(got, [5, 10, 10, 6]);
+    // Two packed bootstrappings: a raise, two transforms and one EvalMod each.
+    assert_eq!(counts, [2, 2, 4, 2]);
+    let base = Module::<FFT64Portable>::new(64);
+    let want = run_replicated_bootstrap(&base, &replicated_bootstrap_case::<FFT64Portable, f64>(params, &base));
+    assert_eq!(got, want, "the probe's replicated bootstraps differ from the base backend's");
 }

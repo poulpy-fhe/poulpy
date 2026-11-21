@@ -2,7 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::layouts::{DFTPlan, EvalModPlan};
+use poulpy_hal::layouts::galois_element;
+
+use crate::{
+    SlotLayout,
+    layouts::{DFTPlan, EvalModPlan},
+};
 
 use super::{BootstrappingPipeline, CIConversion, EvalModRing};
 
@@ -31,9 +36,9 @@ pub struct BootstrappingKeyWidths {
 pub(crate) struct RotationKeyOffsets {
     pub(crate) p: i64,
     /// CoeffsToSlots, its bypass and the factors `u` folds into, below the raised width.
-    raised: Option<usize>,
-    slots_to_coeffs: Option<usize>,
-    /// The conjugation of the split, on what CoeffsToSlots leaves.
+    pub(crate) raised: Option<usize>,
+    pub(crate) slots_to_coeffs: Option<usize>,
+    /// The conjugation of the split, on what CoeffsToSlots leaves, and the rotation of a packed EvalMod.
     after_c2s: Option<usize>,
 }
 
@@ -64,6 +69,8 @@ impl StageStarts {
 pub(crate) struct StageWidths<'a> {
     pub(super) pipeline: BootstrappingPipeline,
     pub(super) c2s_guard_bits: usize,
+    pub(super) working_bits: usize,
+    pub(super) s2c_guard_bits: usize,
     pub(super) eval_mod_ring: EvalModRing,
     pub(super) coeffs_to_slots: &'a DFTPlan,
     pub(super) coeffs_to_slots_bypass: Option<&'a DFTPlan>,
@@ -72,6 +79,11 @@ pub(crate) struct StageWidths<'a> {
 }
 
 impl StageWidths<'_> {
+    /// Bits SlotsToCoeffs and CoeffsToSlots consume.
+    pub(super) fn transform_bits(&self) -> (usize, usize) {
+        (self.slots_to_coeffs.consumed_bits(), self.coeffs_to_slots.consumed_bits())
+    }
+
     /// [`key_widths`](crate::layouts::BootstrappingPlan::key_widths), or `None` when `bootstrap_k` or `input_k`
     /// is narrower than the bits the stages running on it consume.
     pub(crate) fn key_widths(
@@ -102,11 +114,16 @@ impl StageWidths<'_> {
 
     /// The widths the stages start at, or `None` when `bootstrap_k` or `input_k` is narrower than the bits they consume.
     /// C2S-first runs SlotsToCoeffs on what EvalMod, and the bypass, leave at EvalMod's scale, so its budget above that
-    /// scale holds the bits SlotsToCoeffs consumes.
+    /// scale holds the bits SlotsToCoeffs consumes. A replicated layout runs SlotsToCoeffs on its input lifted by the S2C
+    /// guard bits and the working bits, and EvalMod and its packed rotation under the working bits.
     pub(crate) fn stage_starts(&self, bootstrap_k: usize, input_k: usize) -> Option<StageStarts> {
-        let after_c2s = bootstrap_k.checked_sub(self.coeffs_to_slots.consumed_bits())?;
+        let (s2c, c2s) = self.transform_bits();
+        let after_c2s = bootstrap_k.checked_sub(c2s)?;
+        if self.slots_to_coeffs.slot_layout() != SlotLayout::Full {
+            after_c2s.checked_sub(self.working_bits + self.eval_mod.consumed_bits())?;
+        }
         let (slots_to_coeffs, scale) = match self.pipeline {
-            BootstrappingPipeline::S2CFirst => (input_k, 0),
+            BootstrappingPipeline::S2CFirst => (input_k + self.s2c_guard_bits + self.working_bits, 0),
             BootstrappingPipeline::C2SFirst => {
                 let mut start = after_c2s.checked_sub(self.eval_mod.consumed_bits())?;
                 if let Some(bypass) = self.coeffs_to_slots_bypass {
@@ -116,7 +133,7 @@ impl StageWidths<'_> {
             }
         };
         // Every factor below then runs above the bits its transform consumes.
-        slots_to_coeffs.checked_sub(self.slots_to_coeffs.consumed_bits() + scale)?;
+        slots_to_coeffs.checked_sub(s2c + scale)?;
         Some(StageStarts {
             raised: bootstrap_k,
             slots_to_coeffs,
@@ -129,7 +146,8 @@ impl StageWidths<'_> {
     /// SlotsToCoeffs the input width (S2C-first) or what EvalMod, and the bypass, leave (C2S-first). The folded factors of
     /// [`CIConversion::Folded`] run where the last CoeffsToSlots factor would. The conjugation follows CoeffsToSlots, in
     /// EvalMod's split or real part, which the conjugate-invariant ring does not take; the bypass, evaluated unsplit,
-    /// conjugates nothing.
+    /// conjugates nothing. A transform on a replicated layout starts with its normalized trace, and a packed EvalMod
+    /// rotates its second batch under the working bits and EvalMod.
     pub(crate) fn rotation_key_offsets(&self, log_n: usize) -> Vec<RotationKeyOffsets> {
         let cyclotomic_order = 1i64 << (log_n + 1);
         let mut keys: BTreeMap<i64, RotationKeyOffsets> = BTreeMap::new();
@@ -168,7 +186,12 @@ impl StageWidths<'_> {
             );
         }
         if self.eval_mod_ring == EvalModRing::Standard {
-            charge(|key| &mut key.after_c2s, BTreeMap::from([(-1, 0)]));
+            let below = self.working_bits + self.eval_mod.consumed_bits();
+            let packed = self
+                .eval_mod
+                .batch_rotation()
+                .map(|batch| (galois_element(batch, cyclotomic_order), below));
+            charge(|key| &mut key.after_c2s, [(-1, 0)].into_iter().chain(packed).collect());
         }
         keys.into_values().collect()
     }
@@ -181,19 +204,28 @@ impl StageWidths<'_> {
 
     /// Width of EvalMod's input: what CoeffsToSlots and the product by `u` leave.
     fn eval_mod_k(&self, bootstrap_k: usize) -> usize {
-        bootstrap_k.saturating_sub(self.coeffs_to_slots.consumed_bits() + self.eval_mod_ring.pre_consumed_bits())
+        bootstrap_k.saturating_sub(self.transform_bits().1 + self.eval_mod_ring.pre_consumed_bits())
     }
 
     /// `(k_small, k_small + scale_up)` of the ciphertext ModUp raises for a
     /// bootstrap input of `input_k` bits: C2S-first lifts it to EvalMod's scale
     /// at its own width (an input wider than that scale fails at the lift),
-    /// S2C-first raises it once SlotsToCoeffs is done, with the C2S guard bits.
+    /// S2C-first raises it once SlotsToCoeffs is done, with the C2S guard bits less the working bits.
     pub(crate) fn raise(&self, input_k: usize) -> (usize, usize) {
+        let k_small = self.raise_input_k(input_k).unwrap_or(0);
         match self.pipeline {
-            BootstrappingPipeline::C2SFirst => (input_k, self.eval_mod.f_mod_log_delta.max(input_k)),
+            BootstrappingPipeline::C2SFirst => (k_small, self.eval_mod.f_mod_log_delta.max(k_small)),
+            BootstrappingPipeline::S2CFirst => (k_small, k_small + self.c2s_guard_bits - self.working_bits),
+        }
+    }
+
+    /// Width of the input of ModUp for a bootstrap input of `input_k` bits, `None` when SlotsToCoeffs consumes more than
+    /// it and its guard bits hold: what SlotsToCoeffs leaves on S2C-first.
+    pub(crate) fn raise_input_k(&self, input_k: usize) -> Option<usize> {
+        match self.pipeline {
+            BootstrappingPipeline::C2SFirst => Some(input_k),
             BootstrappingPipeline::S2CFirst => {
-                let k_small = input_k.saturating_sub(self.slots_to_coeffs.consumed_bits());
-                (k_small, k_small + self.c2s_guard_bits)
+                (input_k + self.s2c_guard_bits + self.working_bits).checked_sub(self.transform_bits().0)
             }
         }
     }
@@ -206,12 +238,14 @@ impl StageWidths<'_> {
     /// widest product is at that budget plus `f_mod_log_delta`. The budget is what
     /// CoeffsToSlots and the product by `u` leave of the raised width above the scale the raise labels:
     /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
-    /// the guard bits (S2C-first).
+    /// both guard bits (S2C-first).
     pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {
             BootstrappingPipeline::C2SFirst => f_mod_log_delta,
-            BootstrappingPipeline::S2CFirst => input_log_delta + self.eval_mod.log_msg_ratio + self.c2s_guard_bits,
+            BootstrappingPipeline::S2CFirst => {
+                input_log_delta + self.s2c_guard_bits + self.eval_mod.log_msg_ratio + self.c2s_guard_bits
+            }
         };
         // A width too narrow for EvalMod fails at its key lookup or in EvalMod, not here.
         self.eval_mod

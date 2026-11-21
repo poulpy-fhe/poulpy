@@ -264,6 +264,10 @@ mod core {
 
 #[cfg(feature = "enable-ckks")]
 mod ckks {
+    poulpy_ckks::ckks_determinism_test_suite!(mod determinism_fft64, backend = crate::FFT64PortableRayon, f32);
+
+    poulpy_ckks::ckks_determinism_test_suite!(mod determinism_ntt4x30, backend = crate::NTT4x30PortableRayon, f32);
+
     #[test]
     fn ntt4x30_small_c2s_preset_meets_precision() {
         poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30PortableRayon>();
@@ -272,9 +276,10 @@ mod ckks {
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
     fn ntt4x30_replicated_presets_meet_precision() {
-        poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30PortableRayon>(
-            52,
-        );
+        poulpy_ckks::test_suite::presets::replicated_bootstrapping_presets_meet_precision_with_client::<
+            crate::NTT4x30PortableRayon,
+            crate::NTT4x30PortableRayon,
+        >(52);
     }
 
     #[test]
@@ -368,7 +373,14 @@ mod ckks {
         scalar = f64,
         params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
         tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
             replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        },
+        ring_free_tests = {
+            imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+            conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         }
     }
 
@@ -380,6 +392,32 @@ mod ckks {
         scalar = f64,
         params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
         tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+            encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+            slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_ci_ntt4x30_quad,
+        backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+        backend_test = crate::NTT4x30PortableRayon,
+        ring = ::poulpy_hal::layouts::ConjugateInvariant,
+        scalar = poulpy_ckks::Quad,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+        tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+            encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+            slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
             replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         }
     }
@@ -391,7 +429,14 @@ mod ckks {
         scalar = f64,
         params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
         tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
             replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        },
+        ring_free_tests = {
+            imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+            conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         }
     }
 
@@ -403,6 +448,32 @@ mod ckks {
         scalar = f64,
         params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
         tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+            encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+            slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_ci_fft64_quad,
+        backend_ref = poulpy_cpu_portable::FFT64Portable,
+        backend_test = crate::FFT64PortableRayon,
+        ring = ::poulpy_hal::layouts::ConjugateInvariant,
+        scalar = poulpy_ckks::Quad,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+        tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+            encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+            slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
             replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         }
     }

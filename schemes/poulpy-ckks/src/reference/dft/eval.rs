@@ -23,7 +23,7 @@
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWEBytesOf, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWELinearTransformationOps,
+    GLWEBytesOf, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWELinearTransformationOps, GLWETrace,
     ScratchArenaTakeGLWELinearTransformationBabySteps,
     layouts::{
         Base2K, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
@@ -37,16 +37,20 @@ use poulpy_hal::{
 
 use crate::reference::linear_transformation::PlaintextDiagonalKeys;
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps,
-        CKKSLinearTransformationOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps, LtDiagonalMeta,
+        CKKSLinearTransformationOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta,
     },
     layouts::{
-        CKKSDFTFactors, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
+        CKKSDFTFactors, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DFTType,
         DftDirection, DftFormat, DftScalar,
         dft_matrices::ckks_dft_matrices_gen,
-        validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
+        replicated::factor_coeffs_meta,
+        validation::{
+            check_replicated_chain, ensure_chain_input, ensure_prepared_transformation_layout, ensure_scratch,
+            ensure_uniform_diagonals,
+        },
     },
     oep::CKKSEncodingImpl,
 };
@@ -58,7 +62,10 @@ type DftFactorLt<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
 fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
     // Shape validity (including a non-overflowing layer sum) is guaranteed by
     // `DFTPlan::new`; only the plan-vs-ring clause remains to check here.
-    let log_slots = literal.log_slots();
+    let log_slots = match literal.slot_layout() {
+        SlotLayout::Full => literal.log_slots(),
+        SlotLayout::Replicated(layout) => layout.log_k() + layout.log_r(),
+    };
     if log_slots >= log_n {
         return Err(CKKSCompositionError::InvalidPlan {
             plan: "DFTPlan",
@@ -75,6 +82,7 @@ fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
 /// Resolves the plan against the ring degree, so the stored `format` is canonical and `plan.is_sparse()` is exact, and
 /// generates the diagonals of each factor. The per-factor scale is carried by `literal.coeffs_meta`.
 fn dft_plan_diagonals<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Result<(DFTPlan, Vec<ComplexDiagonals<F>>)> {
+    literal.check_slot_layout()?;
     checked_dft_log_slots(literal, log_n)?;
     let plan = literal.resolved_at(log_n);
     let factors = ckks_dft_matrices_gen::<F>(&plan, log_n);
@@ -101,15 +109,24 @@ where
 
     // Each factor's BSGS width is taken from the plan's schedule; the library
     // applies no implicit optimum. `giant_step == 1` is the direct schedule.
+    let last = factors_cd.len().saturating_sub(1);
     let lts = factors_cd
         .iter()
-        .zip(&plan.schedule.steps)
-        .map(|(cd, step)| {
-            let strategy = plan.factor_strategy(step.giant_step);
+        .zip(plan.factor_encodings(module.log_n()))
+        .enumerate()
+        .map(|(i, (cd, (strategy, log_delta)))| {
+            let coeffs_meta = match plan.slot_layout() {
+                SlotLayout::Full => plan.coeffs_meta,
+                // The last `Encode` factor is quantized with the shaping of the layout it writes.
+                SlotLayout::Replicated(layout) => {
+                    let shaped = plan.kind == DFTType::Encode && i == last;
+                    factor_coeffs_meta(cd, log_delta, shaped.then_some(layout))
+                }
+            };
             crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F, Standard>(
                 module,
                 base2k,
-                plan.coeffs_meta,
+                coeffs_meta,
                 cd,
                 strategy,
                 false,
@@ -290,6 +307,14 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// factor's baby-step keyswitches, which scale with the operand limb count) is
 /// smaller than its storage. After every factor `ct` is therefore compacted in
 /// place.
+///
+/// ## Replicated layout
+///
+/// The chain of a plan on a replicated layout ([`DFTPlan::with_slot_layout`]) starts with its normalized trace, which
+/// leaves the sparsity of its period. A layout past the slots of `ct`'s degree, less budget than the factors consume,
+/// a key of the trace or of a factor missing at its width and the arena are checked before it writes `ct`. A `Decode`
+/// on a replicated layout reads `ct` in that layout and leaves it on the full layout, every other chain reads the full
+/// layout.
 pub fn ckks_dft_matrix_eval_assign_reference<BE, Dir, Fmt, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -300,18 +325,30 @@ pub fn ckks_dft_matrix_eval_assign_reference<BE, Dir, Fmt, D, Dst, H>(
 where
     BE: Backend,
     D: CKKSDFTFactors<BE, Dir, Fmt>,
-    Module<BE>: CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE> + GLWELinearTransformationOps<BE> + CKKSCopyOps<BE> + GLWETrace<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
     const OP: &str = "ckks_dft_matrix_eval_assign";
-    crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(ct))?;
+    ensure_chain_input(OP, dft.dft_plan(), crate::GLWEPlaintextInfos::slot_layout(ct))?;
     crate::ensure_operand_degrees(OP, module, [ct.n()])?;
     ckks_ensure_operand!(
         OP,
         dft.factor_plans().len() == dft.factors().count(),
         "takes one schedule per factor"
     );
+    let log_n = ct.n().as_usize().ilog2() as usize;
+    if let Some(levels) = dft.dft_plan().trace_levels(log_n) {
+        let shape = (ct.n().as_usize(), ct.k().as_usize(), ct.log_budget());
+        let bytes = check_replicated_chain(OP, dft, shape, keys, |key| {
+            eval_tmp_bytes(module, std::slice::from_ref(&*ct), dft, key)
+        })?;
+        ensure_scratch(OP, scratch, bytes)?;
+        let sparsity = log_n - levels.start;
+        ct.set_slot_layout(SlotLayout::Full);
+        module.glwe_trace_assign(ct, levels, false, true, keys, scratch);
+        ct.set_log_sparsity(sparsity);
+    }
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for (factor, plan) in dft.factors().zip(dft.factor_plans()) {
@@ -399,8 +436,7 @@ where
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
-        + CKKSRoundOps<BE>
-        + poulpy_core::GLWETrace<BE>,
+        + GLWETrace<BE>,
 {
     let envelope = |ct: &dyn CKKSCtBounds| crate::CKKSLayout {
         glwe_layout: GLWELayout {
@@ -415,35 +451,9 @@ where
         dft.factor_plans().len() == dft.factors().count(),
         "ckks_dft_tmp_bytes: one schedule per factor"
     );
-    if let Some(stage) = dft.replicated_stage() {
-        return crate::reference::bootstrapping::replicated::stage_tmp_bytes(module, &envelope(dst), stage, key, |layout| {
-            chain_tmp_bytes(module, std::slice::from_ref(layout), dft, key)
-        });
-    }
     let layouts = [envelope(dst), envelope(src)];
-    module
-        .ckks_copy_tmp_bytes(dst, src)
-        .max(chain_tmp_bytes(module, &layouts, dft, key))
-}
-
-/// The largest query of the chain of `dft` and of its format wrappers on ciphertexts of each of `layouts`.
-fn chain_tmp_bytes<BE, Dir, Fmt, D, K>(module: &Module<BE>, layouts: &[crate::CKKSLayout], dft: &D, key: &K) -> usize
-where
-    BE: Backend,
-    D: CKKSDFTFactors<BE, Dir, Fmt>,
-    K: GGLWEInfos,
-    Module<BE>: GLWELinearTransformationOps<BE>
-        + GLWEBytesOf<BE>
-        + GLWELinearTransformationBabyStepsBytesOf<BE>
-        + CKKSCopyOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>,
-{
-    let mut bytes = 0;
-    for ct in layouts {
+    let mut bytes = module.ckks_copy_tmp_bytes(dst, src);
+    for ct in &layouts {
         bytes = bytes
             .max(module.ckks_copy_tmp_bytes(ct, ct))
             .max(module.ckks_conjugate_tmp_bytes(ct, key))
@@ -463,6 +473,23 @@ where
                     .max(module.ckks_sub_tmp_bytes(ct.max_size()))
                     .max(module.ckks_div_i_tmp_bytes(ct.max_size())),
         );
+    }
+    bytes.max(eval_tmp_bytes(module, &layouts, dft, key))
+}
+
+/// Scratch of the evaluation of `dft` in place on a ciphertext of each of `layouts`: the trace of a replicated layout,
+/// and each factor's baby cache beside its preparation, and beside a working ciphertext and its evaluation.
+fn eval_tmp_bytes<BE, Dir, Fmt, D>(module: &Module<BE>, layouts: &[impl CKKSCtBounds], dft: &D, key: &impl GGLWEInfos) -> usize
+where
+    BE: Backend,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
+    Module<BE>: GLWELinearTransformationOps<BE> + CKKSCopyOps<BE> + GLWETrace<BE>,
+{
+    let mut bytes = 0;
+    for ct in layouts {
+        if dft.dft_plan().trace_levels(ct.n().as_usize().ilog2() as usize).is_some() {
+            bytes = bytes.max(module.glwe_trace_assign_tmp_bytes(ct, key));
+        }
         // Each factor's own schedule, so that a factor on power-of-two keys counts its
         // doubling and its giant-step tree, beside its baby cache.
         for (factor, plan) in dft.factors().zip(dft.factor_plans()) {
@@ -513,8 +540,7 @@ pub trait CKKSDFTReference<BE: Backend> {
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSImagOps<BE>
-            + CKKSRoundOps<BE>
-            + poulpy_core::GLWETrace<BE>;
+            + GLWETrace<BE>;
 
     fn ckks_dft_matrix_prepare_reference<Dir, Fmt, P>(
         &self,
@@ -535,7 +561,7 @@ pub trait CKKSDFTReference<BE: Backend> {
     ) -> Result<()>
     where
         D: CKKSDFTFactors<BE, Dir, Fmt>,
-        Module<BE>: CKKSLinearTransformationOps<BE>,
+        Module<BE>: CKKSLinearTransformationOps<BE> + GLWELinearTransformationOps<BE> + CKKSCopyOps<BE> + GLWETrace<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 }
@@ -567,8 +593,7 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSImagOps<BE>
-            + CKKSRoundOps<BE>
-            + poulpy_core::GLWETrace<BE>,
+            + GLWETrace<BE>,
     {
         ckks_dft_tmp_bytes_reference(self, dst, src, dft, key)
     }
@@ -595,7 +620,7 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         D: CKKSDFTFactors<BE, Dir, Fmt>,
-        Module<BE>: CKKSLinearTransformationOps<BE>,
+        Module<BE>: CKKSLinearTransformationOps<BE> + GLWELinearTransformationOps<BE> + CKKSCopyOps<BE> + GLWETrace<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
@@ -654,6 +679,7 @@ impl<BE: Backend, F: DftScalar + CKKSEncodingScalar> CKKSDFTMatrixReference<BE, 
 #[cfg(test)]
 mod validation_tests {
     use crate::layouts::{DFTOutputFormat, DFTType};
+    use crate::shaping::ShapingUnit;
 
     use super::*;
 
@@ -682,5 +708,50 @@ mod validation_tests {
             }),
             "unexpected error: {error:#}"
         );
+    }
+
+    /// The compilation refuses each setting a replicated layout cannot run, and its own settings on the full layout.
+    #[test]
+    fn replicated_settings_are_refused() {
+        let dft = |kind, format, depths: &[usize]| {
+            let schedule: Vec<_> = depths.iter().map(|&depth| (depth, 1)).collect();
+            DFTPlan::new(kind, schedule, format, crate::CoeffsMeta::from_delta_budget(30, 0)).unwrap()
+        };
+        let (split, repack) = (DFTOutputFormat::SplitRealAndImag, DFTOutputFormat::RepackImagAsReal);
+        let on = |layout, plan: DFTPlan| plan.with_slot_layout(SlotLayout::Replicated(layout));
+        let (eight, four) = (ShapingUnit::U16_40.layout(3).unwrap(), ShapingUnit::U16_40.layout(2).unwrap());
+        let decode = || on(eight, dft(DFTType::Decode, split, &[3])).with_placement_factors(1);
+        let full = "a replicated layout takes no repack, no first factor on the raise, no bit reversal and a key per rotation";
+        let replicated = "placement factors and a last-factor scale take a replicated layout";
+        let points = "a transform on 2^2 points takes a replicated layout of as many values, or Encode of twice as many, got 2^3";
+        let merged = "a placement merged into the transform takes a schedule of one factor";
+        let (factors, period) = (
+            "the placement takes at most log2(k) = 3 factors",
+            "a merged placement reads a period of at most the 2^2 points",
+        );
+        let overflow = "the scales of the factors overflow the consumed-bit count";
+        let ring = "DFT has 2^6 slots, but a degree-2^6 CKKS ring supports at most 2^5 slots";
+        let plain = || dft(DFTType::Encode, split, &[3]);
+        for (plan, log_n, reason) in [
+            (plain().with_placement_factors(1), 12, replicated),
+            (plain().with_last_factor_log_delta(30), 12, replicated),
+            (on(eight, dft(DFTType::Decode, split, &[2])), 12, points),
+            (on(eight, dft(DFTType::Decode, repack, &[3])), 12, full),
+            (decode().with_first_factor_on_raise(), 12, full),
+            (decode().with_bit_reversed(true), 12, full),
+            (decode().with_power_of_two_keys(true), 12, full),
+            (decode().with_placement_factors(4), 12, factors),
+            (on(eight, dft(DFTType::Encode, split, &[1, 2])), 12, merged),
+            (on(four, dft(DFTType::Decode, split, &[2])), 12, period),
+            (decode().with_last_factor_log_delta(usize::MAX), 12, overflow),
+            (decode(), 6, ring),
+        ] {
+            let error = dft_plan_diagonals::<f64>(&plan, log_n).expect_err("a refused plan");
+            let want = CKKSCompositionError::InvalidPlan {
+                plan: "DFTPlan",
+                reason: reason.into(),
+            };
+            assert_eq!(error.composition(), Some(&want), "unexpected error: {error:#}");
+        }
     }
 }

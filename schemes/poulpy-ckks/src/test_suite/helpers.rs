@@ -799,8 +799,6 @@ where
     atk_prepared
 }
 
-/// Key source that records the Galois element and precision of each lookup, tensor-key lookups under element 0;
-/// shareable across threads.
 /// Asserts that the key lookups `seen` start with those of an entry check, `entry` in its order, and that the lookups
 /// after them use each key at most, and at the widest, at its widest width in `entry`.
 pub(crate) fn assert_entry_then_widest(label: &str, seen: &[(i64, usize)], entry: &[(i64, usize)]) {
@@ -821,6 +819,8 @@ pub(crate) fn assert_entry_then_widest(label: &str, seen: &[(i64, usize)], entry
     assert_eq!(widest(run), widest(entry), "{label}: widest use of each key");
 }
 
+/// Key source that records the Galois element and precision of each lookup, tensor-key lookups under element 0;
+/// shareable across threads.
 pub(crate) struct QueryLog<'a, K> {
     keys: &'a K,
     seen: Mutex<Vec<(i64, TorusPrecision)>>,

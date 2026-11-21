@@ -568,7 +568,8 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// tensor key relinearizes EvalMod; and, when the compiled recipe enables
     /// sparse-secret encapsulation, a fresh sparse ephemeral secret is sampled
     /// from `source_xs` at the recipe's Hamming weight and the two encapsulation
-    /// key-switching keys are derived from `sk_dense`.
+    /// key-switching keys are derived from `sk_dense`. On a replicated layout the rotation keys are those of its
+    /// traces, maps and packed rotation ([`BootstrappingPlan::galois_elements`]).
     ///
     /// The ephemeral secret never leaves this call and is tagged
     /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
@@ -590,7 +591,9 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any draw: with
     /// EvalMod on the standard ring, for conversion key layouts, and on the conjugate-invariant
     /// ring, for missing conversion key layouts, a dense secret not of fixed-weight ternary
-    /// law, or a module of another degree than twice the secret's.
+    /// law, or a module of another degree than twice the secret's. [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan)
+    /// before any draw for a secret of another degree than the one the plan's transforms fill or its replicated layout
+    /// states.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
@@ -700,7 +703,7 @@ pub(crate) struct KeyRecipe {
 }
 
 impl KeyRecipe {
-    pub(crate) fn new(
+    fn new(
         mut galois_elements: BTreeSet<i64>,
         first_factor_rotations: Vec<i64>,
         sparse_secret_hamming_weight: Option<usize>,
@@ -726,7 +729,7 @@ impl KeyRecipe {
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
     )]
-    pub(crate) fn generate_keys<BE>(
+    fn generate_keys<BE>(
         &self,
         module: &Module<BE>,
         sk_dense: &BackendGLWESecret<BE>,

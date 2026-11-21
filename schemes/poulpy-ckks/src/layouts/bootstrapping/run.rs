@@ -7,7 +7,7 @@ use crate::{
     CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind, ckks_ensure_operand, ckks_log_delta,
     layouts::{
         CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, DFTMatrixPrepared,
-        DFTPlan, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, MaskedCoeffs, ModRaisePlan, ReplicatedStage, Split, Standard,
+        DFTPlan, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, MaskedCoeffs, ModRaisePlan, Split, Standard,
         eval_mod::EvalModType,
         validation::{functional_output_contract, remove_guard_bits},
     },
@@ -53,9 +53,8 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingRun<'
         CKKSDFTFactors::<BE, Encode, Standard>::factor_plans(self.context)
     }
 
-    fn replicated_stage(&self) -> Option<ReplicatedStage<'_>> {
-        let stages = self.context.replicated()?;
-        Some(stages.c2s_stage(self.context.eval_mod_plan().log_msg_ratio))
+    fn stamp_transform_output<C: SetCKKSInfos>(&self, ct: &mut C) {
+        ct.set_slot_layout(self.context.eval_mod_plan().slot_layout());
     }
 }
 
@@ -86,11 +85,6 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Standard> for BootstrappingRun<'
             ct.set_slots(self.message.slots);
         }
     }
-
-    fn replicated_stage(&self) -> Option<ReplicatedStage<'_>> {
-        let stages = self.context.replicated()?;
-        Some(stages.s2c_stage(self.context.eval_mod_plan().log_msg_ratio))
-    }
 }
 
 impl<BE: Backend, F> CKKSModRaiseInfos<BE> for BootstrappingRun<'_, BE, F> {
@@ -108,7 +102,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
         self.context.eval_mod_plan()
     }
 
-    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
         self.context.eval_mod()
     }
 
@@ -128,8 +122,16 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
         self.context.coeffs_to_slots_bypass().is_some()
     }
 
-    fn message_slots(&self) -> Option<SlotsKind> {
-        Some(self.message.slots)
+    fn message(&self) -> Option<GLWEPlaintextMeta> {
+        Some(self.message)
+    }
+
+    fn working_bits(&self) -> usize {
+        self.context.plan.working_bits()
+    }
+
+    fn s2c_guard_bits(&self) -> usize {
+        self.context.plan.s2c_guard_bits()
     }
 
     fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, op: &'static str, res: &mut C) -> CKKSResult<()> {
@@ -146,15 +148,6 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
             res.set_meta(GLWEPlaintextMeta { slots, ..self.message });
         }
         Ok(())
-    }
-
-    fn replicated_stage(&self) -> Option<ReplicatedStage<'_>> {
-        let stages = self.context.replicated()?;
-        Some(stages.c2s_stage(self.context.eval_mod_plan().log_msg_ratio))
-    }
-
-    fn eval_mod_replicated(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
-        self.context.replicated().map(|stages| &stages.eval_mod)
     }
 
     fn eval_lut_output(

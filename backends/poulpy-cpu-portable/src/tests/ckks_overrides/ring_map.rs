@@ -4,9 +4,10 @@ use super::OverrideBackend;
 use super::carry::with_marked_region;
 use crate::FFT64Portable;
 use poulpy_ckks::{
-    CKKSCompositionError, SlotsKind,
+    CKKSCompositionError, SlotLayout, SlotsKind,
     api::CKKSCIRingMapOps,
     layouts::CKKSCiphertext,
+    shaping::ShapingUnit,
     test_suite::{
         CKKSTestParams,
         parity::{
@@ -20,8 +21,8 @@ use poulpy_core::{
     api::GLWECIKeyPreparedFactory,
     layouts::{
         GLWECIEmbedKey, GLWECIEmbedKeyAlloc, GLWECIEmbedKeyPrepared, GLWECITraceKey, GLWECITraceKeyAlloc, GLWECITraceKeyPrepared,
-        GLWEInfos, GLWELayout, GLWESecretAlloc, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos,
+        GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWESecretAlloc, GLWESecretToBackendMut, GLWESecretToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos,
     },
     reference::ci_conversion::GLWECIConversionReference,
 };
@@ -83,6 +84,9 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
 }
 poulpy_ckks::impl_ckks_ci_ring_map_reference_full!(OverrideBackend);
 
+/// The width of the fixture keys: the 49 bits of the sources and the shaping depth 40 of the replicated one.
+const KEY_K: usize = 89;
+
 fn params(n: usize) -> CKKSTestParams {
     CKKSTestParams {
         n,
@@ -107,7 +111,7 @@ struct Fixtures {
 }
 
 fn fixtures(module_ref: &Module<FFT64Oracle>, ci: &Module<FFT64Portable>) -> Fixtures {
-    let infos = params(64).ksk_layout(49);
+    let infos = params(64).ksk_layout(KEY_K);
     let mut ci_sk = ci.glwe_secret_alloc_from_infos(&params(32).glwe_layout());
     ci.glwe_secret_fill_ternary_hw(&mut ci_sk, 8, &mut Source::new([1; 32]));
     let mut sk = module_ref.glwe_secret_alloc_from_infos(&params(64).glwe_layout());
@@ -134,7 +138,7 @@ where
     Module<BE>: GLWECIKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let infos = params(64).ksk_layout(49);
+    let infos = params(64).ksk_layout(KEY_K);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_ci_key_prepare_tmp_bytes(&infos));
     let mut embed = module.glwe_ci_embed_key_prepared_alloc_from_infos(&infos);
     module.glwe_ci_key_prepare(&mut embed, &fixtures.embed, &mut scratch.borrow());
@@ -145,9 +149,13 @@ where
 
 type PreparedKeys<BE> = (GLWECIEmbedKeyPrepared<AlignedBuf, BE>, GLWECITraceKeyPrepared<AlignedBuf, BE>);
 
-/// Embeds the source into the standard fixture, then traces it back into the conjugate-invariant one, each map
-/// on its own query.
-fn round_trip<BE>(module: &Module<BE>, fixtures: &Fixtures) -> (Snapshot, Snapshot)
+/// Embeds `src` into the standard fixture, then traces it back into the conjugate-invariant one, each map on its own
+/// query.
+fn round_trip<BE>(
+    module: &Module<BE>,
+    fixtures: &Fixtures,
+    src: &CKKSCiphertext<AlignedBuf, i64, ConjugateInvariant>,
+) -> (Snapshot, Snapshot)
 where
     BE: Backend<ZnxWord = i64, OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSCIRingMapOps<BE> + GLWECIKeyPreparedFactory<BE>,
@@ -155,8 +163,8 @@ where
 {
     let (embed_key, trace_key) = prepared_keys(module, fixtures);
     let mut extended = fixtures.extended.clone();
-    let bytes = module.ckks_ci_embed_tmp_bytes(&extended, &fixtures.src, &embed_key);
-    with_scratch::<BE, _>(bytes, |s| module.ckks_ci_embed(&mut extended, &fixtures.src, &embed_key, s)).unwrap();
+    let bytes = module.ckks_ci_embed_tmp_bytes(&extended, src, &embed_key);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_ci_embed(&mut extended, src, &embed_key, s)).unwrap();
     let mut back = fixtures.back.clone();
     let bytes = module.ckks_ci_trace_tmp_bytes(&back, &extended, &trace_key);
     with_scratch::<BE, _>(bytes, |s| module.ckks_ci_trace(&mut back, &extended, &trace_key, s)).unwrap();
@@ -174,7 +182,7 @@ fn ring_maps_enter_the_selected_core_maps() {
     let fixtures = fixtures(&module_ref, &ci);
 
     let (extended, back) = (&fixtures.extended, &fixtures.back);
-    let key_infos = params(64).ksk_layout(49);
+    let key_infos = params(64).ksk_layout(KEY_K);
     let allocated = GLWELayout {
         n: extended.n(),
         base2k: extended.base2k(),
@@ -211,14 +219,19 @@ fn ring_maps_enter_the_selected_core_maps() {
             == poulpy_core::GLWECITrace::glwe_ci_trace_tmp_bytes(&module_ref, back, extended) + CI_TRACE_EXTRA
     );
 
-    let want = round_trip(&module_ref, &fixtures);
-    assert_untagged("ring maps", [&want.0, &want.1]);
-    CI_EMBED_CALLS.set(0);
-    CI_TRACE_CALLS.set(0);
-    let got = round_trip(&module_test, &fixtures);
-    assert_eq!(CI_EMBED_CALLS.get(), 1);
-    assert_eq!(CI_TRACE_CALLS.get(), 1);
-    assert_eq!(got, want);
+    // A replicated source maps at its shaping depth, the embedding rounding into its output through the round hook.
+    let mut replicated = fixtures.src.clone();
+    replicated.set_slot_layout(SlotLayout::Replicated(ShapingUnit::U16_20.layout(1).unwrap()));
+    for src in [&fixtures.src, &replicated] {
+        let want = round_trip(&module_ref, &fixtures, src);
+        assert_untagged("ring maps", [&want.0, &want.1]);
+        let counters = [&CI_EMBED_CALLS, &CI_TRACE_CALLS, &super::ROUND_CALLS];
+        counters.iter().for_each(|calls| calls.set(0));
+        let got = round_trip(&module_test, &fixtures, src);
+        let rounds = usize::from(src.slot_layout() != SlotLayout::Full);
+        assert_eq!(counters.map(|calls| calls.get()), [1, 1, rounds]);
+        assert_eq!(got, want);
+    }
 
     // A conjugate-invariant output of the wrong degree is refused before the trace is entered.
     let (_, trace_key) = prepared_keys(&module_test, &fixtures);
