@@ -134,11 +134,13 @@ impl ValidateSecurity for Params {
             Modulus {
                 what: "round ciphertext",
                 secret: *dense,
+                n: 1 << LOG_N,
                 log_q: boot.output_k,
             },
             Modulus {
                 what: "raised ciphertext",
                 secret: *dense,
+                n: 1 << LOG_N,
                 log_q: boot.raised_k,
             },
             Modulus::of("round rotation key", *dense, &self.rotation_key),

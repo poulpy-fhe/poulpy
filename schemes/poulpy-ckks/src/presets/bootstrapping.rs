@@ -1180,6 +1180,7 @@ impl ValidateSecurity for BootstrappingPreset {
         let mut moduli = vec![Modulus {
             what: "raised ciphertext",
             secret: *dense,
+            n: self.n(),
             log_q: self.bootstrap_k,
         }];
         moduli.extend(self.keys_layout.moduli(&self.plan.secrets(*dense)));

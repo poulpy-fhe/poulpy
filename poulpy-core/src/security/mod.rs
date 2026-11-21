@@ -50,6 +50,11 @@
 //! ring of the object: a secret of a subring, embedded in a larger ring, is
 //! bounded at the subring's degree. [`SecretSpec::new`] takes that degree, and
 //! [`SecretSpec::of`] reads it from a secret.
+//! A secret of a larger ring than its object is [unsupported](CoreError::SecurityUnsupported).
+//!
+//! The error is not an input: every encryption draws it from [`Noise::ENCRYPTION`](crate::Noise::ENCRYPTION), which a test pins to the error of the table.
+//! [`SecretSpec::of`] takes the distribution recorded on a secret, which the samplers set, as given.
+//! The seeds of the random sources are the caller's.
 //!
 //! # The rlwe-params table
 //!
@@ -208,17 +213,20 @@ pub struct Modulus {
     pub what: &'static str,
     /// The secret its samples are encrypted under.
     pub secret: SecretSpec,
+    /// Degree of its ring, at least that of its secret.
+    pub n: usize,
     /// Its modulus in bits.
     pub log_q: usize,
 }
 
 impl Modulus {
     /// The modulus of `obj` under `secret`: its [`LWEInfos::k`], auxiliary guard
-    /// and row offset included.
+    /// and row offset included, at its degree [`LWEInfos::n`].
     pub fn of<I: LWEInfos + ?Sized>(what: &'static str, secret: SecretSpec, obj: &I) -> Self {
         Self {
             what,
             secret,
+            n: obj.n().as_usize(),
             log_q: obj.k().as_usize(),
         }
     }
@@ -229,10 +237,18 @@ impl Modulus {
 ///
 /// # Errors
 ///
-/// The first [`CoreError::SecurityUnsupported`] of the table, or
+/// [`CoreError::SecurityUnsupported`] for the first secret of a larger ring than
+/// its object or the first the table has no bound for, or
 /// [`CoreError::SecurityBoundExceeded`] for the first modulus above its bound.
 pub fn validate<T: SecurityTable + ?Sized>(target_bits: usize, table: &T, moduli: &[Modulus]) -> Result<()> {
     for modulus in moduli {
+        if modulus.secret.n > modulus.n {
+            return Err(CoreError::SecurityUnsupported {
+                target_bits,
+                secret: modulus.secret,
+                reason: "the secret's ring is larger than the object's",
+            });
+        }
         let max_log_q = table.max_log_q(target_bits, modulus.secret)?;
         if modulus.log_q > max_log_q {
             return Err(CoreError::SecurityBoundExceeded {
@@ -556,5 +572,26 @@ mod tests {
         // Through a trait object, as a caller choosing its table at run time would.
         let table: &dyn SecurityTable = &Linear;
         assert_eq!(validate(127, table, &moduli), Ok(()));
+    }
+
+    #[test]
+    fn a_secret_of_a_larger_ring_than_its_object_is_unsupported() {
+        // The bound at 2^13 is looser than that of the 2^12 key.
+        let secret = SecretSpec::new(1 << 13, Distribution::TernaryFixed(1024));
+        assert_eq!(
+            key(25, 0).validate_security_128(&secret, &RlweParams),
+            Err(CoreError::SecurityUnsupported {
+                target_bits: 128,
+                secret,
+                reason: "the secret's ring is larger than the object's",
+            })
+        );
+        // A secret of a subring is bounded at its own degree.
+        let larger = GGLWELayout {
+            n: Degree(1 << 13),
+            ..key(25, 0)
+        };
+        let subring = SecretSpec::new(1 << 12, Distribution::TernaryFixed(1024));
+        assert_eq!(larger.validate_security_128(&subring, &RlweParams), Ok(()));
     }
 }
