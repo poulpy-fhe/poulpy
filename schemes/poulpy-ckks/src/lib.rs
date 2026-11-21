@@ -84,6 +84,7 @@ use poulpy_hal::layouts::CyclotomicOrder;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::layouts::galois_element;
 use poulpy_hal::layouts::{Backend, Ring, Standard};
+use std::ops::Neg;
 
 pub mod api;
 pub mod approximation;
@@ -211,6 +212,20 @@ pub(crate) fn operand_rotation_galois_element<M: CyclotomicOrder + ?Sized, Rg: R
 ) -> CKKSResult<i64> {
     let order = operand_cyclotomic_order::<M, Rg>(op, module, n)?;
     Ok(galois_element(rotation.rem_euclid(order / 4), order))
+}
+
+/// Writes `src(X^gal)` in `Z[X]/(X^n + 1)`, `n = src.len()`, into `dst`.
+pub(crate) fn znx_automorphism_host<T: Copy + Neg<Output = T>>(gal: i64, src: &[T], dst: &mut [T]) {
+    let n = src.len();
+    let g = gal.rem_euclid(2 * n as i64) as usize;
+    for (i, &c) in src.iter().enumerate() {
+        let e = i * g % (2 * n);
+        if e < n {
+            dst[e] = c;
+        } else {
+            dst[e - n] = -c;
+        }
+    }
 }
 
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {

@@ -20,6 +20,7 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     ckks_ensure_operand,
     layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    znx_automorphism_host,
 };
 
 fn validate_compile_inputs<F>(
@@ -289,17 +290,8 @@ where
 /// automorphism `X ↦ X^gal`: `Y = X^(n/(2R))` maps to `Y^(gal mod 4R)` in
 /// `Z[Y]/(Y^(2R) + 1)`.
 fn twisted(layout: &ReplicatedLayout, gal: i64) -> ReplicatedLayout {
-    let two_r = 2usize << layout.log_r();
-    let g = gal.rem_euclid(2 * two_r as i64) as usize;
-    let mut coeffs = vec![0i16; two_r];
-    for (j, &c) in layout.shaping().iter().enumerate() {
-        let e = j * g % (2 * two_r);
-        if e < two_r {
-            coeffs[e] += c;
-        } else {
-            coeffs[e - two_r] -= c;
-        }
-    }
+    let mut coeffs = vec![0i16; layout.shaping().len()];
+    znx_automorphism_host(gal, layout.shaping(), &mut coeffs);
     ReplicatedLayout::new(layout.log_k() as u8, layout.log_r() as u8, &coeffs)
         .expect("an automorphism keeps the shaping polynomial invertible")
 }
