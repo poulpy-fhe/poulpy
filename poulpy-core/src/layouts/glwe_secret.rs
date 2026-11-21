@@ -154,7 +154,7 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWESecret<D, W, Rg> {
     /// caller (e.g. the PaCo bootstrapping key).
     ///
     /// The distribution tag is shared by all columns.
-    /// It is [`Distribution::BinaryFixed`] of their Hamming weight when every column has the same one, and [`Distribution::NONE`] otherwise.
+    /// It is [`Distribution::BinaryFixed`] of their Hamming weight when every column has the same one, and [`Distribution::NONE`] otherwise, which encryption refuses.
     ///
     /// `coeffs` is taken as `i64` for caller convenience rather than as the
     /// layout's own word; the assert restricts the values to `{0, 1}`, so

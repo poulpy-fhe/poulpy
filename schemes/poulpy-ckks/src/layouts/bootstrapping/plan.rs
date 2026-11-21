@@ -359,8 +359,8 @@ impl BootstrappingPlan {
 
     /// The secrets of the keys under the dense secret `dense`, as
     /// [`BootstrappingKeysLayout`](crate::layouts::BootstrappingKeysLayout) validates them: `dense`, and the ephemeral
-    /// sparse secret of the plan's weight on the subring of its gap, of distribution [`Distribution::NONE`], which no
-    /// table bounds, without sparse-secret encapsulation.
+    /// sparse secret of the plan's weight on the subring of its gap, of distribution [`Distribution::NONE`], which
+    /// [`RlweParams`](poulpy_core::security::RlweParams) does not bound, without sparse-secret encapsulation.
     pub fn secrets(&self, dense: SecretSpec) -> BootstrappingSecrets {
         let sparse = SecretSpec::new(
             dense.n >> self.log_gap,

@@ -34,15 +34,25 @@ jobs:
       - name: Open an issue if a newer table was released
         run: |
           tag=$(gh release view --repo jdumezy/rlwe-params --json tagName -q .tagName)
+          # The tag and the digest reach the commands of the issue: refuse anything else than their expected forms.
+          if ! [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::The latest rlwe-params release has an unexpected tag."
+            exit 1
+          fi
           if [ "$tag" = "$(cat "$TABLE_DIR/VERSION")" ]; then
             echo "The vendored table is $tag already."
             exit 0
           fi
           digest=$(gh release view "$tag" --repo jdumezy/rlwe-params --json assets \
             -q ".assets[] | select(.name == \"$TABLE\") | .digest")
+          if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The rlwe-params release $tag has no SHA-256 digest for $TABLE."
+            exit 1
+          fi
           title="Update the rlwe-params table to $tag"
-          if [ -n "$(gh issue list --state open --limit 200 --json title -q ".[] | select(.title == \"$title\") | .title")" ]; then
-            echo "An issue titled \"$title\" is already open."
+          existing=$(gh issue list --state all --search "\"$title\" in:title" --json title -q ".[] | select(.title == \"$title\") | .title")
+          if [ -n "$existing" ]; then
+            echo "An issue titled \"$title\" exists already."
             exit 0
           fi
           gh issue create --title "$title" --body "rlwe-params released $tag, newer than the vendored $(cat "$TABLE_DIR/VERSION"). The release states the digest \`$digest\` for \`$TABLE\`, which shows the download intact, not its values right.
