@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, Ring, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, Standard, ZnxViewMut,
+    Backend, Data, HostDataMut, Ring, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, Standard, ZnxView, ZnxViewMut,
 };
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 
@@ -150,12 +150,11 @@ impl<W: ZnxWord, Rg: Ring> GLWESecret<AlignedBuf, W, Rg> {
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWESecret<D, W, Rg> {
     /// Sets column `col` to the caller-provided binary `{0, 1}` coefficient
-    /// vector and tags the distribution as [`Distribution::BinaryFixed`] with
-    /// the vector's Hamming weight. For structured binary secrets whose
-    /// positions are chosen by the caller (e.g. the PaCo bootstrapping key).
+    /// vector, for structured binary secrets whose positions are chosen by the
+    /// caller (e.g. the PaCo bootstrapping key).
     ///
-    /// The distribution tag is shared by all columns; when filling several
-    /// columns the last written weight wins.
+    /// The distribution tag is shared by all columns.
+    /// It is [`Distribution::BinaryFixed`] of their Hamming weight when every column has the same one, and [`Distribution::NONE`] otherwise.
     ///
     /// `coeffs` is taken as `i64` for caller convenience rather than as the
     /// layout's own word; the assert restricts the values to `{0, 1}`, so
@@ -165,7 +164,13 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWESecret<D, W, Rg> {
         let dst = self.data.at_mut(col, 0);
         assert_eq!(dst.len(), coeffs.len(), "coefficient length must equal the ring degree");
         dst.iter_mut().zip(coeffs.iter()).for_each(|(d, &c)| *d = W::from_i64(c));
-        self.dist = Distribution::BinaryFixed(coeffs.iter().filter(|&&x| x != 0).count());
+        let weight = |col: usize| self.data.at(col, 0).iter().filter(|&&x| x != W::zero()).count();
+        let h = weight(col);
+        self.dist = if (0..self.data.cols()).all(|c| weight(c) == h) {
+            Distribution::BinaryFixed(h)
+        } else {
+            Distribution::NONE
+        };
     }
 }
 
@@ -192,5 +197,21 @@ impl<BE: Backend, Rg: Ring> GLWESecretToBackendRef<BE, Rg> for GLWESecret<BE::Ow
             data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendRef<BE, Rg>>::to_backend_ref(&self.data),
             dist: self.dist,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binary_coeffs_are_tagged_only_when_every_column_shares_a_weight() {
+        let mut sk = GLWESecret::<AlignedBuf, i64, Standard>::alloc(Degree(8), Rank(2));
+        sk.fill_binary_coeffs(0, &[1, 1, 0, 0, 0, 0, 0, 0]);
+        sk.fill_binary_coeffs(1, &[1, 1, 1, 1, 1, 0, 0, 0]);
+        assert!(matches!(sk.dist(), Distribution::NONE));
+        // A light column is not hidden behind the weight written last.
+        sk.fill_binary_coeffs(1, &[0, 0, 0, 1, 1, 0, 0, 0]);
+        assert!(matches!(sk.dist(), Distribution::BinaryFixed(2)));
     }
 }
