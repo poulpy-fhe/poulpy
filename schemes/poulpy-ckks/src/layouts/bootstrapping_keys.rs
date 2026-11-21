@@ -55,6 +55,7 @@ use poulpy_core::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef,
         },
     },
+    security::{Modulus, SecretSpec, ValidateSecurity},
 };
 use poulpy_hal::{
     api::{VecZnxAutomorphism, VecZnxSwitchRing},
@@ -375,6 +376,54 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         };
         keys.keys_layout = keys.read_keys_layout();
         Ok(keys)
+    }
+}
+
+/// The secrets the bootstrapping keys are encrypted under, as
+/// [`BootstrappingKeysLayout`] validates them (see [`BootstrappingPlan::secrets`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BootstrappingSecrets {
+    /// The application secret, which the secret of EvalMod on the conjugate-invariant
+    /// ring shares, drawn at its degree and weight.
+    pub dense: SecretSpec,
+    /// The ephemeral sparse secret of the encapsulation, on the subring of the plan's gap.
+    pub sparse: SecretSpec,
+}
+
+/// Every key, under the secret its samples are encrypted with. A switching key's samples are
+/// under its output secret: the rotation, first-factor, sparse-to-dense and embedding keys under
+/// the dense secret, the dense-to-sparse key under the sparse one, and the trace key under the
+/// conjugate-invariant secret, bounded as the dense one. The tensor key is under the secret of
+/// the ring EvalMod runs on. The trace and embedding keys of degree `2N` take the bound of
+/// their secrets at degree `N`, the ring those live in.
+impl ValidateSecurity for BootstrappingKeysLayout {
+    type Secrets = BootstrappingSecrets;
+
+    fn moduli(&self, secrets: &BootstrappingSecrets) -> Vec<Modulus> {
+        let dense = secrets.dense;
+        let mut moduli: Vec<_> = self
+            .rotation_key_layouts()
+            .map(|key| Modulus::of("rotation key", dense, key))
+            .collect();
+        moduli.push(Modulus::of("tensor key", dense, &self.tensor_key));
+        if let Some(key) = &self.first_factor_key {
+            moduli.push(Modulus::of("first-factor key", dense, key));
+        }
+        if let Some((trace, embed)) = &self.conversion_keys {
+            moduli.push(Modulus::of("trace key", dense, trace));
+            moduli.push(Modulus::of("embed key", dense, embed));
+        }
+        if let Some(encapsulation) = &self.encapsulation {
+            moduli.push(Modulus::of(
+                "dense-to-sparse key",
+                secrets.sparse,
+                &encapsulation.dense_to_sparse,
+            ));
+            if let Some(key) = &encapsulation.sparse_to_dense {
+                moduli.push(Modulus::of("sparse-to-dense key", dense, key));
+            }
+        }
+        moduli
     }
 }
 
@@ -1240,4 +1289,37 @@ pub struct CKKSFoldKeysLayout {
     /// Layout of the automorphism keys of the input secret, which split real pairs
     /// and sparse inputs.
     pub automorphism: Option<GGLWELayout>,
+}
+
+/// The secrets the keys of a fold are encrypted under, as [`CKKSFoldKeysLayout`] validates
+/// them, each at the degree of the ring it lives in: the inputs' degree, or the
+/// conjugate-invariant degree for embedded conjugate-invariant inputs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FoldSecrets {
+    /// The secret of the inputs.
+    pub input: SecretSpec,
+    /// The secret of the bootstrapping.
+    pub bootstrap: SecretSpec,
+}
+
+/// The inbound ring-switch key under the bootstrapping secret, the outbound one and the
+/// automorphism keys under the input secret. These keys belong to no preset or plan.
+impl ValidateSecurity for CKKSFoldKeysLayout {
+    type Secrets = FoldSecrets;
+
+    fn moduli(&self, secrets: &FoldSecrets) -> Vec<Modulus> {
+        let mut moduli = Vec::new();
+        if let Some(ring_switch) = &self.ring_switch {
+            moduli.push(Modulus::of(
+                "inbound ring-switch key",
+                secrets.bootstrap,
+                &ring_switch.inbound,
+            ));
+            moduli.push(Modulus::of("outbound ring-switch key", secrets.input, &ring_switch.outbound));
+        }
+        if let Some(automorphism) = &self.automorphism {
+            moduli.push(Modulus::of("automorphism key", secrets.input, automorphism));
+        }
+        moduli
+    }
 }

@@ -2,9 +2,11 @@
 
 use anyhow::{Result, ensure};
 
+use poulpy_core::{Distribution, security::SecretSpec};
+
 use crate::{
     CKKSCompositionError, CKKSInfos,
-    layouts::{DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
+    layouts::{BootstrappingSecrets, DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
 };
 
 use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, key_widths::StageWidths};
@@ -353,6 +355,19 @@ impl BootstrappingPlan {
     /// `log2` of the gap of the plaintexts, see [`Self::with_log_gap`].
     pub fn log_gap(&self) -> usize {
         self.log_gap
+    }
+
+    /// The secrets of the keys under the dense secret `dense`, as
+    /// [`BootstrappingKeysLayout`](crate::layouts::BootstrappingKeysLayout) validates them: `dense`, and the ephemeral
+    /// sparse secret of the plan's weight on the subring of its gap, of distribution [`Distribution::NONE`], which no
+    /// table bounds, without sparse-secret encapsulation.
+    pub fn secrets(&self, dense: SecretSpec) -> BootstrappingSecrets {
+        let sparse = SecretSpec::new(
+            dense.n >> self.log_gap,
+            self.sparse_secret_hamming_weight()
+                .map_or(Distribution::NONE, Distribution::TernaryFixed),
+        );
+        BootstrappingSecrets { dense, sparse }
     }
 
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.

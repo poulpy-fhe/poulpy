@@ -20,6 +20,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
+    security::{RlweParams, ValidateSecurity},
     api::{GLWECIKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -174,8 +175,13 @@ fn preset_json(preset: &BootstrappingPreset, nominal_base2k: usize, pow2: bool) 
         "dense_to_sparse_dsize": preset.dense_to_sparse_dsize(),
         "dense_secret_hamming_weight": preset.dense_secret_hamming_weight(),
         "sparse_secret_hamming_weight": preset.sparse_secret_hamming_weight(),
-        "max_dense_modulus": preset.max_dense_modulus(),
-        "max_sparse_modulus": preset.max_sparse_modulus(),
+        // The level the preset validates at under its own dense secret, `null` for one that does not.
+        "security": preset.validate_security_128(&preset.dense_secret(), &RlweParams).is_ok().then(|| json!({
+            "bits": 128,
+            "table": format!("rlwe-params {}", RlweParams::VERSION),
+            "max_dense_modulus": preset.max_dense_modulus(),
+            "max_sparse_modulus": preset.max_sparse_modulus(),
+        })),
     })
 }
 

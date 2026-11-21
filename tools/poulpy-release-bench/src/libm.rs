@@ -13,7 +13,7 @@ use std::{collections::HashMap, time::Instant};
 
 use anyhow::{Result, bail};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps},
     layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc},
     polynomial::SplitStrategy,
@@ -152,6 +152,7 @@ fn layout(k: usize) -> CKKSLayout {
             scale: Scale::Log(LOG_DELTA),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     }
 }
@@ -389,6 +390,7 @@ where
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         });
         self.client
             .ckks_decrypt(&mut pt, &moved, &self.sk, &mut self.arena.borrow())

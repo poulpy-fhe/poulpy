@@ -81,7 +81,7 @@ This file holds the rules that apply to more than one crate; the crate files und
 | Crate | Operations | Other results |
 |---|---|---|
 | hal | value; panic | `std::io::Result` (serialization), `anyhow::Result` (plan cache) |
-| core | `()` or value; panic, release included | `std::io::Result` (serialization), `CoreError` (key-source lookups, key-layout coarsening; a variant lands with its first producer), `anyhow::Result` (polynomial-evaluation entry points) |
+| core | `()` or value; panic, release included | `std::io::Result` (serialization), `CoreError` (key-source lookups, key-layout coarsening, opt-in security checks; a variant lands with its first producer), `anyhow::Result` (polynomial-evaluation entry points) |
 | ckks | `CKKSResult<T>`: typed `CKKSCompositionError` for caller-branchable conditions, untyped `Internal` (`ckks_ensure!`/`ckks_bail!`) for invariants, backend failures and own arena checks; allocation, sizing and carving panic | `std::io::Result` (serialization), `anyhow::Result` (setup outside the API traits: plans, presets, approximations, key generation and preparation, host codecs, plan-material encoders), typed errors kept in the chain for `From<anyhow::Error>` |
 | bin-fhe | `()` or value; panic, key-lookup `Result`s included | `std::io::Result` (serialization) |
 | mhe | `()` or value; panic, incompatible shares included | `std::io::Result` (serialization) |

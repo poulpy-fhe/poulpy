@@ -1,0 +1,62 @@
+# Opens an issue when rlwe-params releases a new 128-bit security table.
+#
+# The table is vendored in poulpy-core/third_party/rlwe-params and committed as
+# Rust in poulpy-core/src/security/rlwe_params_128.rs, which a test rebuilds from
+# it. The workflow only compares the latest release with the vendored VERSION and
+# opens an issue listing the update steps: a maintainer updates the table by hand
+# and reviews the regenerated cells in a pull request.
+
+name: Check rlwe-params table
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  TABLE_DIR: poulpy-core/third_party/rlwe-params
+  TABLE: 128bits_security.json
+
+jobs:
+  check:
+    name: Check for a new table
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Open an issue if a newer table was released
+        run: |
+          tag=$(gh release view --repo jdumezy/rlwe-params --json tagName -q .tagName)
+          if [ "$tag" = "$(cat "$TABLE_DIR/VERSION")" ]; then
+            echo "The vendored table is $tag already."
+            exit 0
+          fi
+          digest=$(gh release view "$tag" --repo jdumezy/rlwe-params --json assets \
+            -q ".assets[] | select(.name == \"$TABLE\") | .digest")
+          title="Update the rlwe-params table to $tag"
+          if [ -n "$(gh issue list --state open --limit 200 --json title -q ".[] | select(.title == \"$title\") | .title")" ]; then
+            echo "An issue titled \"$title\" is already open."
+            exit 0
+          fi
+          gh issue create --title "$title" --body "rlwe-params released $tag, newer than the vendored $(cat "$TABLE_DIR/VERSION"). The release states the digest \`$digest\` for \`$TABLE\`, which shows the download intact, not its values right.
+
+          Update the table by hand:
+
+          \`\`\`bash
+          gh release download $tag --repo jdumezy/rlwe-params --pattern $TABLE --dir $TABLE_DIR --clobber
+          echo \"sha256:\$(sha256sum $TABLE_DIR/$TABLE | cut -d' ' -f1)\" # must print $digest
+          echo $tag > $TABLE_DIR/VERSION
+          echo $digest > $TABLE_DIR/SHA256
+          POULPY_REGENERATE_SECURITY_TABLE=1 cargo test -p poulpy-core --lib security::generate
+          cargo test -p poulpy-core --lib security
+          cargo test -p poulpy-ckks --lib --features test-utils presets::
+          \`\`\`
+
+          Review the diff of \`poulpy-core/src/security/rlwe_params_128.rs\` cell by cell, then update the pinned bounds, key shapes, docs and CHANGELOG as needed."

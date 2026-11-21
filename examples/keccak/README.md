@@ -67,10 +67,12 @@ The scale sets the precision: each bit of it halves the error of the output bits
 | | |
 |---|---|
 | Ring degree | `2^15` |
-| Dense secret | weight 1024, moduli up to 851 bits |
-| Sparse secret | weight 32, moduli up to 162 bits |
+| Dense secret | ternary, weight 1024, moduli up to 851 bits |
+| Sparse secret | ternary, weight 32, moduli up to 162 bits |
 | Bootstrapping input, output, raised | 125, 203 and 624 bits |
 | A round | 20 bits for `L`, 20 for the shifts of chi, 35 for its product, 3 of margin |
 
-The bounds are the 128-bit ones `poulpy-ckks` uses for its presets.
+The bounds are the 128-bit ones `poulpy-ckks` validates its presets with, from `poulpy_core::security::RlweParams`, the rlwe-params table vendored in `poulpy-core`.
 Every key takes the fewest digits that keep its modulus under the bound of its secret, see `key_layout` in `src/params.rs`.
+`Params` implements `ValidateSecurity`, listing the round's and the raised ciphertexts and every key under the secret its samples are encrypted with.
+The parameters validate under the secret they are shaped for, and the client again under the one it draws, before generating keys.

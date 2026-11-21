@@ -1,15 +1,19 @@
 //! The parameters the client and the server agree on: the ring, the scales and widths of a round, the security bounds,
 //! the shape of every key, and the maps of a round.
 //!
-//! The 128-bit bounds are those `poulpy-ckks` uses for its presets, from the table of
-//! [sparse-key-estimate](https://github.com/jdumezy/sparse-key-estimate/blob/aa2c40d4eee4551e6fba06c55d7432f6918e1597/Precomputed-Tables/128bits_security.md)
-//! at `N = 2^15` and an error of deviation 3.2.
+//! The 128-bit bounds are those `poulpy-ckks` validates its presets with: [`RlweParams`], the rlwe-params table
+//! vendored in `poulpy-core`, at `N = 2^15` and an error of deviation 3.2. [`Params`] lists every modulus under the
+//! client's secret, and validates through [`ValidateSecurity`].
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::api::LinearTransformationStrategy;
-use poulpy_core::layouts::{
-    Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, LinearTransformationLayout, Rank,
-    TorusPrecision, optimal_bsgs_giant_step,
+use poulpy_core::{
+    Distribution,
+    layouts::{
+        Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, LinearTransformationLayout, Rank,
+        TorusPrecision, optimal_bsgs_giant_step,
+    },
+    security::{Modulus, RlweParams, SecretSpec, SecurityTable, ValidateSecurity},
 };
 
 use crate::{
@@ -32,20 +36,19 @@ pub(crate) const LOG_DELTA_MAPS: usize = 20;
 /// Bits a round keeps above the bootstrapping input.
 const MARGIN: usize = 3;
 
-/// A secret's Hamming weight and the largest modulus, in bits, under it at 128 bits of security.
-pub(crate) struct SecretBound {
-    pub(crate) hamming_weight: usize,
-    pub(crate) max_log_modulus: usize,
-}
+/// Hamming weight of the client's ternary secret.
+pub(crate) const DENSE_HAMMING_WEIGHT: usize = 1024;
+/// Hamming weight of the ternary secret the raise switches to and back.
+pub(crate) const SPARSE_HAMMING_WEIGHT: usize = 32;
+/// The client's secret, as the bounds see it.
+pub(crate) const DENSE_SECRET: SecretSpec = SecretSpec::new(1 << LOG_N, Distribution::TernaryFixed(DENSE_HAMMING_WEIGHT));
+/// The secret of the raise, on the same ring.
+pub(crate) const SPARSE_SECRET: SecretSpec = SecretSpec::new(1 << LOG_N, Distribution::TernaryFixed(SPARSE_HAMMING_WEIGHT));
 
-pub(crate) const DENSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 1024,
-    max_log_modulus: 851,
-};
-pub(crate) const SPARSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 32,
-    max_log_modulus: 162,
-};
+/// The 128-bit bound of `secret`, which every modulus under it stays below.
+pub(crate) fn bound(secret: SecretSpec) -> Result<usize> {
+    Ok(RlweParams.max_log_q(128, secret)?)
+}
 
 /// Bits a key keeps past its input and one digit, for its own error to stay below the input's last bit.
 const KEY_NOISE_MARGIN: usize = 2;
@@ -96,13 +99,15 @@ impl Params {
         // A round spends `LOG_DELTA_MAPS` bits of modulus on `L` and on the shifts of chi, `OUTPUT_LOG_DELTA` on the
         // product of chi, and the margin.
         let bootstrapping = Bootstrapping::new(MARGIN + 2 * LOG_DELTA_MAPS + OUTPUT_LOG_DELTA)?;
-        let key = key_layout(bootstrapping.output_k, DENSE_SECRET.max_log_modulus)?;
-        Ok(Self {
+        let key = key_layout(bootstrapping.output_k, bound(DENSE_SECRET)?)?;
+        let params = Self {
             bootstrapping,
             maps: [linear_layer(), shift_x(1), shift_x(2)],
             rotation_key: key.into(),
             tensor_key: key.into(),
-        })
+        };
+        params.validate_security_128(&DENSE_SECRET, &RlweParams)?;
+        Ok(params)
     }
 
     /// The Galois elements of the rotation keys the round's maps take.
@@ -115,6 +120,34 @@ impl Params {
         elements.sort_unstable();
         elements.dedup();
         elements
+    }
+}
+
+/// The ciphertexts of a round, the raised one of the bootstrapping and every key, under the client's secret `dense`
+/// and the sparse secret of the raise.
+impl ValidateSecurity for Params {
+    type Secrets = SecretSpec;
+
+    fn moduli(&self, dense: &SecretSpec) -> Vec<Modulus> {
+        let boot = &self.bootstrapping;
+        let mut moduli = vec![
+            Modulus {
+                what: "round ciphertext",
+                secret: *dense,
+                n: 1 << LOG_N,
+                log_q: boot.output_k,
+            },
+            Modulus {
+                what: "raised ciphertext",
+                secret: *dense,
+                n: 1 << LOG_N,
+                log_q: boot.raised_k,
+            },
+            Modulus::of("round rotation key", *dense, &self.rotation_key),
+            Modulus::of("round tensor key", *dense, &self.tensor_key),
+        ];
+        moduli.extend(boot.keys.moduli(&boot.plan.secrets(*dense)));
+        moduli
     }
 }
 

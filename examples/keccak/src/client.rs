@@ -13,6 +13,7 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, BackendGLWESecretPrepared, GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWETensorKeyAlloc, LWEInfos,
     },
+    security::{RlweParams, SecretSpec, ValidateSecurity},
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -23,7 +24,7 @@ use poulpy_hal::{
 use crate::{
     Ct, Host,
     layout::{SLOTS, STATES, from_slots, to_slots},
-    params::{BASE2K, DENSE_SECRET, LOG_N, OUTPUT_LOG_DELTA, Params},
+    params::{BASE2K, DENSE_HAMMING_WEIGHT, LOG_N, OUTPUT_LOG_DELTA, Params},
 };
 
 type Buf = <Host as Backend>::OwnedBuf;
@@ -80,7 +81,7 @@ impl Client {
         let module = Module::<Host>::new(1 << LOG_N);
         let sk_layout = params.bootstrapping.raised_layout().glwe_layout;
         let mut sk_raw = module.glwe_secret_alloc_from_infos(&sk_layout);
-        module.glwe_secret_fill_ternary_hw(&mut sk_raw, DENSE_SECRET.hamming_weight, &mut Source::new(root.new_seed()));
+        module.glwe_secret_fill_ternary_hw(&mut sk_raw, DENSE_HAMMING_WEIGHT, &mut Source::new(root.new_seed()));
         let mut sk = module.glwe_secret_prepared_alloc_from_infos(&sk_layout);
         module.glwe_secret_prepare(&mut sk, &sk_raw);
         Self {
@@ -104,6 +105,8 @@ impl Client {
                 .max(GLWEAutomorphismKeyEncryptSk::<Host, Standard>::glwe_automorphism_key_encrypt_sk_tmp_bytes(module, key))
                 .max(GLWETensorKeyEncryptSk::<Host, Standard>::glwe_tensor_key_encrypt_sk_tmp_bytes(module, tsk)),
         );
+        // Every modulus under the secret actually drawn.
+        params.validate_security_128(&SecretSpec::of(&self.sk_raw), &RlweParams)?;
         let bootstrapping = boot.plan.generate_keys(
             module,
             &self.sk_raw,

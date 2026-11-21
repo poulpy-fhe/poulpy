@@ -1,0 +1,2033 @@
+{
+  "format": 1,
+  "target": 128,
+  "error": {
+    "kind": "gaussian",
+    "sigma": "3.2"
+  },
+  "samples": null,
+  "lower": 15,
+  "profile": {
+    "name": "matzov",
+    "cost_model": "MATZOV",
+    "shape_model": "GSA",
+    "backends": [
+      "malb",
+      "tabog"
+    ]
+  },
+  "cells": [
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "ternary",
+        "min": -1,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 106,
+      "upper": 256,
+      "security_bits": "128.9131245084633454300842101396519506608",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "ternary",
+        "min": -1,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 214,
+      "upper": 512,
+      "security_bits": "128.2551449232824245089000032647796539518",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "ternary",
+        "min": -1,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 430,
+      "upper": 1024,
+      "security_bits": "128.3732198044956648033906622315458252587",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "ternary",
+        "min": -1,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 868,
+      "upper": 2048,
+      "security_bits": "128.0335807182241685178116379864638214190",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "ternary",
+        "min": -1,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 1746,
+      "upper": 4096,
+      "security_bits": "128.2053778840710169399143070117961509854",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "ternary",
+        "min": -1,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 3522,
+      "upper": 8192,
+      "security_bits": "128.0917798137585304156416383698829823573",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "binary",
+        "min": 0,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 105,
+      "upper": 256,
+      "security_bits": "129.0058022506312078423937403123308594396",
+      "binding_attack": "malb/lattice-estimator / dual_hybrid",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "binary",
+        "min": 0,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 213,
+      "upper": 512,
+      "security_bits": "128.2942969754788845031133811543021023573",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "binary",
+        "min": 0,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 430,
+      "upper": 1024,
+      "security_bits": "128.1400325177355749000848543594833837379",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "binary",
+        "min": 0,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 867,
+      "upper": 2048,
+      "security_bits": "128.0389488440238310263547229660044034957",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "binary",
+        "min": 0,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 1746,
+      "upper": 4096,
+      "security_bits": "128.1978892138765461993786370938721943454",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "binary",
+        "min": 0,
+        "max": 1
+      },
+      "status": "boundary",
+      "max_log_q": 3521,
+      "upper": 8192,
+      "security_bits": "128.0928557706935952325409994300479183678",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "gaussian",
+        "sigma": "3.2"
+      },
+      "status": "boundary",
+      "max_log_q": 108,
+      "upper": 256,
+      "security_bits": "128.9231348828981955692233225046149471554",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "gaussian",
+        "sigma": "3.2"
+      },
+      "status": "boundary",
+      "max_log_q": 216,
+      "upper": 512,
+      "security_bits": "128.1598247142207953164833362018924963343",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "gaussian",
+        "sigma": "3.2"
+      },
+      "status": "boundary",
+      "max_log_q": 432,
+      "upper": 1024,
+      "security_bits": "128.2988468432139415125711945509378749120",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "gaussian",
+        "sigma": "3.2"
+      },
+      "status": "boundary",
+      "max_log_q": 870,
+      "upper": 2048,
+      "security_bits": "128.0360889157538946009412491649687089018",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "gaussian",
+        "sigma": "3.2"
+      },
+      "status": "boundary",
+      "max_log_q": 1748,
+      "upper": 4096,
+      "security_bits": "128.2066938419626970280500431414948788111",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "gaussian",
+        "sigma": "3.2"
+      },
+      "status": "boundary",
+      "max_log_q": 3524,
+      "upper": 8192,
+      "security_bits": "128.0925086240842532072626395995582150887",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 32,
+        "ones": 16,
+        "minus_ones": 16
+      },
+      "status": "boundary",
+      "max_log_q": 19,
+      "upper": 256,
+      "security_bits": "128.6017793716791431133125116417089977546",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 32,
+        "ones": 16,
+        "minus_ones": 16
+      },
+      "status": "boundary",
+      "max_log_q": 37,
+      "upper": 512,
+      "security_bits": "128.3052105492316375053764015015539900899",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 32,
+        "ones": 16,
+        "minus_ones": 16
+      },
+      "status": "boundary",
+      "max_log_q": 77,
+      "upper": 1024,
+      "security_bits": "128.0494452082478865423075743040431911524",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 32,
+        "ones": 16,
+        "minus_ones": 16
+      },
+      "status": "boundary",
+      "max_log_q": 162,
+      "upper": 2048,
+      "security_bits": "128.0224526923846309022847307785095196608",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 32,
+        "ones": 16,
+        "minus_ones": 16
+      },
+      "status": "boundary",
+      "max_log_q": 342,
+      "upper": 4096,
+      "security_bits": "128.1435642664370695885597727330393062778",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 32,
+        "ones": 16,
+        "minus_ones": 16
+      },
+      "status": "boundary",
+      "max_log_q": 744,
+      "upper": 8192,
+      "security_bits": "128.0048080029726101249282074465628154074",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 64,
+        "ones": 32,
+        "minus_ones": 32
+      },
+      "status": "boundary",
+      "max_log_q": 57,
+      "upper": 256,
+      "security_bits": "128.6758762123654763549044855898570709485",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 64,
+        "ones": 32,
+        "minus_ones": 32
+      },
+      "status": "boundary",
+      "max_log_q": 112,
+      "upper": 512,
+      "security_bits": "128.5579290957650002275771564775704474511",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 64,
+        "ones": 32,
+        "minus_ones": 32
+      },
+      "status": "boundary",
+      "max_log_q": 227,
+      "upper": 1024,
+      "security_bits": "128.1402049264228403101825617969066429222",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 64,
+        "ones": 32,
+        "minus_ones": 32
+      },
+      "status": "boundary",
+      "max_log_q": 464,
+      "upper": 2048,
+      "security_bits": "128.0986760774708436548317384213004175068",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 64,
+        "ones": 32,
+        "minus_ones": 32
+      },
+      "status": "boundary",
+      "max_log_q": 954,
+      "upper": 4096,
+      "security_bits": "128.0273583399815537889157705314103747170",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 64,
+        "ones": 32,
+        "minus_ones": 32
+      },
+      "status": "boundary",
+      "max_log_q": 1963,
+      "upper": 8192,
+      "security_bits": "128.0013132240789433177765838769042720725",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 128,
+        "ones": 64,
+        "minus_ones": 64
+      },
+      "status": "boundary",
+      "max_log_q": 85,
+      "upper": 256,
+      "security_bits": "129.1157488459416819790430498686036011307",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 128,
+        "ones": 64,
+        "minus_ones": 64
+      },
+      "status": "boundary",
+      "max_log_q": 167,
+      "upper": 512,
+      "security_bits": "128.0041610138436720641573411733171444596",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 128,
+        "ones": 64,
+        "minus_ones": 64
+      },
+      "status": "boundary",
+      "max_log_q": 332,
+      "upper": 1024,
+      "security_bits": "128.0485279271721711554616343041151484284",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 128,
+        "ones": 64,
+        "minus_ones": 64
+      },
+      "status": "boundary",
+      "max_log_q": 665,
+      "upper": 2048,
+      "security_bits": "128.1215454762052776874147926450596641083",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 128,
+        "ones": 64,
+        "minus_ones": 64
+      },
+      "status": "boundary",
+      "max_log_q": 1345,
+      "upper": 4096,
+      "security_bits": "128.0188634946423635298692213686033737054",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 128,
+        "ones": 64,
+        "minus_ones": 64
+      },
+      "status": "boundary",
+      "max_log_q": 2721,
+      "upper": 8192,
+      "security_bits": "128.0192481765587776309525000248566709029",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 192,
+        "ones": 96,
+        "minus_ones": 96
+      },
+      "status": "boundary",
+      "max_log_q": 96,
+      "upper": 256,
+      "security_bits": "128.3413785892815434341149704160816167291",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 192,
+        "ones": 96,
+        "minus_ones": 96
+      },
+      "status": "boundary",
+      "max_log_q": 186,
+      "upper": 512,
+      "security_bits": "128.2140966448415803010855954248605389233",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 192,
+        "ones": 96,
+        "minus_ones": 96
+      },
+      "status": "boundary",
+      "max_log_q": 367,
+      "upper": 1024,
+      "security_bits": "128.3146298938431516287328955668385435639",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 192,
+        "ones": 96,
+        "minus_ones": 96
+      },
+      "status": "boundary",
+      "max_log_q": 737,
+      "upper": 2048,
+      "security_bits": "128.2498754376274943552280305636738059073",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 192,
+        "ones": 96,
+        "minus_ones": 96
+      },
+      "status": "boundary",
+      "max_log_q": 1475,
+      "upper": 4096,
+      "security_bits": "128.1068674339372524521806112547704859486",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 192,
+        "ones": 96,
+        "minus_ones": 96
+      },
+      "status": "boundary",
+      "max_log_q": 2982,
+      "upper": 8192,
+      "security_bits": "128.1064348699660420652695724862657425918",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 256,
+        "ones": 128,
+        "minus_ones": 128
+      },
+      "status": "boundary",
+      "max_log_q": 100,
+      "upper": 256,
+      "security_bits": "128.2105406412793481097188415550470336711",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 256,
+        "ones": 128,
+        "minus_ones": 128
+      },
+      "status": "boundary",
+      "max_log_q": 196,
+      "upper": 512,
+      "security_bits": "128.2738842183514615535085618110937291800",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 256,
+        "ones": 128,
+        "minus_ones": 128
+      },
+      "status": "boundary",
+      "max_log_q": 387,
+      "upper": 1024,
+      "security_bits": "128.0532933539709342004148177670937429675",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 256,
+        "ones": 128,
+        "minus_ones": 128
+      },
+      "status": "boundary",
+      "max_log_q": 771,
+      "upper": 2048,
+      "security_bits": "128.0411827326878641325375168010045046247",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 256,
+        "ones": 128,
+        "minus_ones": 128
+      },
+      "status": "boundary",
+      "max_log_q": 1545,
+      "upper": 4096,
+      "security_bits": "128.2652554524795184244055030161739866400",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 256,
+        "ones": 128,
+        "minus_ones": 128
+      },
+      "status": "boundary",
+      "max_log_q": 3101,
+      "upper": 8192,
+      "security_bits": "128.1763998803674034872598144077447798030",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 512,
+        "ones": 256,
+        "minus_ones": 256
+      },
+      "status": "boundary",
+      "max_log_q": 104,
+      "upper": 256,
+      "security_bits": "129.0057266825311386997503689960288601197",
+      "binding_attack": "malb/lattice-estimator / dual_hybrid",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 512,
+        "ones": 256,
+        "minus_ones": 256
+      },
+      "status": "boundary",
+      "max_log_q": 208,
+      "upper": 512,
+      "security_bits": "128.2233575505705980899493638873006729493",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 512,
+        "ones": 256,
+        "minus_ones": 256
+      },
+      "status": "boundary",
+      "max_log_q": 415,
+      "upper": 1024,
+      "security_bits": "128.1262982122052114477683973883822952102",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 512,
+        "ones": 256,
+        "minus_ones": 256
+      },
+      "status": "boundary",
+      "max_log_q": 826,
+      "upper": 2048,
+      "security_bits": "128.2343003448550574076290418991855705360",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 512,
+        "ones": 256,
+        "minus_ones": 256
+      },
+      "status": "boundary",
+      "max_log_q": 1651,
+      "upper": 4096,
+      "security_bits": "128.1716012778968383719013193102110901771",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 512,
+        "ones": 256,
+        "minus_ones": 256
+      },
+      "status": "boundary",
+      "max_log_q": 3315,
+      "upper": 8192,
+      "security_bits": "128.0643839435034038110548843786771299473",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 1024,
+        "ones": 512,
+        "minus_ones": 512
+      },
+      "status": "boundary",
+      "max_log_q": 105,
+      "upper": 256,
+      "security_bits": "129.0058022506312078423937403123308594396",
+      "binding_attack": "malb/lattice-estimator / dual_hybrid",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 1024,
+        "ones": 512,
+        "minus_ones": 512
+      },
+      "status": "boundary",
+      "max_log_q": 211,
+      "upper": 512,
+      "security_bits": "128.5279070781254062552054251158741554169",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 1024,
+        "ones": 512,
+        "minus_ones": 512
+      },
+      "status": "boundary",
+      "max_log_q": 424,
+      "upper": 1024,
+      "security_bits": "128.1549621777760727729753057563731781713",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 1024,
+        "ones": 512,
+        "minus_ones": 512
+      },
+      "status": "boundary",
+      "max_log_q": 851,
+      "upper": 2048,
+      "security_bits": "128.0532993319563280842222802857684726974",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-without-mitm",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 1024,
+        "ones": 512,
+        "minus_ones": 512
+      },
+      "status": "boundary",
+      "max_log_q": 1707,
+      "upper": 4096,
+      "security_bits": "128.2161107285435396217275305924463715531",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 1024,
+        "ones": 512,
+        "minus_ones": 512
+      },
+      "status": "boundary",
+      "max_log_q": 3423,
+      "upper": 8192,
+      "security_bits": "128.1085876685939200263299623816998554560",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 2048,
+        "ones": 1024,
+        "minus_ones": 1024
+      },
+      "status": "boundary",
+      "max_log_q": 106,
+      "upper": 256,
+      "security_bits": "128.6363288161390467309234101119887422793",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 2048,
+        "ones": 1024,
+        "minus_ones": 1024
+      },
+      "status": "boundary",
+      "max_log_q": 213,
+      "upper": 512,
+      "security_bits": "128.2942969754788845031133811543021023573",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 2048,
+        "ones": 1024,
+        "minus_ones": 1024
+      },
+      "status": "boundary",
+      "max_log_q": 428,
+      "upper": 1024,
+      "security_bits": "128.1731141781496976894035650526944500866",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 2048,
+        "ones": 1024,
+        "minus_ones": 1024
+      },
+      "status": "boundary",
+      "max_log_q": 861,
+      "upper": 2048,
+      "security_bits": "128.0700738565951002289751337241268417068",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-without-mitm",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 2048,
+        "ones": 1024,
+        "minus_ones": 1024
+      },
+      "status": "boundary",
+      "max_log_q": 1730,
+      "upper": 4096,
+      "security_bits": "128.2433754108243218778814452581676423834",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-without-mitm",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_ternary",
+        "h": 2048,
+        "ones": 1024,
+        "minus_ones": 1024
+      },
+      "status": "boundary",
+      "max_log_q": 3480,
+      "upper": 8192,
+      "security_bits": "128.1315854287247046159895412014158244661",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 32,
+        "ones": 32,
+        "minus_ones": 0
+      },
+      "status": "error",
+      "max_log_q": null,
+      "upper": 256,
+      "security_bits": null,
+      "binding_attack": null,
+      "error": "malb attack bdd failed: Incorrect bounds 4096 > 1778.",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:cf2ea8801004d69acbd9ce992df1460d5477cba76ea50c020c6aeb992b7b0343",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:44349ab495b40eb3f64ad3f64570de55db76133348bebc55c1ae5c2cd67974aa"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 32,
+        "ones": 32,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 31,
+      "upper": 512,
+      "security_bits": "128.6444459651511343134164148000253887955",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 32,
+        "ones": 32,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 67,
+      "upper": 1024,
+      "security_bits": "128.1680629503551019979663507511830504165",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 32,
+        "ones": 32,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 146,
+      "upper": 2048,
+      "security_bits": "128.1255541862104253514926154052819625396",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 32,
+        "ones": 32,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 321,
+      "upper": 4096,
+      "security_bits": "128.0687789524428955456344650466129376762",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 32,
+        "ones": 32,
+        "minus_ones": 0
+      },
+      "status": "error",
+      "max_log_q": null,
+      "upper": 8192,
+      "security_bits": null,
+      "binding_attack": null,
+      "error": "malb attack dual_mitm_hybrid failed: \u03b2 = 487 > d = 367",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:cf2ea8801004d69acbd9ce992df1460d5477cba76ea50c020c6aeb992b7b0343",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:44349ab495b40eb3f64ad3f64570de55db76133348bebc55c1ae5c2cd67974aa"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 64,
+        "ones": 64,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 53,
+      "upper": 256,
+      "security_bits": "128.3701563333101275343687976870667901728",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 64,
+        "ones": 64,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 106,
+      "upper": 512,
+      "security_bits": "128.0850926062748388127146543341335598263",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 64,
+        "ones": 64,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 216,
+      "upper": 1024,
+      "security_bits": "128.1243423951186948607440144249745329834",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 64,
+        "ones": 64,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 446,
+      "upper": 2048,
+      "security_bits": "128.0711182652414734892350854551385240616",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 64,
+        "ones": 64,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 923,
+      "upper": 4096,
+      "security_bits": "128.0135613805033228351098947634750387600",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 64,
+        "ones": 64,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1909,
+      "upper": 8192,
+      "security_bits": "128.0243059785993268976041626613396397299",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 128,
+        "ones": 128,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 82,
+      "upper": 256,
+      "security_bits": "128.6226234735112243870404835662370558704",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 128,
+        "ones": 128,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 161,
+      "upper": 512,
+      "security_bits": "128.5211988966223957709047739868659302526",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 128,
+        "ones": 128,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 323,
+      "upper": 1024,
+      "security_bits": "128.1956481378615689342569564939280676298",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 128,
+        "ones": 128,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 653,
+      "upper": 2048,
+      "security_bits": "128.7790036450469269690156314377357749931",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 128,
+        "ones": 128,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1323,
+      "upper": 4096,
+      "security_bits": "128.0884296956455263130838137004084799948",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 128,
+        "ones": 128,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 2683,
+      "upper": 8192,
+      "security_bits": "128.1640172404128915325601078719337315923",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 192,
+        "ones": 192,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 93,
+      "upper": 256,
+      "security_bits": "128.6174265892422330918872988994077022028",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 192,
+        "ones": 192,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 182,
+      "upper": 512,
+      "security_bits": "128.0842693249985949481514997881525391099",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 192,
+        "ones": 192,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 361,
+      "upper": 1024,
+      "security_bits": "128.1740206399020826572645588035034965052",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 192,
+        "ones": 192,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 726,
+      "upper": 2048,
+      "security_bits": "128.2752295367405572504193266697104771641",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 192,
+        "ones": 192,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1460,
+      "upper": 4096,
+      "security_bits": "128.0221277620691142320396872129142834233",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 192,
+        "ones": 192,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 2956,
+      "upper": 8192,
+      "security_bits": "128.0017631834192977406496664372354600579",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 256,
+        "ones": 256,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 99,
+      "upper": 256,
+      "security_bits": "128.2018494421763923497866435445236085762",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 256,
+        "ones": 256,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 193,
+      "upper": 512,
+      "security_bits": "128.0412850071157259987496257379428203426",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 256,
+        "ones": 256,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 381,
+      "upper": 1024,
+      "security_bits": "128.0956290612989163868241398071821197575",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 256,
+        "ones": 256,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 761,
+      "upper": 2048,
+      "security_bits": "128.1864086527727620246634037407019503377",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 256,
+        "ones": 256,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1529,
+      "upper": 4096,
+      "security_bits": "128.1698595377095764878293952582315965999",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 256,
+        "ones": 256,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 3081,
+      "upper": 8192,
+      "security_bits": "128.0676523104742445214097254745086061018",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 512,
+        "ones": 512,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 103,
+      "upper": 256,
+      "security_bits": "128.8883488794571093362140202474120699757",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 512,
+        "ones": 512,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 206,
+      "upper": 512,
+      "security_bits": "128.5025776720979264927726826895037675324",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 512,
+        "ones": 512,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 413,
+      "upper": 1024,
+      "security_bits": "128.1159246883051411513643939638419907885",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 512,
+        "ones": 512,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 821,
+      "upper": 2048,
+      "security_bits": "128.1880093385527671472339698113183117265",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 512,
+        "ones": 512,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1643,
+      "upper": 4096,
+      "security_bits": "128.1412518412346843566163722030893647668",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 512,
+        "ones": 512,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 3304,
+      "upper": 8192,
+      "security_bits": "128.0572789214538296285665702594556210625",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 1024,
+        "ones": 1024,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 105,
+      "upper": 256,
+      "security_bits": "128.4338680632490998026430551095065711270",
+      "binding_attack": "malb/lattice-estimator / dual_hybrid",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 1024,
+        "ones": 1024,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 212,
+      "upper": 512,
+      "security_bits": "128.2779402102095414279051669177113016215",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 1024,
+        "ones": 1024,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 423,
+      "upper": 1024,
+      "security_bits": "128.1555705597871366483179491870012199555",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 1024,
+        "ones": 1024,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 849,
+      "upper": 2048,
+      "security_bits": "128.0676636776281885989318775988475455658",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 1024,
+        "ones": 1024,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1702,
+      "upper": 4096,
+      "security_bits": "128.0779835624248189117048181537918506560",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 1024,
+        "ones": 1024,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 3414,
+      "upper": 8192,
+      "security_bits": "128.1086148407913148856119577400560690884",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 12,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 2048,
+        "ones": 2048,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 105,
+      "upper": 256,
+      "security_bits": "129.0058022506312078423937403123308594396",
+      "binding_attack": "malb/lattice-estimator / dual_hybrid",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 13,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 2048,
+        "ones": 2048,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 213,
+      "upper": 512,
+      "security_bits": "128.2582494198167827727698813734714616936",
+      "binding_attack": "malb/lattice-estimator / bdd",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 14,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 2048,
+        "ones": 2048,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 427,
+      "upper": 1024,
+      "security_bits": "128.1755362371151975923873758000472707790",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 15,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 2048,
+        "ones": 2048,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 860,
+      "upper": 2048,
+      "security_bits": "128.0684778378907243318268028184240360983",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 16,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 2048,
+        "ones": 2048,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 1728,
+      "upper": 4096,
+      "security_bits": "128.2048030012517079214997524448674118392",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-projected-cvp",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    },
+    {
+      "log_n": 17,
+      "secret": {
+        "kind": "sparse_binary",
+        "h": 2048,
+        "ones": 2048,
+        "minus_ones": 0
+      },
+      "status": "boundary",
+      "max_log_q": 3477,
+      "upper": 8192,
+      "security_bits": "128.1300249043887735359885046799874585066",
+      "binding_attack": "TabOg/mlwe-hybrids / primal-mitm-square-root",
+      "revisions": {
+        "malb/lattice-estimator": "sha256:780c700c4839a95a4243d676f164400fd2523bef76895b961cede79d5230fb56",
+        "TabOg/mlwe-hybrids": "tabog=sha256:441e93713654ab307628a5913654059efd2e22f74fb4e18c9962c6374f68de30|malb=sha256:5931f4aefcc97da2580618512cb8b2f2569f34499506c3e3e3ded09cdd215cee"
+      }
+    }
+  ]
+}
