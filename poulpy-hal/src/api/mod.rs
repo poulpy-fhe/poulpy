@@ -50,8 +50,10 @@
 //! rings, and a prepared object, key or DFT automorphism plan carries the ring
 //! that produced it as its ring parameter.
 //! A module is built at a
-//! degree `N` and serves every power-of-two degree `n` with
-//! `MIN_DEGREE <= n <= N`, `MIN_DEGREE` the backend's floor; in a contract
+//! degree `N` and serves every power-of-two degree `n <= N` on the
+//! coefficient-domain layouts ([`VecZnx`](crate::layouts::VecZnx),
+//! [`ScalarZnx`](crate::layouts::ScalarZnx), [`MatZnx`](crate::layouts::MatZnx)),
+//! and from `MIN_DEGREE`, the backend's floor, on the others; in a contract
 //! `N` denotes the degree of the call, the degree its operands share, which
 //! the kernel reads from them and which is at most the module's.
 //! A selected column `a[c]` with `a.size()` limbs and radix width `b` denotes
@@ -200,15 +202,16 @@
 //! embedding slot has the width of `res`. The coefficient-domain `add`
 //! and `sub` families and `vec_znx_big_from_small` accept the slot, so the
 //! derived small-operand forms inherit it. The shift-add and shift-sub forms
-//! of `VecZnx` accept it in `a`. In the convolution only the prepared right
-//! operand takes an embedding slot, and the prepares are not embedding-aware: a
-//! degree-`n` right operand is prepared at degree `n`, like any dense
-//! prepare, and the degree-`N` apply forms read it through the backend's slot
-//! correspondence, while the left operand and the result take the degree `N`
-//! of the call. The convolution applies reject an embedded degree below
-//! `MIN_DEGREE`; the coefficient-domain add and sub families
-//! accept any power-of-two divisor. `switch_ring` states both directions of
-//! the coefficient map explicitly.
+//! of `VecZnx` accept it in `a`. In the convolution only the right operand
+//! takes embedding slots: `cnv_pvec_right_prepare` accepts it in `a`, at any
+//! power-of-two divisor of the degree of `res` down to 1, and prepares the
+//! image at that degree, and the degree-`N` apply forms accept a prepared
+//! right operand of degree `n`, read through the backend's slot
+//! correspondence, while the left and self prepares, the left operand and the
+//! result take the degree `N` of the call. The convolution applies reject an
+//! embedded degree below `MIN_DEGREE`; the right prepare and the
+//! coefficient-domain add and sub families accept any power-of-two divisor.
+//! `switch_ring` states both directions of the coefficient map explicitly.
 //!
 //! Coefficient-wise reductions and products act on visible coefficient
 //! vectors rather than `R_N`; their contracts specify all degree relations.

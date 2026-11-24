@@ -12,7 +12,7 @@ use core::arch::aarch64::{
 };
 use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
-use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt, vec_znx::embedding_gap_portable};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
@@ -414,9 +414,9 @@ unsafe fn zero_prepared_limb(col: *mut u32, n: usize, size: usize, limb: usize) 
     }
 }
 
-/// Prepares `a` into `left`, `right`, or both.
+/// Prepares `a` into `left`, `right`, or both; `right` alone takes `a` of any power-of-two degree dividing its own.
 ///
-/// `dft(n, dst, src, prepared)` is the forward transform of `src` into the packed limb `dst`,
+/// `dft(n, dst, src, prepared)` is the forward transform of `src`, embedded at degree `n`, into the packed limb `dst`,
 /// multiplied by `2^32` when `prepared` is set.
 fn prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
@@ -438,7 +438,11 @@ fn prepare<BE, E: TaskExecutor, Rg: Ring>(
         (res.n(), res.cols(), res.size())
     };
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    if left.is_some() {
+        assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    } else {
+        embedding_gap_portable(n, a.n());
+    }
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     assert!(n.is_multiple_of(4));
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {

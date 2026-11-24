@@ -370,6 +370,9 @@ macro_rules! conjugate_invariant_test_suite {
                         base2k: 10,
                     };
                     ::poulpy_hal::test_suite::convolution::test_convolution_embed::<_, ConjugateInvariant>(&params, &module);
+                    ::poulpy_hal::test_suite::convolution::test_convolution_embed_right_prepare::<_, ConjugateInvariant>(
+                        &params, &module,
+                    );
                     ::poulpy_hal::test_suite::convolution::test_convolution_galois::<_, ConjugateInvariant>(&params, &module);
                     ::poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub::<_, ConjugateInvariant>(&params, &module);
                     ::poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub::<_, ConjugateInvariant>(&params, &module);

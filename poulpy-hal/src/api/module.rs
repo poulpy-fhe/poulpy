@@ -7,7 +7,7 @@ use crate::layouts::{Backend, MatZnx, Ring, ScalarZnx, VecZnx};
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, the ring degree N
-/// ensures    returns the backend's module for R_N and every R_n, n a power of two with MIN_DEGREE <= n <= N, on both rings, carrying the transform tables of each, all built before it returns
+/// ensures    returns the backend's module for R_N and every R_n, n a power of two with 1 <= n <= N, on both rings: the coefficient-domain layouts at every such degree, the transform tables of each n with MIN_DEGREE <= n <= N, all built before it returns
 /// test       none
 /// ```
 pub trait ModuleNew<B: Backend> {
@@ -76,7 +76,7 @@ where
 /// op         scalar_znx_alloc(n, cols)
 /// class      support
 /// mutation   none
-/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1
+/// domain     n: a power of two, 1 <= n <= the module's degree; cols >= 1
 /// ensures    returns an owned degree-n ScalarZnx of `cols` columns in the backend's memory; its contents are unspecified
 /// test       none
 /// ```
@@ -91,7 +91,7 @@ pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
 /// op         vec_znx_alloc(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
+/// domain     n: a power of two, 1 <= n <= the module's degree; cols >= 1, size >= 1
 /// ensures    returns an owned degree-n VecZnx of `cols` columns and `size` limbs in the backend's memory; its contents are unspecified
 /// test       none
 /// ```
@@ -106,7 +106,7 @@ pub trait VecZnxAlloc<B: Backend>: ModuleN {
 /// op         mat_znx_alloc(n, rows, cols_in, cols_out, size)
 /// class      support
 /// mutation   none
-/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; every other dimension >= 1
+/// domain     n: a power of two, 1 <= n <= the module's degree; every other dimension >= 1
 /// ensures    returns an owned degree-n MatZnx of those dimensions in the backend's memory; its contents are unspecified
 /// test       none
 /// ```

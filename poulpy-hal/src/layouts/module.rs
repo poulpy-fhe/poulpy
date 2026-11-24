@@ -115,11 +115,14 @@ impl Ring for ConjugateInvariant {
 /// correctly deallocate the handle without double-free.
 #[allow(clippy::missing_safety_doc)]
 pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
-    /// Smallest ring degree every kernel of this backend accepts.
+    /// Smallest ring degree of this backend's layouts outside the coefficient
+    /// domain and of the kernels over them.
     ///
     /// A module built at degree `N` serves every power-of-two degree `n` with
-    /// `MIN_DEGREE <= n <= N`. A backend whose kernels process a fixed number
-    /// of coefficients per step raises it to the smallest degree they handle.
+    /// `MIN_DEGREE <= n <= N` on those layouts, and every power-of-two `n <= N`
+    /// on `VecZnx`, `ScalarZnx` and `MatZnx`. A backend whose kernels process a
+    /// fixed number of coefficients per step raises it to the smallest degree
+    /// they handle.
     const MIN_DEGREE: usize = 8;
 
     /// Whether a DFT vector stores each limb as one contiguous block containing
@@ -367,8 +370,9 @@ pub const MAX_RING_DEGREE: u64 = 1 << 17;
 /// backend-specific handle that holds any required precomputed state. All
 /// [`api`](crate::api) trait methods are dispatched through this type.
 /// Every operation serves operands of either ring and of any power-of-two degree `n` with
-/// `B::MIN_DEGREE <= n <= N`, read from the operands; the handle holds the
-/// transform tables of every such degree on both rings, all built at construction.
+/// `B::MIN_DEGREE <= n <= N`, read from the operands, coefficient-domain operands from degree 1;
+/// the handle holds the transform tables of every degree from `B::MIN_DEGREE` on both rings, all
+/// built at construction.
 /// Allocation takes the degree explicitly.
 ///
 /// The module **owns** its handle; dropping the `Module` calls
@@ -593,8 +597,9 @@ impl<BE: Backend> CyclotomicOrder for Module<BE> {}
 
 /// Asserts that a module of degree `module_n` serves operands of degree `n`.
 ///
-/// `n` must be a power of two with `BE::MIN_DEGREE <= n <= module_n`. Every
-/// kernel calls this once at entry with the degree it read from its operands.
+/// `n` must be a power of two with `BE::MIN_DEGREE <= n <= module_n`. A kernel
+/// over a layout outside the coefficient domain calls this once at entry with
+/// the degree it read from its operands.
 #[inline]
 pub fn check_degree<BE: Backend>(module_n: usize, n: usize) {
     assert!(

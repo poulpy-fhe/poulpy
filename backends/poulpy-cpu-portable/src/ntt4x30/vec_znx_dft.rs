@@ -58,6 +58,7 @@ pub(crate) fn prepare_tmp_words(n: usize) -> usize {
 
 /// Forward transform of `src` into one packed limb, multiplied by `2^32` when `prepared` is set.
 ///
+/// `src` holds `n` coefficients, or a power-of-two divisor of `n` of them read as their image at degree `n`.
 /// A parallel executor `E` transforms the four planes as separate tasks at large degrees, here and in the inverse transforms.
 pub fn dft_limb_scaled<Rg: Ring, E: TaskExecutor>(
     module: &Module<NTT4x30Portable>,

@@ -23,7 +23,8 @@ use crate::{
             types::Q120bScalar,
             vec_znx_dft::{NttMetaHandle, NttModuleHandle},
         },
-        right_read_ntt,
+        right_read_ntt, spread_embedded_portable,
+        vec_znx::embedding_gap_portable,
     },
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataMut, HostDataRef,
@@ -766,7 +767,7 @@ pub fn ntt4x30_cnv_pvec_right_prepare_portable<BE, Rg: Ring>(
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_pvec_right_prepare");
     let n = res.n();
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let gap = embedding_gap_portable(n, a.n());
     let table = module.get_ntt_table_for(n);
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
@@ -785,6 +786,7 @@ pub fn ntt4x30_cnv_pvec_right_prepare_portable<BE, Rg: Ring>(
             let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
             if j < min_size {
                 BE::ntt_from_znx64(limb_b, a.at(col, j));
+                spread_embedded_portable(limb_b, 4, gap);
                 BE::ntt_dft_execute(table, limb_b);
                 BE::ntt_c_from_b(n, limb_c, limb_b);
             }
@@ -807,6 +809,7 @@ pub fn ntt4x30_cnv_pvec_right_prepare_portable<BE, Rg: Ring>(
         let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
         for j in 0..min_size {
             BE::ntt_from_znx64(limb_b, a.at(col, j));
+            spread_embedded_portable(limb_b, 4, gap);
             BE::ntt_dft_execute(table, limb_b);
             BE::ntt_c_from_b(n, limb_c, limb_b);
             // Reversed row order: limb j lands on row size-1-j.

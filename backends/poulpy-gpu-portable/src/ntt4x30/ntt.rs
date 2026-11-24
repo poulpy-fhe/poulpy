@@ -238,6 +238,7 @@ fn tile_pass(
     dst_stride: u32,
     src_base: u32,
     src_stride: u32,
+    src_log_gap: u32,
     #[comptime] c: Consts,
     #[comptime] g: Tile,
     #[comptime] inverse: bool,
@@ -313,6 +314,9 @@ fn tile_pass(
         unit = sel4(pi, c.i);
         unit_q = sel4(pi, c.i_shoup);
     }
+    // An embedded source holds coefficient `j` of its image at `j >> src_lg` when the gap divides `j`, zero elsewhere.
+    let src_lg = usize::cast_from(src_log_gap);
+    let src_mask = (1usize << src_lg) - 1usize;
     let shared = w << mt;
     // A forward launch on contiguous tiles ends on adjacent lanes: a thread
     // would store a run of them, and the threads of a warp runs apart. The
@@ -343,10 +347,14 @@ fn tile_pass(
                     x.push(src[sbase + plane + first + (e << lgs)]);
                 } else {
                     let j = first + (e << lgs);
-                    let direct = load_limb(src[sbase + 2 * j], src[sbase + 2 * j + 1], q, load_r, load_c63, load_mu);
+                    let hit = (j & src_mask) == 0usize;
+                    let js = j >> src_lg;
+                    let loaded = load_limb(src[sbase + 2 * js], src[sbase + 2 * js + 1], q, load_r, load_c63, load_mu);
+                    let direct = select(hit, loaded, 0u32);
                     if source == SOURCE_LIMBS_INVARIANT {
                         let n = 1usize << ln;
-                        let other = (n - j) & (n - 1);
+                        // `other` is a multiple of the gap exactly when `j` is.
+                        let other = ((n - j) & (n - 1)) >> src_lg;
                         let reflected = load_limb(
                             src[sbase + 2 * other],
                             src[sbase + 2 * other + 1],
@@ -355,6 +363,7 @@ fn tile_pass(
                             load_c63,
                             load_mu,
                         );
+                        let reflected = select(hit, reflected, 0u32);
                         // `i * reflected` is in `[0, 2q)`, the difference in `(0, 3q)`.
                         let turned = reflected * unit - reflected.mul_hi(unit_q) * q;
                         let mixed = mul_lazy(direct + q + q - turned, basis[plane + j], q);
@@ -425,6 +434,7 @@ fn launch<RT: GpuRuntime>(
     limbs: usize,
     dst: Span<'_>,
     src: Span<'_>,
+    src_log_gap: u32,
 ) {
     let polys = 4 * limbs;
     let tiles = polys << (tile.log_n - tile.mt);
@@ -458,6 +468,7 @@ fn launch<RT: GpuRuntime>(
             dst.stride,
             src.base,
             src.stride,
+            src_log_gap,
         ];
         [Consts::get(), tile, inverse, scale, mode, source]
     );
@@ -479,9 +490,13 @@ fn passes(geometry: NttGeometry, log_n: u32, inverse: bool) -> Vec<Tile> {
 }
 
 /// `res[j] = dft(a[j])` for the first `limbs` limbs: the `i64` coefficients of
-/// `a` are reduced by the first launch.
+/// `a` are reduced by the first launch. A degree of `a` below the one of `res`
+/// transforms its image under `X -> X^(res.n / a.n)`.
 pub(crate) fn forward<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &DftColumn, a: &Column, limbs: usize) {
-    assert!(res.n == a.n, "transform between different degrees");
+    assert!(
+        a.n.is_power_of_two() && res.n.is_multiple_of(a.n),
+        "transform from a degree not dividing its own"
+    );
     assert!(a.words == 1 && limbs <= res.size.min(a.size));
     if limbs == 0 {
         return;
@@ -501,7 +516,7 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &DftColum
             base: res.base,
             stride: res.stride,
         };
-        let (src, source) = if index == 0 {
+        let (src, source, log_gap) = if index == 0 {
             let base = a.base.checked_mul(2).expect("source beyond the 32-bit word range");
             let stride = a.stride.checked_mul(2).expect("source beyond the 32-bit word range");
             (
@@ -511,6 +526,7 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &DftColum
                     stride,
                 },
                 load,
+                (res.n / a.n).trailing_zeros(),
             )
         } else {
             (
@@ -520,10 +536,11 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &DftColum
                     stride: res.stride,
                 },
                 SOURCE_RESIDUES,
+                0,
             )
         };
         let mode = if last { STORE_FORWARD } else { STORE_LAZY };
-        launch::<RT>(&table, tile, false, false, mode, source, limbs, dst, src);
+        launch::<RT>(&table, tile, false, false, mode, source, limbs, dst, src, log_gap);
     }
 }
 
@@ -581,6 +598,7 @@ fn inverse_from<RT: GpuRuntime>(tables: RingTables<'_, RT>, dst: &DftColumn, src
                 base: from.base,
                 stride: from.stride,
             },
+            0,
         );
     }
 }

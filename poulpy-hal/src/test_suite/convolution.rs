@@ -1222,8 +1222,8 @@ type ConvolutionForm<'a, BE, Rg> = dyn Fn(&mut VecZnxDftOwned<BE, Rg>, &CnvPVecR
 /// degree-`n` module, gives the convolution that the dense prepare of
 /// `switch_ring_{b_n->n}` of the same input gives, through `cnv_apply_dft`,
 /// `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft`, compared
-/// after `idft` and normalization. The prepares are not embedding-aware, `res` and `a` share one
-/// degree: `cnv_pvec_left_prepare`, `cnv_pvec_right_prepare` and `cnv_pvec_self_prepare` with a
+/// after `idft` and normalization. The left and self prepares are not embedding-aware, `res` and `a`
+/// share one degree: `cnv_pvec_left_prepare` and `cnv_pvec_self_prepare` with a
 /// degree-`n/2` input into a degree-`n` destination panic, `cnv_pvec_self_prepare`
 /// rejects a `right` whose degree differs from `left`'s, and `cnv_apply_dft`
 /// rejects a prepared left operand whose degree differs from `res`'s, and
@@ -1475,8 +1475,7 @@ where
         );
     }
 
-    // No prepare is sparsity-aware: under the degree-N module a degree-N/2 input is
-    // rejected by all three forms.
+    // Under the degree-N module the left and self prepares reject a degree-N/2 input.
     let mut half_be = module.vec_znx_alloc(n / 2, cols, a_size);
     module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut half_be, &mut source);
     let mut full_left: CnvPVecLOwned<BE, Rg> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
@@ -1500,15 +1499,6 @@ where
     }))
     .is_err();
     assert!(panicked, "cnv_pvec_self_prepare accepted a.n() != left.n()");
-    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_pvec_right_prepare(
-            &mut full_right.to_backend_mut(),
-            &vec_znx_backend_ref::<BE, Rg>(&half_be),
-            &mut prepare_right_arena().arena(),
-        );
-    }))
-    .is_err();
-    assert!(panicked, "cnv_pvec_right_prepare accepted a.n() != params.n");
     // A degree-n/2 prepared right operand is served by this module like any other
     // degree it covers, so it is only a stand-in for the mismatch check below.
     let mut half_right: CnvPVecROwned<BE, Rg> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
@@ -1553,6 +1543,103 @@ where
     }))
     .is_err();
     assert!(panicked, "cnv_apply_dft accepted a.n() != res.n()");
+}
+
+/// The right prepare embeds its input: for every power-of-two degree `d` from `params.n` down to 1,
+/// below `BE::MIN_DEGREE` included, `cnv_pvec_right_prepare` of a degree-`d` input into a dirty
+/// degree-`params.n` right operand gives through `cnv_apply_dft` the convolution of the input lifted
+/// by `vec_znx_switch_ring`, bit for bit after `idft` and normalization, at prepared sizes below, at
+/// and above the input's. An input whose degree does not divide the destination's is rejected
+/// without writing the destination.
+pub fn test_convolution_embed_right_prepare<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: ModuleN
+        + CnvOps<BE, Rg>
+        + CnvPVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApply<BE, Rg>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxSwitchRing<BE, Rg>
+        + VecZnxFillUniformSourceAll<BE, Rg>,
+{
+    let n = params.n;
+    let base2k = params.base2k;
+    let cols = 2usize;
+    let (a_size, b_size, res_size) = (3usize, 3usize, 6usize);
+    let res_col = 1usize;
+    let mut source = Source::new([7u8; 32]);
+
+    let mut a_be = module.vec_znx_alloc(n, cols, a_size);
+    module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_be, &mut source);
+    let mut a_prep: CnvPVecLOwned<BE, Rg> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
+    module.cnv_pvec_left_prepare(
+        &mut a_prep.to_backend_mut(),
+        &vec_znx_backend_ref::<BE, Rg>(&a_be),
+        &mut poisoned_arena::<BE>(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)).arena(),
+    );
+    let mut dirty_be = module.vec_znx_alloc(n, cols, b_size + 1);
+    module.vec_znx_fill_uniform_source_all(base2k, (b_size + 1) * base2k, &mut dirty_be, &mut source);
+
+    let prepare = |res: &mut CnvPVecROwned<BE, Rg>, b: &VecZnx<BE::OwnedBuf, i64, Rg>| {
+        let arena = module.cnv_pvec_right_prepare_tmp_bytes(res.size(), b.size());
+        module.cnv_pvec_right_prepare(
+            &mut res.to_backend_mut(),
+            &vec_znx_backend_ref::<BE, Rg>(b),
+            &mut poisoned_arena::<BE>(arena).arena(),
+        );
+    };
+    let apply = |b: &CnvPVecROwned<BE, Rg>, cnv_offset: usize| {
+        let mut res_dft: VecZnxDftOwned<BE, Rg> = module.vec_znx_dft_alloc(n, 2, res_size);
+        let arena = module.cnv_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b.size());
+        module.cnv_apply_dft(
+            cnv_offset,
+            &mut res_dft.to_backend_mut(),
+            res_col,
+            &a_prep.to_backend_ref(),
+            0,
+            &b.to_backend_ref(),
+            1,
+            1,
+            &mut poisoned_arena::<BE>(arena).arena(),
+        );
+        idft_normalized(module, base2k, &res_dft, res_col)
+    };
+
+    for d in (0..=n.trailing_zeros()).map(|g| n >> g) {
+        let mut b_be = module.vec_znx_alloc(d, cols, b_size);
+        module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_be, &mut source);
+        let b_lifted = switch_ring_up(module, n, &b_be);
+        for prep_size in [b_size - 1, b_size, b_size + 1] {
+            let mut want: CnvPVecROwned<BE, Rg> = module.cnv_pvec_right_alloc(n, cols, prep_size, PrepareHint::Reuse);
+            prepare(&mut want, &b_lifted);
+            let mut have: CnvPVecROwned<BE, Rg> = module.cnv_pvec_right_alloc(n, cols, prep_size, PrepareHint::Reuse);
+            prepare(&mut have, &dirty_be);
+            prepare(&mut have, &b_be);
+            for cnv_offset in [0usize, 2] {
+                assert_eq!(
+                    apply(&want, cnv_offset),
+                    apply(&have, cnv_offset),
+                    "b.n()={d} res.size()={prep_size} cnv_offset={cnv_offset}"
+                );
+            }
+        }
+    }
+
+    let wide_be = upload_vec_znx::<BE, Rg>(&VecZnx::alloc(2 * n, cols, b_size));
+    let mut res: CnvPVecROwned<BE, Rg> = module.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
+    prepare(&mut res, &dirty_be);
+    let before = BE::to_host_bytes(DataView::data(&res));
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare(&mut res, &wide_be))).is_err();
+    assert!(panicked, "cnv_pvec_right_prepare accepted a.n() > res.n()");
+    assert!(
+        before == BE::to_host_bytes(DataView::data(&res)),
+        "cnv_pvec_right_prepare wrote its destination before rejecting a.n() > res.n()"
+    );
 }
 
 /// Galois reads: the apply of a prepared right operand `b` through `σ_p` equals, bit for bit after `idft` and

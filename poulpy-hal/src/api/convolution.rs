@@ -87,10 +87,11 @@ pub trait CnvOps<BE: Backend, Rg: Ring = Standard> {
     /// class      basis
     /// mutation   out-of-place
     /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
-    /// domain     res: a CnvPVecR of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
+    /// domain     res: a CnvPVecR of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N or of a power-of-two degree dividing it, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_pvec_right_prepare_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
-    /// test       test_convolution, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
+    /// embed      a may be a dense VecZnx of degree n, n a power of two dividing N, 1 and degrees below MIN_DEGREE included; res takes degree N and reads as the image of a under the degree embedding of the api module docs
+    /// test       test_convolution, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed, test_convolution_embed_right_prepare
     /// ```
     fn cnv_pvec_right_prepare(
         &self,

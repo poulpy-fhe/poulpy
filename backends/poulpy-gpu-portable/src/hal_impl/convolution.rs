@@ -101,7 +101,7 @@ pub(crate) fn cnv_pvec_self_prepare_left<RT: GpuRuntime, R: Ring>(
     );
     assert!(right.n() == left.n(), "cnv_pvec_self_prepare: right.n() != left.n()");
     assert!(a.cols() == left.cols(), "cnv_pvec_self_prepare: left.cols() != a.cols()");
-    check_prepare(module, left.n(), a);
+    check_prepare(module, left.n(), a, false);
     let left0 = cnv_left_overwritten(left)?;
     prepare(module, &left0, left.cols(), a);
     Some(left0)
@@ -109,20 +109,30 @@ pub(crate) fn cnv_pvec_self_prepare_left<RT: GpuRuntime, R: Ring>(
 
 /// The checks of `cnv_prepare_*` into a prepared vector of degree `res_n`,
 /// made before its view is taken: a view that overwrites a zeroed buffer
-/// drops the fill it owes.
+/// drops the fill it owes. `embeds`, set by the right prepare, admits `a` of
+/// any power-of-two degree dividing `res_n`.
 fn check_prepare<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT>>,
     res_n: usize,
     a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    embeds: bool,
 ) {
     assert_dense(a, "cnv_prepare");
     check_degree::<NTT4x30Gpu<RT>>(module.n(), res_n);
-    assert!(a.n() == res_n, "cnv_prepare: a.n() != res.n()");
+    if embeds {
+        assert!(
+            a.n().is_power_of_two() && res_n.is_multiple_of(a.n()),
+            "cnv_pvec_right_prepare: a.n() does not divide res.n()"
+        );
+    } else {
+        assert!(a.n() == res_n, "cnv_prepare: a.n() != res.n()");
+    }
 }
 
 /// Transforms every column of `a`, checked by [`check_prepare`], into the
 /// prepared vector whose column 0 is `res0`, truncating or zero-extending to
-/// its limbs.
+/// its limbs; a degree of `a` below the one of `res0` prepares its image at
+/// that degree.
 fn prepare<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT>>,
     res0: &DftColumn,
@@ -166,7 +176,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_pvec_left_prepare: res.cols() != a.cols()");
-        check_prepare(module, res.n(), a);
+        check_prepare(module, res.n(), a, false);
         let Some(res0) = cnv_left_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
@@ -182,7 +192,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_pvec_right_prepare: res.cols() != a.cols()");
-        check_prepare(module, res.n(), a);
+        check_prepare(module, res.n(), a, true);
         let Some(res0) = cnv_right_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }

@@ -8,7 +8,8 @@ use crate::{
             reim4::{Reim4BlkMatVec, Reim4Convolution},
             vec_znx_dft::vec_znx_dft_apply_portable,
         },
-        right_read_fft64,
+        right_read_fft64, spread_embedded_portable,
+        vec_znx::embedding_gap_portable,
     },
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
@@ -26,9 +27,12 @@ pub fn convolution_prepare_left_portable<BE, Rg: Ring>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    let n = res.n();
+    assert_eq!(a.n(), n, "convolution_prepare: a.n():{} != res.n():{n}", a.n());
     convolution_prepare::<_, BE, Rg>(plan, res, a, tmp)
 }
 
+/// `a` may have any power-of-two degree dividing `res.n()`: its image under `X -> X^(res.n() / a.n())` is prepared.
 pub fn convolution_prepare_right_portable<BE, Rg: Ring>(
     plan: &FFT64Plan<f64, Rg>,
     res: &mut CnvPVecRBackendMut<'_, BE, Rg>,
@@ -38,9 +42,11 @@ pub fn convolution_prepare_right_portable<BE, Rg: Ring>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    embedding_gap_portable(res.n(), a.n());
     convolution_prepare::<_, BE, Rg>(plan, res, a, tmp)
 }
 
+/// `a.n()` divides `res.n()`, checked by the caller.
 fn convolution_prepare<R, BE, Rg: Ring>(
     plan: &FFT64Plan<f64, Rg>,
     res: &mut R,
@@ -59,7 +65,6 @@ fn convolution_prepare<R, BE, Rg: Ring>(
     let min_size: usize = res_size.min(a.size());
 
     let n: usize = res.n();
-    assert_eq!(a.n(), n, "convolution_prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(
         plan.fft().m() << 1,
         n,
@@ -67,6 +72,12 @@ fn convolution_prepare<R, BE, Rg: Ring>(
         plan.fft().m() << 1
     );
     let m: usize = n >> 1;
+    let gap: usize = n / a.n();
+    let load = |limb: &mut [f64], src: &[i64]| {
+        BE::reim_from_znx(&mut limb[..src.len()], src);
+        spread_embedded_portable(&mut limb[..n], 1, gap);
+        BE::fft64_forward(plan, limb);
+    };
 
     let res_raw: &mut [f64] = res.raw_mut();
 
@@ -76,8 +87,7 @@ fn convolution_prepare<R, BE, Rg: Ring>(
             let col = task / res_size;
             let j = task % res_size;
             if j < min_size {
-                BE::reim_from_znx(limb, a.at(col, j));
-                BE::fft64_forward(plan, limb);
+                load(limb, a.at(col, j));
             }
             for blk_i in 0..m / 4 {
                 let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
@@ -93,7 +103,9 @@ fn convolution_prepare<R, BE, Rg: Ring>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply_portable::<BE, Rg>(plan, 1, 0, tmp, 0, a, i);
+        for j in 0..min_size {
+            load(tmp.at_mut(0, j), a.at(i, j));
+        }
 
         let tmp_raw: &[f64] = tmp.raw();
         let res_col: &mut [f64] = &mut res_raw[i * n * res_size..];

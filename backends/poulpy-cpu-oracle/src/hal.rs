@@ -958,9 +958,8 @@ unsafe impl<F: DFTFamily, Rg: OracleRing> HalCnvImpl<Rg> for Oracle<F> {
         a: &VecZnxBackendRef<'_, Self, Rg>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(res.n(), a.n());
-        let (cols, size) = (res.cols(), res.size());
-        cnv_prepare(module, res.raw_mut(), cols, size, a);
+        let (n, cols, size) = (res.n(), res.cols(), res.size());
+        with_vec_znx::<Self, _, Rg>(a, n, |a| cnv_prepare(module, res.raw_mut(), cols, size, a));
     }
 
     fn cnv_apply_dft_tmp_bytes(

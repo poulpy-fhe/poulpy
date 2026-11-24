@@ -2035,6 +2035,8 @@ pub fn test_scalar_znx_ci_embed<
     }
 }
 
+/// `vec_znx_switch_ring` matches the reference from every source degree from 1 up to `params.n`, into twice and, from
+/// degree 2, half that degree.
 pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
@@ -2045,76 +2047,48 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend<Rg>, BT: crat
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
-    let n: usize = params.n;
 
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    for a_size in [1, 2, 3, 4] {
-        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
-        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+    for n in (0..=params.n.ilog2()).map(|log| 1usize << log) {
+        for a_size in [1, 2, 3, 4] {
+            let mut a_ref = module_ref.vec_znx_alloc(n, cols, a_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
 
-        let a = download_vec_znx::<BR, Rg>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
-        let a_test = upload_vec_znx::<BT, Rg>(&a);
+            let a = download_vec_znx::<BR, Rg>(&a_ref);
+            let a_digest: u64 = a.digest_u64();
+            let a_test = upload_vec_znx::<BT, Rg>(&a);
 
-        for res_size in [1, 2, 3, 4] {
-            {
-                let mut res_ref_backend = module_ref.vec_znx_alloc(n << 1, cols, res_size);
-                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
-                let mut res_test_backend = module_test.vec_znx_alloc(n << 1, cols, res_size);
-                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
+            for res_size in [1, 2, 3, 4] {
+                for res_n in [n << 1, n >> 1].into_iter().filter(|&res_n| res_n > 0) {
+                    let mut res_ref_backend = module_ref.vec_znx_alloc(res_n, cols, res_size);
+                    module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                    let mut res_test_backend = module_test.vec_znx_alloc(res_n, cols, res_size);
+                    module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
-                // Normalize on c
-                for i in 0..cols {
-                    module_ref.vec_znx_switch_ring(
-                        &mut vec_znx_backend_mut::<BR, Rg>(&mut res_ref_backend),
-                        i,
-                        &vec_znx_backend_ref::<BR, Rg>(&a_ref),
-                        i,
-                    );
-                    module_test.vec_znx_switch_ring(
-                        &mut vec_znx_backend_mut::<BT, Rg>(&mut res_test_backend),
-                        i,
-                        &vec_znx_backend_ref::<BT, Rg>(&a_test),
-                        i,
-                    );
-                }
+                    for i in 0..cols {
+                        module_ref.vec_znx_switch_ring(
+                            &mut vec_znx_backend_mut::<BR, Rg>(&mut res_ref_backend),
+                            i,
+                            &vec_znx_backend_ref::<BR, Rg>(&a_ref),
+                            i,
+                        );
+                        module_test.vec_znx_switch_ring(
+                            &mut vec_znx_backend_mut::<BT, Rg>(&mut res_test_backend),
+                            i,
+                            &vec_znx_backend_ref::<BT, Rg>(&a_test),
+                            i,
+                        );
+                    }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR, Rg>(&res_ref_backend),
-                    download_vec_znx::<BT, Rg>(&res_test_backend)
-                );
-            }
-
-            {
-                let mut res_ref_backend = module_ref.vec_znx_alloc(n >> 1, cols, res_size);
-                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
-                let mut res_test_backend = module_test.vec_znx_alloc(n >> 1, cols, res_size);
-                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
-
-                // Normalize on c
-                for i in 0..cols {
-                    module_ref.vec_znx_switch_ring(
-                        &mut vec_znx_backend_mut::<BR, Rg>(&mut res_ref_backend),
-                        i,
-                        &vec_znx_backend_ref::<BR, Rg>(&a_ref),
-                        i,
-                    );
-                    module_test.vec_znx_switch_ring(
-                        &mut vec_znx_backend_mut::<BT, Rg>(&mut res_test_backend),
-                        i,
-                        &vec_znx_backend_ref::<BT, Rg>(&a_test),
-                        i,
+                    assert_eq!(a.digest_u64(), a_digest);
+                    assert_eq!(
+                        download_vec_znx::<BR, Rg>(&res_ref_backend),
+                        download_vec_znx::<BT, Rg>(&res_test_backend),
+                        "n={n} res_n={res_n}"
                     );
                 }
-
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR, Rg>(&res_ref_backend),
-                    download_vec_znx::<BT, Rg>(&res_test_backend)
-                );
             }
         }
     }

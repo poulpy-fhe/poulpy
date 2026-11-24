@@ -7,7 +7,7 @@ use core::arch::x86_64::{
 };
 use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttMetaHandle};
-use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt, vec_znx::embedding_gap_portable};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
@@ -327,9 +327,9 @@ unsafe fn pack_prepared_limb(dst: *mut u32, src: &[u64], n: usize, size: usize, 
     }
 }
 
-/// Prepares `a` into `left`, `right`, or both.
+/// Prepares `a` into `left`, `right`, or both; `right` alone takes `a` of any power-of-two degree dividing its own.
 ///
-/// `dft(n, dst, src)` is the forward transform of `src` into `dst`, one `u64` per residue.
+/// `dft(n, dst, src)` is the forward transform of `src`, embedded at degree `n`, into `dst`, one `u64` per residue.
 fn prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     left: Option<&mut CnvPVecLBackendMut<'_, BE, Rg>>,
@@ -350,7 +350,11 @@ fn prepare<BE, E: TaskExecutor, Rg: Ring>(
         (res.n(), res.cols(), res.size())
     };
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    if left.is_some() {
+        assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    } else {
+        embedding_gap_portable(n, a.n());
+    }
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
         assert_eq!(r.n(), n, "prepare: right.n():{} != left.n():{n}", r.n());

@@ -15,7 +15,9 @@ use poulpy_hal::{
         VecZnxBigToBackendMut, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxShape, VmpPMatToBackendMut,
         VmpPMatToBackendRef, ZnxView,
     },
-    test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
+    test_suite::{
+        TestParams, convolution::test_convolution_embed_right_prepare, download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
+    },
 };
 
 type Gpu = crate::NTT4x30Gpu<super::Runtime>;
@@ -1778,4 +1780,14 @@ fn many_source_products_match_one_launch_each_at_full_degree() {
             }
         }
     }
+}
+
+/// The smallest transform done by two launches: the embedded load of a right prepare runs on strided columns.
+#[test]
+fn right_prepare_embeds_across_two_launches() {
+    let n = 1 << 13;
+    let module = Module::<Gpu>::new(n as u64);
+    let params = TestParams { size: n, n, base2k: 12 };
+    test_convolution_embed_right_prepare::<_, Standard>(&params, &module);
+    test_convolution_embed_right_prepare::<_, ConjugateInvariant>(&params, &module);
 }
