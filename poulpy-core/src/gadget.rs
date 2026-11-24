@@ -143,32 +143,22 @@ pub fn gglwe_gadget_dft_apply<BE, M, Rg: Ring>(
 /// The retained window covers the live precision plus the worst-case norm
 /// growth of the signed polynomial products and VMP accumulation, on every
 /// backend; see `gadget_product_output_size`.
-pub fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn gglwe_product_output_size<R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
-    BE: Backend,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
 {
-    gglwe_product_accumulation_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos, 1)
+    gglwe_product_accumulation_output_size(res_infos, a_infos, key_infos, 1, 0)
 }
 
 /// Number of limbs required when `term_count` GGLWE/VMP products are summed
-/// before a single normalization.
+/// before a single normalization, keeping `extra_live_limbs` more live limbs under the output's precision, such as
+/// the partial low limb of a product, without reading the key rows deeper.
 ///
 /// Relative to one product, summing `term_count` values can amplify the tail
 /// by that factor, which the product-norm window accounts for.
-pub fn gglwe_product_accumulation_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K, term_count: usize) -> usize
-where
-    BE: Backend,
-    R: LWEInfos,
-    A: LWEInfos,
-    K: GGLWEInfos,
-{
-    gglwe_product_accumulation_output_size_with_tail(res_infos, a_infos, key_infos, term_count, 0)
-}
-
-pub(crate) fn gglwe_product_accumulation_output_size_with_tail<R, A, K>(
+pub fn gglwe_product_accumulation_output_size<R, A, K>(
     res_infos: &R,
     a_infos: &A,
     key_infos: &K,
@@ -215,6 +205,21 @@ pub fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i6
     } else {
         ((cnv_offset / base2k).saturating_sub(1), (cnv_offset % base2k) as i64)
     }
+}
+
+/// Splits `cnv_offset >= 1` into the right shift below `base2k` of a plaintext and the limb offset of its product,
+/// which together scale the product as [`cnv_offset_to_limb_offset`] does.
+///
+/// # Panics
+///
+/// For a `cnv_offset` or `base2k` of zero.
+pub fn cnv_offset_to_plaintext_shift(cnv_offset: usize, base2k: usize) -> (usize, usize) {
+    assert!(
+        cnv_offset >= 1 && base2k >= 1,
+        "cnv_offset_to_plaintext_shift: cnv_offset and base2k are at least 1"
+    );
+    let shift = (base2k - cnv_offset % base2k) % base2k;
+    (shift, (cnv_offset + shift) / base2k - 1)
 }
 
 #[inline]
@@ -371,4 +376,28 @@ where
                 mask_k,
                 mask_small_size,
             ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cnv_offset_to_limb_offset, cnv_offset_to_plaintext_shift};
+
+    #[test]
+    fn plaintext_shift_scales_as_the_limb_offset() {
+        for base2k in [1, 7, 17, 52] {
+            for cnv_offset in 1..4 * base2k {
+                let (shift, limb_offset) = cnv_offset_to_plaintext_shift(cnv_offset, base2k);
+                let (hi, lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+                assert!(shift < base2k, "base2k={base2k} cnv_offset={cnv_offset}");
+                assert_eq!((limb_offset + 1) * base2k - shift, cnv_offset);
+                assert_eq!((hi + 1) as i64 * base2k as i64 + lo, cnv_offset as i64);
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cnv_offset and base2k are at least 1")]
+    fn plaintext_shift_refuses_a_zero_offset() {
+        cnv_offset_to_plaintext_shift(0, 17);
+    }
 }

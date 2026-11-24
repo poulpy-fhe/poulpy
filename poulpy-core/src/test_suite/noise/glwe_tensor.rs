@@ -3,7 +3,9 @@ use poulpy_hal::{
         CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
-    layouts::{Backend, HostDataRef, Module, PrepareHint, Ring, ScratchOwned, Standard, VecZnx, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchOwned, Standard, VecZnx, ZnxView, ZnxViewMut,
+    },
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -11,7 +13,7 @@ use poulpy_hal::{
 use rand::Rng;
 use std::f64::consts::SQRT_2;
 
-use crate::api::GLWESecretSampling;
+use crate::api::{GLWESecretSampling, TransferInto};
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_decrypt_checked};
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, cnv_pvec_left_state, glwe_state, glwe_tensor_state};
@@ -24,10 +26,10 @@ use crate::{
     glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
     glwe_right_operand_prepare_tmp_bytes,
     layouts::{
-        Dnum, Dsize, GGLWEInfos, GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWEPlaintextLayout, GLWESecret,
-        GLWESecretAlloc, GLWESecretTensor, GLWESecretTensorAlloc, GLWESecretTensorPrepared, GLWETensor, GLWETensorAlloc,
-        GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout, GLWETensorKeyPrepared, LWEInfos, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWE, GLWEAlloc, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEPlaintext,
+        GLWEPlaintextAlloc, GLWEPlaintextLayout, GLWESecret, GLWESecretAlloc, GLWESecretTensor, GLWESecretTensorAlloc,
+        GLWESecretTensorPrepared, GLWETensor, GLWETensorAlloc, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
+        GLWETensorKeyPrepared, GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
@@ -55,9 +57,9 @@ pub(crate) fn assert_canonical<Rg: Ring>(a: &VecZnx<impl HostDataRef, i64, Rg>, 
 /// On standard-ring operands: the tensoring noise models it is bounded by take the standard ring's product weight.
 pub fn test_glwe_tensoring<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GLWETensoring<BE, Standard>
         + GLWEMulRelinearizeSum<BE, Standard>
         + GLWEPreparedTensoring<BE, Standard>
@@ -372,9 +374,9 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
     params: &TestParams,
     module: &Module<BE>,
 ) where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GLWETensoring<BE, Rg>
         + GLWEEncryptSk<BE, Rg>
         + GLWEDecrypt<BE, Rg>
@@ -610,9 +612,9 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
 /// alone or beside a pair of zeros, is the product bit for bit, and pairs prepared once give the sum bit for bit.
 fn one_pass_product_noise<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GLWETensoring<BE, Rg>
         + GLWEMulRelinearizeSum<BE, Rg>
         + GLWEPreparedTensoring<BE, Rg>
@@ -1246,9 +1248,9 @@ pub fn test_glwe_left_operand_prepare_rejects_size_of_another_width<BE: Backend,
 
 pub fn test_glwe_tensor_square<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GLWETensoring<BE, Rg>
         + GLWEEncryptSk<BE, Rg>
         + GLWEDecrypt<BE, Rg>
@@ -1400,9 +1402,9 @@ where
 
 pub fn test_glwe_mul_plain<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GLWEEncryptSk<BE, Rg>
         + GLWEDecrypt<BE, Rg>
         + GLWESecretPreparedFactory<BE, Rg>
@@ -1539,17 +1541,26 @@ where
     }
 }
 
-/// `glwe_mul_plain` and `glwe_mul_plain_assign` with a plaintext of degree
-/// `n/2` and `n/4`, never below the backend floor, are bit-identical to the same
-/// product with the plaintext embedded at the module degree by `switch_ring`.
+/// `glwe_mul_plain`, `glwe_mul_plain_assign` and `glwe_mul_plain_sum`, of a
+/// ciphertext and of the left operand prepared from it, with a plaintext of degree
+/// `n/2` and `n/4` at or above the backend floor, and of every power-of-two degree
+/// below it, are bit-identical to the same product with the plaintext embedded at
+/// the module degree by `switch_ring`, on exactly their query, and refuse one byte
+/// below it; a `glwe_mul_plain_sum` of a plaintext of each degree and one of degree `n` equals the same sum with both
+/// at `n`, on exactly its query.
 pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEMulPlain<BE, Rg> + VecZnxSwitchRing<BE, Rg> + GLWEFill<BE, Rg>,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWEMulPlain<BE, Rg>
+        + VecZnxSwitchRing<BE, Rg>
+        + GLWEFill<BE, Rg>
+        + CnvPVecAlloc<BE>
+        + CnvOps<BE, Rg>
+        + GLWENormalize<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = params.n;
@@ -1565,7 +1576,9 @@ pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBa
         };
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
         module.glwe_fill_from_source(&mut a, &mut source);
-        for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
+        // Degree 1, a constant, takes the scalar circuit on every backend.
+        let below_floor = (0..BE::MIN_DEGREE.ilog2().max(1)).map(|log| 1 << log);
+        for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE).chain(below_floor) {
             let mut pt_small: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: b_n.into(),
@@ -1585,9 +1598,11 @@ pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBa
                 &vec_znx_backend_ref::<BE, Rg>(pt_small.data()),
                 0,
             );
-            for cnv_offset in [0usize, base2k] {
+            for cnv_offset in [0usize, base2k - 1, base2k, base2k + 1, 2 * base2k + 1] {
                 let mut res_small: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
                 let mut res_dense: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
+                module.glwe_fill_from_source(&mut res_small, &mut source);
+                module.glwe_fill_from_source(&mut res_dense, &mut source);
                 let small_bytes = module.glwe_mul_plain_tmp_bytes(&res_small, &a, &pt_small);
                 let dense_bytes = module.glwe_mul_plain_tmp_bytes(&res_dense, &a, &pt_dense);
                 module.glwe_mul_plain(
@@ -1604,16 +1619,29 @@ pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBa
                     &pt_dense,
                     &mut poisoned_scratch::<BE>(dense_bytes).borrow(),
                 );
-                assert_eq!(
-                    res_small.data(),
-                    res_dense.data(),
+                assert!(
+                    glwe_state::<BE, Rg>(&res_small) == glwe_state::<BE, Rg>(&res_dense),
                     "glwe_mul_plain: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
+                );
+                assert_refusal(
+                    "glwe_mul_plain: scratch below its query",
+                    &mut res_small,
+                    glwe_state::<BE, Rg>,
+                    |res| {
+                        module.glwe_mul_plain(
+                            cnv_offset,
+                            res,
+                            &a,
+                            &pt_small,
+                            &mut poisoned_scratch::<BE>(small_bytes - 1).borrow(),
+                        )
+                    },
                 );
 
                 let mut assign_small: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
                 let mut assign_dense: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
-                assign_small.data_mut().raw_mut().copy_from_slice(a.data().raw());
-                assign_dense.data_mut().raw_mut().copy_from_slice(a.data().raw());
+                a.transfer_into(&mut assign_small);
+                a.transfer_into(&mut assign_dense);
                 // The assign form multiplies `res` in place, so its budget is the product one taken at `res` for both
                 // ciphertext operands.
                 let small_bytes = module.glwe_mul_plain_tmp_bytes(&assign_small, &assign_small, &pt_small);
@@ -1630,10 +1658,87 @@ pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBa
                     &pt_dense,
                     &mut poisoned_scratch::<BE>(dense_bytes).borrow(),
                 );
-                assert_eq!(
-                    assign_small.data(),
-                    assign_dense.data(),
+                assert!(
+                    glwe_state::<BE, Rg>(&assign_small) == glwe_state::<BE, Rg>(&assign_dense),
                     "glwe_mul_plain_assign: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
+                );
+                assert_refusal(
+                    "glwe_mul_plain_assign: scratch below its query",
+                    &mut assign_small,
+                    glwe_state::<BE, Rg>,
+                    |res| {
+                        module.glwe_mul_plain_assign(
+                            cnv_offset,
+                            res,
+                            &pt_small,
+                            &mut poisoned_scratch::<BE>(small_bytes - 1).borrow(),
+                        )
+                    },
+                );
+            }
+
+            let mut a_prep = module.cnv_pvec_left_alloc(n, rank + 1, a.size(), PrepareHint::OneShot);
+            let prep_bytes = glwe_left_operand_prepare_tmp_bytes(module, a.size(), &a);
+            glwe_left_operand_prepare(module, &mut a_prep, &a, k, &mut poisoned_scratch::<BE>(prep_bytes).borrow());
+            // `base2k` shifts no plaintext, `base2k - 1` shifts each by one bit.
+            for offset in [base2k, base2k - 1] {
+                let dot =
+                    |res: &mut GLWE<BE::OwnedBuf, BE::ZnxWord, Rg>, pt: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg>, less| {
+                        let bytes = module.glwe_mul_plain_sum_tmp_bytes(res, &a, pt) - less;
+                        module.glwe_mul_plain_sum(res, &[&a], &[pt], &[offset], &mut poisoned_scratch::<BE>(bytes).borrow())
+                    };
+                // Destinations holding other bits than the result, so a call that writes nothing fails.
+                let mut small: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
+                let mut dense: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
+                module.glwe_fill_from_source(&mut small, &mut source);
+                module.glwe_fill_from_source(&mut dense, &mut source);
+                dot(&mut small, &pt_small, 0);
+                dot(&mut dense, &pt_dense, 0);
+                assert!(
+                    glwe_state::<BE, Rg>(&small) == glwe_state::<BE, Rg>(&dense),
+                    "glwe_mul_plain_sum: b.n()={b_n} offset={offset} rank={rank}"
+                );
+                if b_n > 1 {
+                    module.glwe_fill_from_source(&mut dense, &mut source);
+                    let bytes = module.glwe_mul_plain_sum_tmp_bytes(&dense, &a, &pt_small);
+                    module.glwe_mul_plain_sum(
+                        &mut dense,
+                        &[&a_prep],
+                        &[&pt_small],
+                        &[offset],
+                        &mut poisoned_scratch::<BE>(bytes).borrow(),
+                    );
+                    assert!(
+                        glwe_state::<BE, Rg>(&small) == glwe_state::<BE, Rg>(&dense),
+                        "glwe_mul_plain_sum prepared: b.n()={b_n} offset={offset} rank={rank}"
+                    );
+                }
+                assert_refusal(
+                    "glwe_mul_plain_sum: scratch below its query",
+                    &mut small,
+                    glwe_state::<BE, Rg>,
+                    |res| dot(res, &pt_small, 1),
+                );
+                // The query of a mixed call takes its plaintext of largest degree.
+                let mixed = |res: &mut GLWE<BE::OwnedBuf, BE::ZnxWord, Rg>,
+                             b: [&GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg>; 2],
+                             less| {
+                    let bytes = module.glwe_mul_plain_sum_tmp_bytes(res, &a, &pt_dense) - less;
+                    module.glwe_mul_plain_sum(res, &[&a, &a], &b, &[offset; 2], &mut poisoned_scratch::<BE>(bytes).borrow())
+                };
+                module.glwe_fill_from_source(&mut small, &mut source);
+                module.glwe_fill_from_source(&mut dense, &mut source);
+                mixed(&mut small, [&pt_small, &pt_dense], 0);
+                mixed(&mut dense, [&pt_dense, &pt_dense], 0);
+                assert!(
+                    glwe_state::<BE, Rg>(&small) == glwe_state::<BE, Rg>(&dense),
+                    "glwe_mul_plain_sum mixed: b.n()={b_n} offset={offset} rank={rank}"
+                );
+                assert_refusal(
+                    "glwe_mul_plain_sum: scratch below its query",
+                    &mut small,
+                    glwe_state::<BE, Rg>,
+                    |res| mixed(res, [&pt_small, &pt_dense], 1),
                 );
             }
         }
@@ -1781,6 +1886,255 @@ where
     }
 }
 
+/// A plaintext reporting an `encoded_k` one bit past its allocation.
+struct EncodedPastAllocation<'p, P>(&'p P);
+
+impl<P: LWEInfos> LWEInfos for EncodedPastAllocation<'_, P> {
+    fn n(&self) -> Degree {
+        self.0.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.0.k()
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.0.base2k()
+    }
+
+    fn max_size(&self) -> usize {
+        self.0.max_size()
+    }
+}
+
+impl<P: GLWEInfos> GLWEInfos for EncodedPastAllocation<'_, P> {
+    fn rank(&self) -> Rank {
+        self.0.rank()
+    }
+}
+
+impl<P: LWEInfos> IntPolyInfos for EncodedPastAllocation<'_, P> {
+    fn encoded_k(&self) -> TorusPrecision {
+        TorusPrecision(self.0.max_k().as_u32() + 1)
+    }
+}
+
+impl<BE: Backend, Rg: Ring, P: GLWEToBackendRef<BE, Rg>> GLWEToBackendRef<BE, Rg> for EncodedPastAllocation<'_, P> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
+        self.0.to_backend_ref()
+    }
+}
+
+/// `glwe_mul_plain_sum` against `glwe_mul_plain`, each call on exactly its query, poisoned, into flag-clear
+/// destinations holding other bits, data and metadata compared: on both routes and mixed (constants, plaintexts of
+/// degree `n / 2`, and both in one call, its query taken at the plaintext of largest degree), for ciphertext left
+/// operands canonical, flag-clear and allocated wider than their `k`, and ones prepared under each hint on the
+/// transform route, at offsets 1,
+/// `base2k - 1`, `base2k`, `base2k + 1` and `2 base2k + 1`, one term beside a zero term is the product of the term;
+/// three distinct terms into a result wide enough to hold their products whole equal the normalized sum of their
+/// products; one byte below the query and every operand refusal panic, `res` unchanged.
+pub fn test_glwe_mul_plain_sum<BE, Rg: Ring>(params: &TestParams, module: &Module<BE>)
+where
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>:
+        GLWEMulPlain<BE, Rg> + GLWEFill<BE, Rg> + GLWEAdd<BE, Rg> + GLWENormalize<BE, Rg> + CnvPVecAlloc<BE> + CnvOps<BE, Rg>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    type Ct<BE, Rg> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
+    type Pt<BE, Rg> = GLWEPlaintext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
+    type Call<'c, BE, Rg> = &'c dyn Fn(&mut Ct<BE, Rg>, &mut ScratchOwned<BE>);
+    let (n, base2k) = (params.n, params.base2k);
+    // A partial limb, so a wide twin keeps limbs past its `k`.
+    let a_k = 3 * base2k - 2;
+    let mut source = Source::new([47u8; 32]);
+    for rank in 1_usize..=2 {
+        let infos = |k: usize| GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: k.into(),
+            rank: rank.into(),
+        };
+        let fresh = |k: usize, source: &mut Source| {
+            let mut ct: Ct<BE, Rg> = module.glwe_alloc_from_infos(&infos(k));
+            module.glwe_fill_from_source(&mut ct, source);
+            ct
+        };
+        let a = [fresh(a_k, &mut source), fresh(a_k, &mut source), fresh(a_k, &mut source)];
+        let mut lazy: Ct<BE, Rg> = module.glwe_alloc_from_infos(&infos(a_k));
+        crate::test_suite::parity::unnormalized_twin::<BE, BE, Rg>(&a[0], &mut lazy);
+        let mut wide = fresh(a_k + 2 * base2k, &mut source);
+        crate::test_suite::parity::wide_twin::<BE, BE, Rg>(&a[0], &mut wide);
+        let zero: Ct<BE, Rg> = module.glwe_alloc_from_infos(&infos(a_k));
+        let prep_bytes = glwe_left_operand_prepare_tmp_bytes(module, a[0].size(), &a[0]);
+        let prepared = [PrepareHint::OneShot, PrepareHint::Reuse].map(|hint| {
+            let mut prepared = module.cnv_pvec_left_alloc(n, rank + 1, a[0].size(), hint);
+            glwe_left_operand_prepare(
+                module,
+                &mut prepared,
+                &a[0],
+                a_k,
+                &mut poisoned_scratch::<BE>(prep_bytes).borrow(),
+            );
+            prepared
+        });
+        for degrees in [[1; 3], [n / 2; 3], [1, n / 2, 1]] {
+            let b_n = degrees[0];
+            let plain = |b_n: usize, source: &mut Source| {
+                let mut pt: Pt<BE, Rg> = module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+                    n: b_n.into(),
+                    base2k: base2k.into(),
+                    k: (2 * base2k).into(),
+                });
+                module.glwe_fill_from_source(&mut pt, source);
+                pt
+            };
+            let b = degrees.map(|b_n| plain(b_n, &mut source));
+            let widest = b.iter().max_by_key(|pt| pt.n()).expect("three plaintexts");
+            for offset in [1, base2k - 1, base2k, base2k + 1, 2 * base2k + 1] {
+                let product = |k: usize, a: &Ct<BE, Rg>, b: &Pt<BE, Rg>, source: &mut Source| {
+                    let mut res = fresh(k, source);
+                    let bytes = module.glwe_mul_plain_tmp_bytes(&res, a, b);
+                    module.glwe_mul_plain(offset, &mut res, a, b, &mut poisoned_scratch::<BE>(bytes).borrow());
+                    res
+                };
+                // One term beside a zero term, for every left operand form, is the product of the canonical term.
+                let want = product(a_k, &a[0], &b[0], &mut source);
+                let mut res = fresh(a_k, &mut source);
+                let bytes = module.glwe_mul_plain_sum_tmp_bytes(&res, &wide, widest);
+                for (form, left) in [("canonical", &a[0]), ("flag-clear", &lazy), ("wide", &wide)] {
+                    module.glwe_fill_from_source(&mut res, &mut source);
+                    res.set_canonical(false);
+                    module.glwe_mul_plain_sum(
+                        &mut res,
+                        &[left, &zero],
+                        &[&b[0], &b[1]],
+                        &[offset, offset],
+                        &mut poisoned_scratch::<BE>(bytes).borrow(),
+                    );
+                    assert!(
+                        glwe_state::<BE, Rg>(&res) == glwe_state::<BE, Rg>(&want),
+                        "{form} term beside zero: degrees={degrees:?} offset={offset} rank={rank}"
+                    );
+                }
+                if b_n > 1 {
+                    for (hint, prepared) in prepared.iter().enumerate() {
+                        module.glwe_fill_from_source(&mut res, &mut source);
+                        res.set_canonical(false);
+                        module.glwe_mul_plain_sum(
+                            &mut res,
+                            &[prepared],
+                            &[&b[0]],
+                            &[offset],
+                            &mut poisoned_scratch::<BE>(bytes).borrow(),
+                        );
+                        assert!(
+                            glwe_state::<BE, Rg>(&res) == glwe_state::<BE, Rg>(&want),
+                            "prepared term: hint={hint} b.n()={b_n} offset={offset} rank={rank}"
+                        );
+                    }
+                }
+                // Distinct terms into a result holding their products whole: the normalized sum of the products.
+                let whole = a_k + 2 * base2k + 2 * base2k;
+                let mut sum = product(whole, &a[0], &b[0], &mut source);
+                for t in 1..3 {
+                    let term = product(whole, &a[t], &b[t], &mut source);
+                    module.glwe_add_assign(&mut sum, &term);
+                }
+                let mut want = fresh(whole, &mut source);
+                module.glwe_normalize(
+                    &mut want,
+                    &sum,
+                    &mut poisoned_scratch::<BE>(module.glwe_normalize_tmp_bytes()).borrow(),
+                );
+                let mut res = fresh(whole, &mut source);
+                res.set_canonical(false);
+                let bytes = module.glwe_mul_plain_sum_tmp_bytes(&res, &a[0], widest);
+                let terms = || ([&a[0], &a[1], &a[2]], [&b[0], &b[1], &b[2]], [offset; 3]);
+                let (left, right, offsets) = terms();
+                module.glwe_mul_plain_sum(&mut res, &left, &right, &offsets, &mut poisoned_scratch::<BE>(bytes).borrow());
+                assert!(
+                    glwe_state::<BE, Rg>(&res) == glwe_state::<BE, Rg>(&want),
+                    "three terms: degrees={degrees:?} offset={offset} rank={rank}"
+                );
+                assert_refusal(
+                    "glwe_mul_plain_sum: scratch below its query",
+                    &mut res,
+                    glwe_state::<BE, Rg>,
+                    |res| {
+                        let (left, right, offsets) = terms();
+                        module.glwe_mul_plain_sum(res, &left, &right, &offsets, &mut poisoned_scratch::<BE>(bytes - 1).borrow())
+                    },
+                );
+            }
+            if degrees[1] != b_n {
+                continue;
+            }
+            // Every operand refusal, on a zero-byte arena.
+            let mut res = fresh(a_k, &mut source);
+            let refused = |message: &str, res: &mut Ct<BE, Rg>, call: Call<'_, BE, Rg>| {
+                assert_refusal(message, res, glwe_state::<BE, Rg>, |res| {
+                    call(res, &mut poisoned_scratch::<BE>(0))
+                });
+            };
+            let other_radix: Pt<BE, Rg> = module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+                n: b_n.into(),
+                base2k: (base2k - 1).into(),
+                k: (2 * base2k).into(),
+            });
+            let other_rank: Ct<BE, Rg> = module.glwe_alloc_from_infos(&GLWELayout {
+                rank: (3 - rank).into(),
+                ..infos(a_k)
+            });
+            let lists = "glwe_mul_plain_sum: empty slices or slices of different lengths";
+            let no: [&Ct<BE, Rg>; 0] = [];
+            refused(lists, &mut res, &|res, s| {
+                module.glwe_mul_plain_sum(res, &no, &[] as &[&Pt<BE, Rg>], &[], &mut s.borrow())
+            });
+            refused(lists, &mut res, &|res, s| {
+                module.glwe_mul_plain_sum(res, &[&a[0]], &[&b[0], &b[1]], &[1], &mut s.borrow())
+            });
+            refused("glwe_mul_plain_sum: term 1: the offset is zero", &mut res, &|res, s| {
+                module.glwe_mul_plain_sum(res, &[&a[0], &a[1]], &[&b[0], &b[1]], &[1, 0], &mut s.borrow())
+            });
+            refused(
+                "glwe_mul_plain_sum: term 1: a plaintext of another degree or radix",
+                &mut res,
+                &|res, s| module.glwe_mul_plain_sum(res, &[&a[0], &a[1]], &[&b[0], &other_radix], &[1, 1], &mut s.borrow()),
+            );
+            refused(
+                "glwe_mul_plain_sum: term 0: a plaintext encoded past its allocation",
+                &mut res,
+                &|res, s| module.glwe_mul_plain_sum(res, &[&a[0]], &[&EncodedPastAllocation(&b[0])], &[1], &mut s.borrow()),
+            );
+            refused(
+                "glwe_mul_plain_sum: term 1: a ciphertext of another degree, rank or radix",
+                &mut res,
+                &|res, s| module.glwe_mul_plain_sum(res, &[&a[0], &other_rank], &[&b[0], &b[1]], &[1, 1], &mut s.borrow()),
+            );
+            if b_n == 1 {
+                refused(
+                    "glwe_mul_plain_sum: term 0: a prepared left operand meets a constant",
+                    &mut res,
+                    &|res, s| module.glwe_mul_plain_sum(res, &[&prepared[0]], &[&b[0]], &[1], &mut s.borrow()),
+                );
+            } else {
+                let mut res_other: Ct<BE, Rg> = module.glwe_alloc_from_infos(&GLWELayout {
+                    rank: (3 - rank).into(),
+                    ..infos(a_k)
+                });
+                refused(
+                    "glwe_mul_plain_sum: term 0: a prepared left operand of another degree or columns",
+                    &mut res_other,
+                    &|res, s| module.glwe_mul_plain_sum(res, &[&prepared[0]], &[&b[0]], &[1], &mut s.borrow()),
+                );
+            }
+        }
+    }
+}
+
 /// **Cross-radix relinearization: the bound and the operand width agree.**
 ///
 /// The tensor operand is stored at one `base2k` and the key at another, with a
@@ -1800,9 +2154,9 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
     params: &TestParams,
     module: &Module<BE>,
 ) where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GLWETensoring<BE, Rg>
         + GLWEEncryptSk<BE, Rg>
         + GLWEDecrypt<BE, Rg>

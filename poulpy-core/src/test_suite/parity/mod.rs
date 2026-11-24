@@ -163,10 +163,11 @@ where
 
 /// Writes into `dst` the value of the canonical `a` with carries left in its
 /// digits and bits below its `k`, flagged non-canonical.
-pub(crate) fn unnormalized_twin<BS: ParityBackend<Rg>, BD: ParityBackend<Rg>, Rg: Ring>(
-    a: &BackendGLWE<BS, Rg>,
-    dst: &mut BackendGLWE<BD, Rg>,
-) {
+pub(crate) fn unnormalized_twin<BS, BD, Rg: Ring>(a: &BackendGLWE<BS, Rg>, dst: &mut BackendGLWE<BD, Rg>)
+where
+    BS: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>,
+    BD: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>,
+{
     let mut twin = a.to_host_owned::<BS>();
     let base2k: usize = twin.base2k().into();
     let k: usize = twin.k().as_usize();
@@ -199,10 +200,11 @@ pub(crate) fn unnormalized_twin<BS: ParityBackend<Rg>, BD: ParityBackend<Rg>, Rg
 /// Writes the canonical `a` into `dst`, a buffer of more limbs than `a`'s `k`
 /// covers, at `a`'s precision: the limbs past it keep what `dst` held, so an
 /// operation sized from `k` must read only the limbs `k` covers.
-pub(crate) fn wide_twin<BS: ParityBackend<Rg>, BD: ParityBackend<Rg>, Rg: Ring>(
-    a: &BackendGLWE<BS, Rg>,
-    dst: &mut BackendGLWE<BD, Rg>,
-) {
+pub(crate) fn wide_twin<BS, BD, Rg: Ring>(a: &BackendGLWE<BS, Rg>, dst: &mut BackendGLWE<BD, Rg>)
+where
+    BS: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>,
+    BD: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>,
+{
     let narrow = a.to_host_owned::<BS>();
     let mut wide = dst.to_host_owned::<BD>();
     assert_eq!(narrow.base2k(), wide.base2k());

@@ -814,7 +814,7 @@ where
 
     let output_cols = res_infos.rank().as_usize() + 1;
     let mask_cols = a_infos.rank().as_usize();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
+    let output_size = gglwe_product_output_size(res_infos, a_infos, key_infos);
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
     let lvl_0: usize = module.vec_znx_dft_bytes_of(n, output_cols, output_size);
     let lvl_1_big: usize = module.vec_znx_big_bytes_of(n, output_cols, output_size);
@@ -912,7 +912,7 @@ pub fn glwe_keyswitch_reference<BE, R, A, Rg: Ring>(
 
     let k_offset: usize = key.k_offset().as_usize();
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, key);
+    let output_size = gglwe_product_output_size(res, a, key);
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -1066,7 +1066,7 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R, Rg: Ring>(
         module.glwe_keyswitch_tmp_bytes_reference(res, res, key)
     );
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, key);
+    let output_size = gglwe_product_output_size(res, res, key);
 
     let res_base2k: usize = res.base2k().as_usize();
     let res_k = res.k().as_usize();

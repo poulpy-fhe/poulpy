@@ -6,6 +6,7 @@ use poulpy_hal::layouts::{
     CnvPVecRToBackendRef, Module, Ring, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
 };
 
+use crate::GLWELeftOperandRef;
 use crate::layouts::{
     Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
     GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
@@ -141,6 +142,30 @@ pub unsafe trait GLWEMulPlainImpl<Rg: Ring = Standard>: Backend {
     ) where
         R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
         A: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
+
+    /// Scratch bound of [`Self::glwe_mul_plain_sum`]; may report less than the reference, never less than the body
+    /// takes.
+    fn glwe_mul_plain_sum_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: IntPolyInfos + GLWEInfos;
+
+    /// Reproduces
+    /// [`glwe_mul_plain_sum_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_mul_plain_sum_reference)
+    /// bit for bit, for left operands prepared under either hint too, within [`Self::glwe_mul_plain_sum_tmp_bytes`];
+    /// free in kernels and scratch use.
+    fn glwe_mul_plain_sum<R, A, B>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &[&A],
+        b: &[&B],
+        offsets: &[usize],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWELeftOperandRef<Self, Rg>,
+        B: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
 
     /// Scratch bytes of [`Self::glwe_plain_combination`] for a `res` of `cols` columns and `res_size` limbs, an
     /// accumulator of `acc_size` limbs, prepared terms of at most `a_size` limbs and plaintexts of at most `b_size` limbs.

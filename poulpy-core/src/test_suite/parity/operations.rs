@@ -24,10 +24,13 @@ use crate::{
     glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
     glwe_right_operand_prepare_tmp_bytes,
     layouts::{
-        Base2K, Degree, GGSWAlloc, GGSWAtViewMut, GLWEAlloc, GLWEInfos, GLWELayout, GLWEPlaintextAlloc, GLWETensorAlloc,
-        GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, GGSWAlloc, GGSWAtViewMut, GLWEAlloc, GLWEInfos, GLWELayout, GLWEPlaintextAlloc, GLWEPlaintextLayout,
+        GLWETensorAlloc, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
-    test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
+    test_suite::{
+        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin, wide_twin},
+        prepare_hints,
+    },
 };
 
 /// Layouts swept by the keyless operation tests.
@@ -1098,6 +1101,301 @@ pub fn test_glwe_multiplication_parity<BR, BT, Rg: Ring>(
                 }
             }
             test_glwe_mul_prepared_plain_sum_case(params, &infos, module_ref, module_test, &mut source);
+        }
+    }
+}
+
+/// `glwe_mul_plain` and `glwe_mul_plain_assign` by a plaintext of every power-of-two degree below the tested backend's
+/// floor, which each side embeds at its own, degree 1 taking the scalar circuit instead, agree across backends, each side
+/// on exactly its query.
+pub fn test_glwe_mul_plain_plaintext_degree_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEMulPlain<BR, Rg>,
+    Module<BT>: GLWEMulPlain<BT, Rg>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert!(params.n <= module_ref.n() && params.n <= module_test.n());
+    let mut source = Source::new([61; 32]);
+    let b = params.base2k;
+    // Operand and result precisions apart: one bit, a limb less one, one and one more, and a partial limb.
+    let widths = [(1, 2 * b + 3), (b - 1, b + 1), (b, b), (b + 1, b - 1), (2 * b + 3, 1)];
+    for &rank in &shapes.ranks {
+        for (a_k, res_k) in widths {
+            let infos = GLWELayout {
+                n: (params.n as u32).into(),
+                base2k: (b as u32).into(),
+                k: (a_k as u32).into(),
+                rank: (rank as u32).into(),
+            };
+            let res_infos = GLWELayout {
+                k: (res_k as u32).into(),
+                ..infos
+            };
+            degree_parity_at(&infos, &res_infos, module_ref, module_test, &mut source);
+        }
+    }
+}
+
+/// [`test_glwe_mul_plain_plaintext_degree_parity`] for an operand of `infos` into a result of `res_infos`, at the offsets
+/// that reach no limb offset, one, and one past the operand, with and without a sub-limb shift.
+fn degree_parity_at<BR, BT, Rg: Ring>(
+    infos: &GLWELayout,
+    res_infos: &GLWELayout,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+    source: &mut Source,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEMulPlain<BR, Rg>,
+    Module<BT>: GLWEMulPlain<BT, Rg>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    let (rank, b, a_k) = (infos.rank.as_usize(), infos.base2k.as_usize(), infos.k.as_usize());
+    {
+        let a_ref = ref_glwe(module_ref, infos, source);
+        let mut a_test = module_test.glwe_alloc_from_infos(infos);
+        a_ref.transfer_into(&mut a_test);
+        for b_n in (0..BT::MIN_DEGREE.ilog2()).map(|log| 1u32 << log) {
+            let plain_infos = GLWELayout {
+                n: b_n.into(),
+                k: (2 * b).into(),
+                ..*infos
+            };
+            let mut plain_ref = module_ref.glwe_plaintext_alloc_from_infos(&plain_infos);
+            module_ref.glwe_fill_from_source(&mut plain_ref, source);
+            let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(&plain_infos);
+            plain_ref.transfer_into(&mut plain_test);
+            for offset in [0, 1, b - 1, b, b + 1, a_k + 1] {
+                for assign in [false, true] {
+                    // The assign form multiplies the operand in place, at its width.
+                    let out_infos = if assign { infos } else { res_infos };
+                    let mut out_ref = ref_glwe(module_ref, out_infos, source);
+                    if assign {
+                        a_ref.transfer_into(&mut out_ref);
+                    }
+                    let mut out_test = module_test.glwe_alloc_from_infos(out_infos);
+                    out_ref.transfer_into(&mut out_test);
+                    let mut sr = poisoned_scratch::<BR>(module_ref.glwe_mul_plain_tmp_bytes(&out_ref, &a_ref, &plain_ref));
+                    let mut st = poisoned_scratch::<BT>(module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, &plain_test));
+                    if assign {
+                        module_ref.glwe_mul_plain_assign(offset, &mut out_ref, &plain_ref, &mut sr.borrow());
+                        module_test.glwe_mul_plain_assign(offset, &mut out_test, &plain_test, &mut st.borrow());
+                    } else {
+                        module_ref.glwe_mul_plain(offset, &mut out_ref, &a_ref, &plain_ref, &mut sr.borrow());
+                        module_test.glwe_mul_plain(offset, &mut out_test, &a_test, &plain_test, &mut st.borrow());
+                    }
+                    let mut have = module_ref.glwe_alloc_from_infos(out_infos);
+                    out_test.transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        out_ref,
+                        have,
+                        "b.n()={b_n} assign={assign} rank={rank} offset={offset} a.k={a_k} res.k={}",
+                        out_infos.k.as_usize()
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// `glwe_mul_plain_sum` agrees across backends, each side on exactly its query, poisoned, into flag-clear destinations
+/// holding other bits: on both routes and mixed (constants, plaintexts of degree `n / 2`, and both alternating in one
+/// call, its query taken at degree `n / 2`), over one term and over more terms
+/// than a fused path takes, at mixed offsets with and without a sub-limb shift, operand and result precisions apart and
+/// plaintexts of two precisions, the test side reading flag-clear twins,
+/// canonical copies and wide twins of the ciphertexts, and on the transform route over left operands each side
+/// prepares, under hints swapped from one term to the next and across the backends.
+pub fn test_glwe_mul_plain_sum_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEMulPlain<BR, Rg> + CnvPVecAlloc<BR> + CnvOps<BR, Rg> + GLWENormalize<BR, Rg>,
+    Module<BT>: GLWEMulPlain<BT, Rg> + CnvPVecAlloc<BT> + CnvOps<BT, Rg> + GLWENormalize<BT, Rg>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert!(params.n <= module_ref.n() && params.n <= module_test.n());
+    let (n, base2k) = (params.n, params.base2k);
+    let mut source = Source::new([67; 32]);
+    let offsets = [1, base2k - 1, base2k, base2k + 1, 2 * base2k + 1];
+    // Operand and result precisions: equal, a narrower operand, and a narrower result on a partial limb.
+    let widths = [
+        (3 * base2k - 1, 3 * base2k - 1),
+        (base2k + 1, 2 * base2k + 3),
+        (2 * base2k + 3, base2k - 1),
+    ];
+    for (&rank, (a_k, res_k)) in shapes.ranks.iter().flat_map(|rank| widths.iter().map(move |&w| (rank, w))) {
+        let infos = GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: a_k.into(),
+            rank: rank.into(),
+        };
+        let res_infos = GLWELayout {
+            k: res_k.into(),
+            ..infos
+        };
+        let a_ref: Vec<_> = (0..offsets.len())
+            .map(|_| ref_glwe(module_ref, &infos, &mut source))
+            .collect();
+        let a_twin: Vec<_> = a_ref
+            .iter()
+            .map(|a| {
+                let mut twin = module_test.glwe_alloc_from_infos(&infos);
+                unnormalized_twin::<BR, BT, Rg>(a, &mut twin);
+                twin
+            })
+            .collect();
+        let a_copy: Vec<_> = a_ref
+            .iter()
+            .map(|a| {
+                let mut copy = module_test.glwe_alloc_from_infos(&infos);
+                a.transfer_into(&mut copy);
+                copy
+            })
+            .collect();
+        let wide_infos = GLWELayout {
+            k: (infos.k.as_usize() + base2k).into(),
+            ..infos
+        };
+        let a_wide: Vec<_> = a_ref
+            .iter()
+            .map(|a| {
+                let mut wide = module_test.glwe_alloc_from_infos(&wide_infos);
+                module_test.glwe_fill_from_source(&mut wide, &mut source);
+                wide_twin::<BR, BT, Rg>(a, &mut wide);
+                wide
+            })
+            .collect();
+        for degrees in [&[1][..], &[n / 2], &[1, n / 2]] {
+            let b_n = degrees[0];
+            // Plaintexts of two precisions, the widest first.
+            let plain_k = |t: usize| [2 * base2k, base2k + 1][t % 2];
+            let plain_infos = |b_n: usize, k: usize| GLWEPlaintextLayout {
+                n: b_n.into(),
+                base2k: base2k.into(),
+                k: k.into(),
+            };
+            let b_ref: Vec<_> = (0..offsets.len())
+                .map(|t| {
+                    let mut pt = module_ref.glwe_plaintext_alloc_from_infos(&plain_infos(degrees[t % degrees.len()], plain_k(t)));
+                    module_ref.glwe_fill_from_source(&mut pt, &mut source);
+                    pt
+                })
+                .collect();
+            let b_test: Vec<_> = b_ref
+                .iter()
+                .map(|pt| {
+                    let mut twin = module_test.glwe_plaintext_alloc_from_infos(pt);
+                    pt.transfer_into(&mut twin);
+                    twin
+                })
+                .collect();
+            let plain_infos = plain_infos(degrees.iter().copied().max().expect("one degree"), plain_k(0));
+            let bytes_ref = module_ref.glwe_mul_plain_sum_tmp_bytes(&res_infos, &infos, &plain_infos);
+            let bytes_test = module_test.glwe_mul_plain_sum_tmp_bytes(&res_infos, &infos, &plain_infos);
+            for terms in [1, offsets.len()] {
+                let mut start = ref_glwe(module_ref, &res_infos, &mut source);
+                start.set_canonical(false);
+                let mut out_ref = module_ref.glwe_alloc_from_infos(&res_infos);
+                start.transfer_into(&mut out_ref);
+                let (ar, br): (Vec<_>, Vec<_>) = (a_ref[..terms].iter().collect(), b_ref[..terms].iter().collect());
+                let bt: Vec<_> = b_test[..terms].iter().collect();
+                module_ref.glwe_mul_plain_sum(
+                    &mut out_ref,
+                    &ar,
+                    &br,
+                    &offsets[..terms],
+                    &mut poisoned_scratch::<BR>(bytes_ref).borrow(),
+                );
+                for (form, a_test) in [("flag-clear", &a_twin), ("canonical", &a_copy), ("wide", &a_wide)] {
+                    let mut out_test = module_test.glwe_alloc_from_infos(&res_infos);
+                    start.transfer_into(&mut out_test);
+                    let at: Vec<_> = a_test[..terms].iter().collect();
+                    module_test.glwe_mul_plain_sum(
+                        &mut out_test,
+                        &at,
+                        &bt,
+                        &offsets[..terms],
+                        &mut poisoned_scratch::<BT>(bytes_test).borrow(),
+                    );
+                    let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                    out_test.transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        out_ref,
+                        have,
+                        "{form}: degrees={degrees:?} terms={terms} rank={rank} a.k={a_k} res.k={res_k}"
+                    );
+                }
+                if b_n > 1 {
+                    // Left operands each side prepares, under hints swapped from one term to the next and across
+                    // the backends.
+                    let prepare_ref = |(i, a)| {
+                        let mut left = module_ref.cnv_pvec_left_alloc(n, rank + 1, infos.size(), prepare_hints(i).0);
+                        let bytes = glwe_left_operand_prepare_tmp_bytes(module_ref, infos.size(), &infos);
+                        glwe_left_operand_prepare(
+                            module_ref,
+                            &mut left,
+                            a,
+                            infos.k.as_usize(),
+                            &mut poisoned_scratch::<BR>(bytes).borrow(),
+                        );
+                        left
+                    };
+                    let prepare_test = |(i, a)| {
+                        let mut left = module_test.cnv_pvec_left_alloc(n, rank + 1, infos.size(), prepare_hints(i).1);
+                        let bytes = glwe_left_operand_prepare_tmp_bytes(module_test, infos.size(), &infos);
+                        glwe_left_operand_prepare(
+                            module_test,
+                            &mut left,
+                            a,
+                            infos.k.as_usize(),
+                            &mut poisoned_scratch::<BT>(bytes).borrow(),
+                        );
+                        left
+                    };
+                    let left_ref: Vec<_> = a_ref[..terms].iter().enumerate().map(prepare_ref).collect();
+                    let left_test: Vec<_> = a_twin[..terms].iter().enumerate().map(prepare_test).collect();
+                    let mut out_ref = ref_glwe(module_ref, &res_infos, &mut source);
+                    out_ref.set_canonical(false);
+                    let mut out_test = module_test.glwe_alloc_from_infos(&res_infos);
+                    out_ref.transfer_into(&mut out_test);
+                    let (lr, lt): (Vec<_>, Vec<_>) = (left_ref.iter().collect(), left_test.iter().collect());
+                    module_ref.glwe_mul_plain_sum(
+                        &mut out_ref,
+                        &lr,
+                        &br,
+                        &offsets[..terms],
+                        &mut poisoned_scratch::<BR>(bytes_ref).borrow(),
+                    );
+                    module_test.glwe_mul_plain_sum(
+                        &mut out_test,
+                        &lt,
+                        &bt,
+                        &offsets[..terms],
+                        &mut poisoned_scratch::<BT>(bytes_test).borrow(),
+                    );
+                    let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                    out_test.transfer_into(&mut have);
+                    assert_glwe_eq!(out_ref, have, "prepared: terms={terms} rank={rank} a.k={a_k} res.k={res_k}");
+                }
+            }
         }
     }
 }

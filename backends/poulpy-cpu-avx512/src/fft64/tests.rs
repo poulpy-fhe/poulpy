@@ -222,6 +222,16 @@ backend_test_suite! {
     }
 }
 
+// A plaintext below the 16-coefficient floor reaches the convolution through its lift.
+backend_test_suite! {
+    mod core_parity_plaintext_degree,
+    backend = crate::FFT64Avx512,
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 256),
+    tests = {
+        test_glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::noise::glwe_tensor::test_glwe_mul_plain_plaintext_degree,
+    }
+}
+
 backend_test_suite! {
     mod lwe_matrix,
     backend = crate::FFT64Avx512,

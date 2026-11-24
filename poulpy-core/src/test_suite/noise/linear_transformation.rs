@@ -1206,6 +1206,40 @@ pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate
     );
 }
 
+/// Every diagonal of a transform shares the prepared degree of its first one, checked before the fallback writes `res`
+/// at the first giant step.
+pub fn test_glwe_linear_transformation_rejects_mixed_diagonal_degrees<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let schedule = LinearTransformationLayout {
+        indexes: vec![0, 1],
+        slots: module.n() / 2,
+        strategy: LinearTransformationStrategy::Direct,
+    };
+    let half = GLWELayout {
+        n: (module.n() / 2).into(),
+        ..limbs_layout(params, module, 1, 0)
+    };
+    let mut narrow: LinearTransformationPrepared<BE, Rg> = LinearTransformation::alloc_prepared(module, &schedule, &half);
+    narrow.set_plaintext_meta(lt.plaintext_meta());
+    std::mem::swap(&mut lt.giant_steps[1].diagonals, &mut narrow.giant_steps[1].diagonals);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies],
+        &[&lt],
+        false,
+        "giant step 1 of linear transformation 0 has a diagonal of another prepared degree",
+    );
+}
+
 /// Every giant step of every summed transform must start with a diagonal as
 /// wide as the first transform's first one, beyond the first diagonals the sum
 /// compares, checked before the fallback writes `res` at the first giant step.
@@ -1330,7 +1364,8 @@ fn limbs_layout<BE: Backend>(params: &TestParams, module: &Module<BE>, limbs: us
 
 /// A transformation whose diagonals are ciphertexts, prepared by `glwe_linear_transformation_rhs_prepare`, decrypts to
 /// the dot product of each giant step rotated and summed, alone or in a sum, on both schedules and key radixes. Keys
-/// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals and summed
+/// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals or at half
+/// their degree and summed
 /// caches of other widths are refused before anything is written.
 pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
@@ -1739,6 +1774,30 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 |proxy| {
                     module.glwe_linear_transformation_rhs_prepare(
                         proxy,
+                        &lt_ct,
+                        &mut poisoned_scratch::<BE>(module.glwe_linear_transformation_rhs_prepare_tmp_bytes(&ct_infos)).borrow(),
+                    )
+                },
+            );
+            // Ciphertext diagonals into a cache allocated at half their degree.
+            let mut half: LinearTransformationPrepared<BE, Rg> = LinearTransformation::alloc_prepared(
+                module,
+                schedule,
+                &GLWELayout {
+                    n: (n / 2).into(),
+                    ..ct_infos
+                },
+            );
+            assert_refusal(
+                &format!(
+                    "assertion `left == right` failed: linear transformation diagonal degree does not match prepared cache\n  left: {n}\n right: {}",
+                    n / 2
+                ),
+                &mut half,
+                prepared_state::<BE, Rg>,
+                |half| {
+                    module.glwe_linear_transformation_rhs_prepare(
+                        half,
                         &lt_ct,
                         &mut poisoned_scratch::<BE>(module.glwe_linear_transformation_rhs_prepare_tmp_bytes(&ct_infos)).borrow(),
                     )

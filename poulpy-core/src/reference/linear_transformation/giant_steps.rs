@@ -334,7 +334,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
         .iter()
         .flatten()
         .map(|key| {
-            crate::gadget::gglwe_product_accumulation_output_size_with_tail(
+            crate::gadget::gglwe_product_accumulation_output_size(
                 res,
                 res,
                 key,
@@ -639,13 +639,7 @@ fn glwe_eval_giant_tree<BE, R, H, Rg: Ring>(
         .iter()
         .flatten()
         .map(|key| {
-            crate::gadget::gglwe_product_accumulation_output_size_with_tail(
-                res,
-                res,
-                key,
-                switches,
-                prod_size.saturating_sub(res.size()),
-            )
+            crate::gadget::gglwe_product_accumulation_output_size(res, res, key, switches, prod_size.saturating_sub(res.size()))
         })
         .max()
         .unwrap_or(res.size());

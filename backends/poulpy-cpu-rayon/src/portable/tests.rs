@@ -200,7 +200,22 @@ poulpy_cpu_portable::conjugate_invariant_test_suite!(
 
 #[cfg(feature = "enable-core")]
 mod core {
-    use poulpy_hal::layouts::{Module, Standard};
+    use poulpy_core::test_suite::noise::glwe_tensor::test_glwe_mul_plain_plaintext_degree;
+    use poulpy_hal::{
+        layouts::{Module, Standard},
+        test_suite::TestParams,
+    };
+
+    #[test]
+    fn glwe_mul_plain_plaintext_degree() {
+        let params = |base2k| TestParams {
+            size: 256,
+            base2k,
+            n: 256,
+        };
+        test_glwe_mul_plain_plaintext_degree::<_, Standard>(&params(17), &Module::<crate::FFT64PortableRayon>::new(256));
+        test_glwe_mul_plain_plaintext_degree::<_, Standard>(&params(52), &Module::<crate::NTT4x30PortableRayon>::new(256));
+    }
 
     poulpy_core::core_parity_test_suite! {
         mod parity_ntt4x30,
@@ -216,6 +231,8 @@ mod core {
             glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
             glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
             glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+            glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::parity::test_glwe_mul_plain_plaintext_degree_parity,
+            glwe_mul_plain_sum => poulpy_core::test_suite::parity::test_glwe_mul_plain_sum_parity,
             gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
             gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
             tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
@@ -237,6 +254,8 @@ mod core {
             glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
             glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
             glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+            glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::parity::test_glwe_mul_plain_plaintext_degree_parity,
+            glwe_mul_plain_sum => poulpy_core::test_suite::parity::test_glwe_mul_plain_sum_parity,
             gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
             glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
         }

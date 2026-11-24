@@ -5,9 +5,9 @@ use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, M
 
 use crate::{
     api::{
-        GGLWECopy, GGSWCopy, GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
-        GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPack, GLWEPreparedTensoring, GLWERotate,
-        GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
+        GGLWECopy, GGSWCopy, GGSWRotate, GLWEAdd, GLWECopy, GLWELeftOperandRef, GLWEMulConst, GLWEMulPlain,
+        GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPack,
+        GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
         Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -226,6 +226,28 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch)
+    },
+    fn glwe_mul_plain_sum_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: IntPolyInfos + GLWEInfos,
+    {
+        BE::glwe_mul_plain_sum_tmp_bytes(self, res, a, b)
+    },
+    fn glwe_mul_plain_sum<R, A, B>(
+        &self,
+        res: &mut R,
+        a: &[&A],
+        b: &[&B],
+        offsets: &[usize],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWELeftOperandRef<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos,
+    {
+        BE::glwe_mul_plain_sum(self, res, a, b, offsets, scratch)
     }
 );
 

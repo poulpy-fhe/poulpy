@@ -2,12 +2,13 @@ use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{
-    Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Ring, ScratchArena, Standard, VecZnxDftBackendMut,
+    Backend, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Ring, ScratchArena, Standard,
+    VecZnxDftBackendMut,
 };
 
 use crate::layouts::{
     Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-    GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
+    GGSWToBackendRef, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
 /// Trace over the levels `levels`, summed or normalized: the sum of the Galois conjugates of the visited levels.
@@ -163,10 +164,14 @@ pub trait GLWEMulConst<BE: Backend, Rg: Ring = Standard> {
 /// `k` it declares, canonical at it (see the normalized form on
 /// [`crate::layouts::GLWE`]): the convolution reads every bit of its live
 /// limbs, so an operand whose canonical flag is clear is normalized first.
+///
+/// A plaintext of degree 1 is a constant, multiplied in the coefficient domain
+/// by `cnv_by_const_apply` rather than through the transform, with the bits of
+/// the product by that constant embedded at the ciphertext's degree.
 pub trait GLWEMulPlain<BE: Backend, Rg: Ring = Standard> {
     /// The right operand may have a degree that is a power-of-two divisor of the
-    /// module's, not below the backend floor, which stands for its ring
-    /// embedding; the budget is an upper bound for it.
+    /// module's, which stands for its ring embedding; the budget is that of the
+    /// degree of `b`.
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -185,6 +190,74 @@ pub trait GLWEMulPlain<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos;
+
+    /// Scratch bytes of [`Self::glwe_mul_plain_sum`] into `res`, whatever the number of terms, for left operands
+    /// of at most the limbs of `a` and plaintexts encoding at most the limbs of `b`, of degree at most that of `b`: a
+    /// `b` of degree 1 bounds a sum of constants only. It counts the preparation or normalization of ciphertext left
+    /// operands, which prepared ones skip.
+    fn glwe_mul_plain_sum_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: IntPolyInfos + GLWEInfos;
+
+    /// `res = Σ_i a[i] · b[i]`, each product at `offsets[i]`, the `cnv_offset` of [`Self::glwe_mul_plain`], summed
+    /// exactly and normalized once into `res`, canonical at `res.k()`.
+    ///
+    /// `a[i]` is a ciphertext or a left operand prepared by [`crate::glwe_left_operand_prepare`] and reused, of the
+    /// degree and columns of `res`, read at the limbs its preparation fixed; `b[i]` is a plaintext of power-of-two degree dividing that of `res`. All share the
+    /// radix of `res`. Each ciphertext is read at its `k`, normalized first when its flag is clear, and each plaintext
+    /// at its [`encoded_k`](IntPolyInfos::encoded_k), so a term is the [`Self::glwe_mul_plain`] product of its
+    /// operands. Ciphertexts may differ in `k`, plaintexts in degree and `k`. Plaintexts of degree 1 are constants,
+    /// multiplied and summed in the coefficient domain; the others are prepared at their degree, or embedded at the
+    /// backend's minimum degree below it, and their products summed in the transform domain, added to the constants' sum
+    /// before the one normalization.
+    ///
+    /// Every term's products accumulate unnormalized in one column before that normalization: pick `base2k` for
+    /// `a.len()` times the products of one term (`Module::max_base2k`), up to the smaller limb count of its two operands
+    /// per output limb.
+    ///
+    /// # Panics
+    ///
+    /// Before writing `res`, as [`assert_glwe_mul_plain_sum`](crate::layouts::assert_glwe_mul_plain_sum) refuses, or
+    /// if `scratch` holds less than the query.
+    fn glwe_mul_plain_sum<R, A, B>(&self, res: &mut R, a: &[&A], b: &[&B], offsets: &[usize], scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWELeftOperandRef<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos;
+}
+
+/// A left operand of [`GLWEMulPlain::glwe_mul_plain_sum`].
+#[expect(clippy::large_enum_variant, reason = "a view enum built per call, never stored in bulk")]
+pub enum GLWELeftOperand<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    Ciphertext(GLWEBackendRef<'a, BE, Rg>),
+    Prepared(CnvPVecLBackendRef<'a, BE, Rg>),
+}
+
+/// Views a ciphertext or a prepared left operand as a [`GLWELeftOperand`].
+pub trait GLWELeftOperandRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_left_operand<'a>(&'a self) -> GLWELeftOperand<'a, BE, Rg>
+    where
+        BE: 'a;
+}
+
+impl<BE: Backend, Rg: Ring, T: GLWEToBackendRef<BE, Rg> + GLWEInfos> GLWELeftOperandRef<BE, Rg> for T {
+    fn to_left_operand<'a>(&'a self) -> GLWELeftOperand<'a, BE, Rg>
+    where
+        BE: 'a,
+    {
+        GLWELeftOperand::Ciphertext(self.to_backend_ref())
+    }
+}
+
+impl<BE: Backend, Rg: Ring> GLWELeftOperandRef<BE, Rg> for CnvPVecLOwned<BE, Rg> {
+    fn to_left_operand<'a>(&'a self) -> GLWELeftOperand<'a, BE, Rg>
+    where
+        BE: 'a,
+    {
+        GLWELeftOperand::Prepared(self.to_backend_ref())
+    }
 }
 
 /// Sum of products of prepared GLWE ciphertexts by prepared plaintexts, each plaintext read through a Galois element:

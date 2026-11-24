@@ -140,11 +140,11 @@ Only the per-giant `accumulate_prod` differs; the rotate/accumulate tail is shar
 
 Before the loop reads a key, its callers check every giant step of every term
 (`assert_linear_transformation_into`, `assert_linear_transformation_sum`): it has a diagonal,
-its first diagonal is as wide as its transform's first diagonal, and it reads only baby
-rotations the term's cache holds; a sum's terms also share the first one's schedule, first
-diagonal and source layout. The other diagonals are not checked: every diagonal of a
-transform shares one width, scale and degree, as the encoder produces them, and preparing
-asserts the degree.
+its first diagonal is as wide as its transform's first diagonal, every diagonal's degree
+raised to `MIN_DEGREE` equals the first diagonal's, and it reads only baby rotations the
+term's cache holds; a sum's terms also share the first one's schedule, first diagonal and
+source layout. The width and scale of the other diagonals are not checked: every diagonal of
+a transform shares them, as the encoder produces them.
 
 The loop picks one of two strategies up front (`use_lazy_giant_rotation` in
 `glwe_eval_giant_steps`):

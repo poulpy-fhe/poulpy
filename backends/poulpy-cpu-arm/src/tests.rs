@@ -5,6 +5,23 @@ mod ckks_tests;
 #[cfg(feature = "enable-ckks")]
 mod libm_tests;
 
+#[test]
+fn glwe_mul_plain_plaintext_degree() {
+    use poulpy_core::test_suite::noise::glwe_tensor::test_glwe_mul_plain_plaintext_degree;
+    use poulpy_hal::{
+        layouts::{Module, Standard},
+        test_suite::TestParams,
+    };
+
+    let params = |base2k| TestParams {
+        size: 256,
+        base2k,
+        n: 256,
+    };
+    test_glwe_mul_plain_plaintext_degree::<_, Standard>(&params(17), &Module::<crate::FFT64Neon>::new(256));
+    test_glwe_mul_plain_plaintext_degree::<_, Standard>(&params(52), &Module::<crate::NTT4x30Neon>::new(256));
+}
+
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
     backend_ref = poulpy_cpu_portable::FFT64Portable,
@@ -20,6 +37,8 @@ poulpy_core::core_parity_test_suite! {
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::parity::test_glwe_mul_plain_plaintext_degree_parity,
+        glwe_mul_plain_sum => poulpy_core::test_suite::parity::test_glwe_mul_plain_sum_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
@@ -64,6 +83,8 @@ poulpy_core::core_parity_test_suite! {
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::parity::test_glwe_mul_plain_plaintext_degree_parity,
+        glwe_mul_plain_sum => poulpy_core::test_suite::parity::test_glwe_mul_plain_sum_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
@@ -105,6 +126,8 @@ poulpy_core::core_parity_test_suite! {
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::parity::test_glwe_mul_plain_plaintext_degree_parity,
+        glwe_mul_plain_sum => poulpy_core::test_suite::parity::test_glwe_mul_plain_sum_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
@@ -149,6 +172,8 @@ poulpy_core::core_parity_test_suite! {
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        glwe_mul_plain_plaintext_degree => poulpy_core::test_suite::parity::test_glwe_mul_plain_plaintext_degree_parity,
+        glwe_mul_plain_sum => poulpy_core::test_suite::parity::test_glwe_mul_plain_sum_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,

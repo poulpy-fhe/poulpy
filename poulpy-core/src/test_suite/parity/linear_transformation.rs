@@ -66,13 +66,29 @@ where
     }
 }
 
+/// The transformation of the diagonals `plaintexts` at giant rotation 0, diagonal `i` at baby rotation `i`.
+fn baby_diagonals<P>(plaintexts: Vec<P>) -> LinearTransformation<P> {
+    LinearTransformation {
+        baby_steps: (0..plaintexts.len() as i64).collect(),
+        rotations: Default::default(),
+        giant_steps: vec![LinearTransformationGiantStep {
+            rot: 0,
+            diagonals: (0..)
+                .zip(plaintexts)
+                .map(|(baby, plaintext)| LinearTransformationDiagonal { baby, plaintext })
+                .collect(),
+        }],
+    }
+}
+
 fn poison<B: Backend>(buffer: &mut B::OwnedBuf) {
     let bytes = B::len_bytes(buffer);
     B::copy_from_host(buffer, &vec![0xA5; bytes]);
 }
 
 /// Resident and streamed plaintext transforms, single and summed over two terms, agree with each other and across
-/// the backends.
+/// the backends, and the resident and streamed identity holds for a diagonal at every degree below the floor, and
+/// beside a zero diagonal of another such degree.
 /// Queries are exercised by their consumers using independently poisoned, exact budgets.
 /// Prepared caches are compared only through canonical output and semantic metadata.
 /// Then diagonals of the source's rank, multiplied as ciphertexts, on the per-rotation schedule.
@@ -238,28 +254,8 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                     one_r.data.at_mut(0, 0)[0] = 1;
                     let mut one_t = t.glwe_alloc_from_infos(&one_layout);
                     one_r.transfer_into(&mut one_t);
-                    let identity_r = LinearTransformation {
-                        baby_steps: vec![0],
-                        rotations: Default::default(),
-                        giant_steps: vec![LinearTransformationGiantStep {
-                            rot: 0,
-                            diagonals: vec![LinearTransformationDiagonal {
-                                baby: 0,
-                                plaintext: StreamedDiagonal(one_r),
-                            }],
-                        }],
-                    };
-                    let identity_t = LinearTransformation {
-                        baby_steps: vec![0],
-                        rotations: Default::default(),
-                        giant_steps: vec![LinearTransformationGiantStep {
-                            rot: 0,
-                            diagonals: vec![LinearTransformationDiagonal {
-                                baby: 0,
-                                plaintext: StreamedDiagonal(one_t),
-                            }],
-                        }],
-                    };
+                    let identity_r = baby_diagonals(vec![StreamedDiagonal(one_r)]);
+                    let identity_t = baby_diagonals(vec![StreamedDiagonal(one_t)]);
                     let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR, Rg>> =
                         LinearTransformation::alloc_prepared(r, &identity_schedule, &one_layout);
                     let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
@@ -352,6 +348,101 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                     out_t.transfer_into(&mut have);
                     assert_eq!(out_r, want, "reference streamed identity rank={rank}");
                     assert_eq!(have, want, "backend streamed identity rank={rank}");
+
+                    // A fixture source of their own leaves the later draws of `source` unchanged.
+                    let mut fixtures = Source::new([188; 32]);
+                    // The identity at the first degree, zero at the others; the last rows mix two degrees below every
+                    // floor and two across the smaller floor. The queries take the narrowest diagonal.
+                    let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE).ilog2();
+                    let low = BR::MIN_DEGREE.min(BT::MIN_DEGREE) as u32;
+                    let mixed = [vec![low / 2, low / 4], vec![low, low / 2]].into_iter().filter(|d| d[1] > 0);
+                    for degrees in (0..floor).map(|log| vec![1u32 << log]).chain(mixed) {
+                        let low = GLWELayout {
+                            n: (*degrees.iter().min().unwrap()).into(),
+                            ..one_layout
+                        };
+                        let schedule = LinearTransformationLayout {
+                            indexes: (0..degrees.len() as i64).collect(),
+                            ..identity_schedule.clone()
+                        };
+                        let (mut low_r, mut low_t) = (Vec::new(), Vec::new());
+                        for (baby, &n) in degrees.iter().enumerate() {
+                            let mut d_r = r.glwe_alloc_from_infos(&GLWELayout {
+                                n: n.into(),
+                                ..one_layout
+                            });
+                            d_r.data.at_mut(0, 0)[0] = i64::from(baby == 0);
+                            let mut d_t = t.glwe_alloc_from_infos(&d_r);
+                            d_r.transfer_into(&mut d_t);
+                            low_r.push(StreamedDiagonal(d_r));
+                            low_t.push(StreamedDiagonal(d_t));
+                        }
+                        let (streamed_r, streamed_t) = (baby_diagonals(low_r), baby_diagonals(low_t));
+                        let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR, Rg>> =
+                            LinearTransformation::alloc_prepared(r, &schedule, &low);
+                        let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
+                            LinearTransformation::alloc_prepared(t, &schedule, &low);
+                        r.glwe_linear_transformation_rhs_prepare(
+                            &mut resident_r,
+                            &streamed_r,
+                            &mut poisoned_scratch::<BR>(r.glwe_linear_transformation_rhs_prepare_tmp_bytes(&low)).borrow(),
+                        );
+                        t.glwe_linear_transformation_rhs_prepare(
+                            &mut resident_t,
+                            &streamed_t,
+                            &mut poisoned_scratch::<BT>(t.glwe_linear_transformation_rhs_prepare_tmp_bytes(&low)).borrow(),
+                        );
+                        // Each form on its own output fixture and its own query.
+                        macro_rules! identity_row {
+                            ($form:literal, $rhs_r:expr, $rhs_t:expr, $query:ident) => {{
+                                let mut out_r = ref_glwe(r, &ct, &mut fixtures);
+                                let mut out_t = t.glwe_alloc_from_infos(&ct);
+                                out_r.transfer_into(&mut out_t);
+                                let plan = schedule.index();
+                                let mut scratch_r = poisoned_scratch::<BR>(r.$query(&ct, &ct, &low, &plan, &key, &key));
+                                let mut scratch_t = poisoned_scratch::<BT>(t.$query(&ct, &ct, &low, &plan, &key, &key));
+                                r.glwe_linear_transformation_eval_into(
+                                    base,
+                                    &mut out_r,
+                                    &lhs_r,
+                                    $rhs_r,
+                                    &keys_r,
+                                    &mut scratch_r.borrow(),
+                                );
+                                t.glwe_linear_transformation_eval_into(
+                                    base,
+                                    &mut out_t,
+                                    &lhs_t,
+                                    $rhs_t,
+                                    &keys_t,
+                                    &mut scratch_t.borrow(),
+                                );
+                                out_t.transfer_into(&mut have);
+                                assert_eq!(
+                                    out_r, want,
+                                    "reference {} identity of degrees {degrees:?} rank={rank}",
+                                    $form
+                                );
+                                assert_eq!(
+                                    have, want,
+                                    "backend {} identity of degrees {degrees:?} rank={rank}",
+                                    $form
+                                );
+                            }};
+                        }
+                        identity_row!(
+                            "resident",
+                            &resident_r,
+                            &resident_t,
+                            glwe_linear_transformation_eval_tmp_bytes
+                        );
+                        identity_row!(
+                            "streamed",
+                            &streamed_r,
+                            &streamed_t,
+                            glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes
+                        );
+                    }
                 }
 
                 // Random diagonals on `schedule`, the same on both backends, and

@@ -256,11 +256,12 @@ where
     };
     let small_layout = layout(dst_infos, small);
     let n: usize = dst_infos.n().into();
-    let acc_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(
+    let acc_size = gglwe_product_accumulation_output_size(
         &layout(dst_infos, k_large.div_ceil(base2k)),
         &small_layout,
         key_infos,
         factor.giant_steps.len(),
+        0,
     );
     let carved = 3 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 2, small))
         + BE::scratch_aligned(module.cnv_pvec_left_bytes_of(n, 2, small, PrepareHint::Reuse))
@@ -379,11 +380,12 @@ where
         log_sparsity: src.log_sparsity(),
         slot_layout: src.slot_layout(),
     };
-    let acc_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(
+    let acc_size = gglwe_product_accumulation_output_size(
         &layout(dst, k_large.div_ceil(base2k)),
         &small_layout,
         &key_layout,
         factor.giant_steps.len(),
+        0,
     );
     let n = dst.n().as_usize();
 

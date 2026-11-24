@@ -158,6 +158,7 @@ macro_rules! core_backend_test_suite {
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,
                 test_glwe_mul_plain_plaintext_degree => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain_plaintext_degree,
                 test_glwe_mul_const => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_const,
+                test_glwe_mul_plain_sum => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain_sum,
                 glwe_keyswitch => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch,
                 glwe_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_assign,
                 glwe_keyswitch_row_offset => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_row_offset,
@@ -216,6 +217,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_uneven_giant_step_width,
                 glwe_linear_transformation_sum_rejects_uneven_giant_step_width =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width,
+                glwe_linear_transformation_rejects_mixed_diagonal_degrees =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_mixed_diagonal_degrees,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_switching_key_compressed_encrypt_sk,

@@ -582,6 +582,7 @@ macro_rules! conjugate_invariant_core_test_suite {
                 test_glwe_tensor_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
                 test_glwe_multiplication_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
                 test_tensor_relinearize_decrypt_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_glwe_mul_plain_sum_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
             }
 
             $($host_tests)*

@@ -2,13 +2,15 @@
 //! backend overrides, so that every implementation refuses the same inputs.
 
 use crate::layouts::BabyStepOperand;
-use poulpy_hal::layouts::{Backend, Ring, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
+use poulpy_hal::layouts::{Backend, Module, Ring, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::{
     Distribution,
+    api::{GLWELeftOperand, GLWELeftOperandRef},
+    gadget::cnv_offset_to_plaintext_shift,
     layouts::{
-        GGLWEInfos, GLWEDiagonalProd, LWEInfos, LinearTransformation, LinearTransformationBabySteps, TorusPrecision,
-        prepared::GGLWEPreparedBackendRef,
+        Degree, GGLWEInfos, GLWEDiagonalProd, GLWEInfos, GLWELayout, GLWEPlaintextLayout, IntPolyInfos, LWEInfos,
+        LinearTransformation, LinearTransformationBabySteps, TorusPrecision, operand_degree, prepared::GGLWEPreparedBackendRef,
     },
 };
 
@@ -102,14 +104,16 @@ pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE, Rg>, Rg: R
     }
 }
 
-/// Checks the giant steps of every term. The other diagonals are not checked: every diagonal of a transform shares
-/// one width, scale and degree, as the encoder produces them, and preparing asserts the degree. Reads no cache
-/// layout, so an empty cache fails on its first missing rotation.
+/// Checks the giant steps of every term. Only the first diagonal of a giant step is checked for width: every diagonal
+/// of a transform shares one width, scale and prepared degree, its degree raised to `MIN_DEGREE`, as the encoder
+/// produces them. Reads no cache layout, so an empty cache
+/// fails on its first missing rotation.
 ///
 /// # Panics
 ///
 /// Unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
-/// transform's first diagonal and reads only baby rotations its term's cache holds.
+/// transform's first diagonal, diagonals of the first one's degree at the floor `BE::MIN_DEGREE`, and reads only baby
+/// rotations its term's cache holds.
 fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
     lts: &[&LinearTransformation<P>],
@@ -121,8 +125,10 @@ fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE, Rg>, R
         !lts[0].giant_steps.is_empty(),
         "linear transformation has no non-empty giant steps"
     );
+    let prepared_degree = |n: Degree| n.as_usize().max(BE::MIN_DEGREE);
     for (t, (&lhs, &lt)) in babies.iter().zip(lts).enumerate() {
         let width = lt.first_diagonal_plaintext().map(|d| d.max_size());
+        let degree = lt.first_diagonal_plaintext().map(|d| prepared_degree(d.n()));
         for (g, gs) in lt.giant_steps.iter().enumerate() {
             let first = gs
                 .diagonals
@@ -137,6 +143,10 @@ fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE, Rg>, R
                     lhs.contains_baby_step(d.baby),
                     "missing prepared baby-step rotation {} of linear transformation {t}",
                     d.baby
+                );
+                assert!(
+                    Some(prepared_degree(d.plaintext.n())) == degree,
+                    "giant step {g} of linear transformation {t} has a diagonal of another prepared degree"
                 );
             }
         }
@@ -249,4 +259,98 @@ pub fn assert_gglwe_product_from_dft<BE: Backend, Rg: Ring>(
         "{op}: operand columns differ from the key's"
     );
     assert_no_row_offset(op, key);
+}
+
+/// The refusals of [`GLWEMulPlain::glwe_mul_plain_sum`](crate::api::GLWEMulPlain::glwe_mul_plain_sum), which the
+/// reference and every override run first.
+///
+/// # Panics
+///
+/// If the slices are empty or of different lengths, or, naming the term, for an offset of zero, a plaintext of another
+/// degree or radix or encoded past its allocation, a prepared left operand meeting a constant, or a left operand of
+/// another degree, rank, columns or radix.
+pub fn assert_glwe_mul_plain_sum<BE, R, A, B, Rg: Ring>(module: &Module<BE>, res: &R, a: &[&A], b: &[&B], offsets: &[usize])
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWELeftOperandRef<BE, Rg>,
+    B: IntPolyInfos + GLWEInfos,
+{
+    let (n, base2k) = (operand_degree(module.n(), &[res.n()]), res.base2k());
+    assert!(
+        !a.is_empty() && a.len() == b.len() && a.len() == offsets.len(),
+        "glwe_mul_plain_sum: empty slices or slices of different lengths"
+    );
+    for (t, ((a, b), &offset)) in a.iter().zip(b).zip(offsets).enumerate() {
+        assert!(offset != 0, "glwe_mul_plain_sum: term {t}: the offset is zero");
+        let b_n = b.n().as_usize();
+        assert!(
+            b_n.is_power_of_two() && n.is_multiple_of(b_n) && b.base2k() == base2k,
+            "glwe_mul_plain_sum: term {t}: a plaintext of another degree or radix"
+        );
+        assert!(
+            b.encoded_k() <= b.max_k(),
+            "glwe_mul_plain_sum: term {t}: a plaintext encoded past its allocation"
+        );
+        match a.to_left_operand() {
+            GLWELeftOperand::Ciphertext(a) => assert!(
+                a.n() == res.n() && a.rank() == res.rank() && a.base2k() == base2k,
+                "glwe_mul_plain_sum: term {t}: a ciphertext of another degree, rank or radix"
+            ),
+            GLWELeftOperand::Prepared(a) => {
+                assert!(
+                    b_n != 1,
+                    "glwe_mul_plain_sum: term {t}: a prepared left operand meets a constant"
+                );
+                assert!(
+                    a.n() == n && a.cols() == res.rank().as_usize() + 1,
+                    "glwe_mul_plain_sum: term {t}: a prepared left operand of another degree or columns"
+                );
+            }
+        }
+    }
+}
+
+/// The sizing of a [`GLWEMulPlain::glwe_mul_plain_sum`](crate::api::GLWEMulPlain::glwe_mul_plain_sum) call that
+/// [`assert_glwe_mul_plain_sum`] accepts: the left operand of largest `k` and the plaintext of largest degree and `k`,
+/// at the limbs the sum reads, which its query takes, and the limbs of its accumulator.
+pub fn glwe_mul_plain_sum_layouts<BE, R, A, B, Rg: Ring>(
+    res: &R,
+    a: &[&A],
+    b: &[&B],
+    offsets: &[usize],
+) -> (GLWELayout, GLWEPlaintextLayout, usize)
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWELeftOperandRef<BE, Rg>,
+    B: IntPolyInfos + GLWEInfos,
+{
+    let base2k = res.base2k();
+    let (mut a_size, mut b_n_max, mut b_size, mut acc_size) = (0, 1, 0, res.size());
+    for ((a, b), &offset) in a.iter().zip(b).zip(offsets) {
+        let size = match a.to_left_operand() {
+            GLWELeftOperand::Ciphertext(a) => a.size(),
+            GLWELeftOperand::Prepared(a) => a.size(),
+        };
+        let limbs = b.encoded_k().as_usize().div_ceil(base2k.as_usize());
+        let (shift, cnv_offset) = cnv_offset_to_plaintext_shift(offset, base2k.as_usize());
+        acc_size = acc_size.max((size + limbs + usize::from(shift != 0) - 1).saturating_sub(cnv_offset));
+        (a_size, b_n_max, b_size) = (a_size.max(size), b_n_max.max(b.n().as_usize()), b_size.max(limbs));
+    }
+    let k = |size: usize| TorusPrecision::from(size * base2k.as_usize());
+    (
+        GLWELayout {
+            n: res.n(),
+            base2k,
+            k: k(a_size),
+            rank: res.rank(),
+        },
+        GLWEPlaintextLayout {
+            n: b_n_max.into(),
+            base2k,
+            k: k(b_size),
+        },
+        acc_size,
+    )
 }

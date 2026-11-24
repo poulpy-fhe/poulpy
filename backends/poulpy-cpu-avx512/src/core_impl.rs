@@ -926,7 +926,7 @@ macro_rules! impl_rank_one_tensoring {
                 let cols = key.rank_out().as_usize() + 1;
                 let pairs = key.rank_in().as_usize();
                 let a_size = a.k().div_ceil(key.base2k()) as usize;
-                let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, &key);
+                let output_size = gglwe_product_output_size(res, a, &key);
                 let res_base2k = res.base2k().as_usize();
                 let res_k = res.k().as_usize();
                 let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
@@ -988,7 +988,7 @@ macro_rules! impl_rank_one_tensoring {
                 }
                 let n = assert_degrees(module, [res.n(), a.n(), tsk.n()]);
                 let a_size = a.k().div_ceil(tsk.base2k()) as usize;
-                let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, tsk);
+                let output_size = gglwe_product_output_size(res, a, tsk);
                 let (base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
                 let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, a.k(), a_size);
                 // The digit layout runs before the output is taken, the product and

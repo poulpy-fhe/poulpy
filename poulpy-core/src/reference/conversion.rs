@@ -382,7 +382,7 @@ where
     let cols: usize = rank + 1;
 
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
+    let output_size = gglwe_product_output_size(res_infos, res_infos, tsk_infos);
     let (k_digit, dnum) = (tsk_infos.k_digit(), tsk_infos.dnum());
     let operand_size: usize = gglwe_gadget_input_size(tsk_infos.base2k(), k_digit, dnum, res_infos.k(), a_size);
     let layout: usize =
@@ -429,7 +429,7 @@ pub fn ggsw_expand_rows_assign_reference<BE, M, R, Rg: Ring>(
 {
     let mut res_backend = res.to_backend_mut();
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, tsk);
+    let output_size = gglwe_product_output_size(&res_backend, &res_backend, tsk);
     let res_base2k: usize = res_backend.base2k().into();
     let tsk_base2k: usize = tsk.base2k().into();
 
