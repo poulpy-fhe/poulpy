@@ -38,10 +38,12 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 /// `InsufficientHomomorphicCapacity` when `src` has no bit of budget left; `CKKSError::Internal` with less scratch
 /// than the method's query reports.
 pub trait CKKSCIRingMapOps<BE: Backend> {
-    /// Covers every input width `dst` holds: the key switch is sized at its allocated width.
-    fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
+    /// Covers every input width `dst` holds: the key switch is sized at its allocated width, and for a replicated
+    /// `a_infos` at its shaping depth beside the wide copies.
+    fn ckks_ci_embed_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Embeds `src` into `dst`, at the radix of `src`, and switches it to the standard secret.
@@ -62,7 +64,7 @@ pub trait CKKSCIRingMapOps<BE: Backend> {
     fn ckks_ci_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Switches `src` to the embedded conjugate-invariant secret and writes its relative trace into `dst`.

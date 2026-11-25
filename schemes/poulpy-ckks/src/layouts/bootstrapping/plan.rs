@@ -9,7 +9,7 @@ use crate::{
     layouts::{BootstrappingSecrets, DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
 };
 
-use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, key_widths::StageWidths};
+use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, ReplicatedRoute, key_widths::StageWidths};
 
 /// Stage ordering of a bootstrap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +152,9 @@ pub struct BootstrappingPlan {
 
     /// SlotsToCoeffs: homomorphic decoding ([`DFTType::Decode`]).
     pub(crate) slots_to_coeffs: DFTPlan,
+
+    /// The replicated route, `None` on the full layout: see [`Self::replicated`].
+    pub(super) replicated: Option<ReplicatedRoute>,
 }
 
 impl BootstrappingPlan {
@@ -265,7 +268,61 @@ impl BootstrappingPlan {
             coeffs_to_slots,
             eval_mod,
             slots_to_coeffs,
+            replicated: None,
         })
+    }
+
+    /// The plan of the [replicated route](ReplicatedRoute): S2C-first, EvalMod on the standard ring with masked
+    /// constants, `eval_mod` of the message ratio the input width leaves, the sparse-secret encapsulation of
+    /// `techniques` around the raise, and the raise lifted by [`ReplicatedRoute::raise_bits`] as its guard bits. The
+    /// transforms are the route's maps, generated from the plan's subring DFTs: their schedules come from
+    /// [`ReplicatedRoute::transforms`].
+    ///
+    /// A replicated plan takes none of the settings of the full layout: a LUT, a gap, EvalRound+, EvalMod off the
+    /// standard ring, or other guard bits.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for EvalRound+, a complex exponential, a zero sparse
+    /// weight, a leveled scale above `Δ_b`, a factored route with a factor count outside `1..=log2(k)`, and an invalid
+    /// `eval_mod`.
+    pub fn replicated(route: ReplicatedRoute, eval_mod: EvalModPlan, techniques: BootstrappingTechniques) -> Result<Self> {
+        if techniques.eval_round_plus.is_some() {
+            return Err(invalid_plan("a replicated plan runs no EvalRound+ bypass"));
+        }
+        if eval_mod.eval_mod_type == EvalModType::ExpCmplx {
+            return Err(invalid_plan("a replicated plan takes a real EvalMod"));
+        }
+        if route.level_log_delta > route.log_delta {
+            return Err(invalid_plan("a replicated plan takes a leveled scale at most Δ_b"));
+        }
+        if techniques
+            .sparse_secret_encapsulation
+            .is_some_and(|sse| sse.hamming_weight == 0)
+        {
+            return Err(invalid_plan("sparse-secret encapsulation hamming_weight must be nonzero"));
+        }
+        eval_mod.validate()?;
+        let (coeffs_to_slots, slots_to_coeffs) = route.dft_plans(&eval_mod)?;
+        Ok(Self {
+            pipeline: BootstrappingPipeline::S2CFirst,
+            c2s_guard_bits: route.raise_bits(),
+            log_gap: 0,
+            functional_message_modulus: None,
+            eval_mod_ring: EvalModRing::Standard,
+            techniques,
+            coeffs_to_slots,
+            eval_mod,
+            slots_to_coeffs,
+            replicated: Some(route),
+        })
+    }
+
+    fn refuse_on_replicated(&self, setting: &str) -> Result<()> {
+        if self.replicated.is_some() {
+            return Err(invalid_plan(&format!("a replicated plan takes no {setting}")));
+        }
+        Ok(())
     }
 
     /// Configures S2C-first functional bootstrapping of integer messages modulo the LUT length.
@@ -276,6 +333,7 @@ impl BootstrappingPlan {
     /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) on a plan with [`EvalRoundPlus`], whose bypass the
     /// LUT step does not run, or with a gap.
     pub fn with_functional_bootstrap<P>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
+        self.refuse_on_replicated("LUT")?;
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
             "functional bootstrapping requires an S2C-first plan"
@@ -312,6 +370,9 @@ impl BootstrappingPlan {
     /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a nonzero gap on a plan that is not S2C-first with
     /// EvalMod on the standard ring, the first CoeffsToSlots factor on the raise and a sparse secret, or a functional plan.
     pub fn with_log_gap(mut self, log_gap: usize) -> Result<Self> {
+        if log_gap > 0 {
+            self.refuse_on_replicated("gap")?;
+        }
         if log_gap > 0 && self.functional_message_modulus.is_some() {
             return Err(invalid_plan("a gap takes a plan without a LUT"));
         }
@@ -373,6 +434,7 @@ impl BootstrappingPlan {
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.
     /// Charged to the raised width and removed at the ordinary bootstrap output.
     pub fn with_c2s_guard_bits(mut self, bits: usize) -> Result<Self> {
+        self.refuse_on_replicated("guard bits of its own")?;
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
             "C2S guard bits require an S2C-first plan"
@@ -407,6 +469,9 @@ impl BootstrappingPlan {
     /// S2C-first plan with a real EvalMod, without a LUT; `u` folds
     /// into a CoeffsToSlots factor the matrix evaluates, `v` does not fold.
     pub fn with_eval_mod_ring(mut self, ring: EvalModRing) -> Result<Self> {
+        if ring != EvalModRing::Standard {
+            self.refuse_on_replicated("EvalMod off the standard ring")?;
+        }
         if self.log_gap > 0 && ring != EvalModRing::Standard {
             return Err(invalid_plan("a gap takes EvalMod on the standard ring"));
         }

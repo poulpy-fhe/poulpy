@@ -122,7 +122,8 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// [its EvalMod section](crate::layouts::BootstrappingPlan#evalmod).
     ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a plain
-    /// [`EvalMod`](crate::layouts::EvalMod). Under
+    /// [`EvalMod`](crate::layouts::EvalMod). A run on the [replicated route](crate::layouts::ReplicatedRoute) evaluates
+    /// the parts of its input and lands the result at the leveled scale in `res`, as the route says. Under
     /// [`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant), the module, of degree `2N`,
     /// also runs EvalMod on the conjugate-invariant ring of degree `N`.
     ///
@@ -197,7 +198,9 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// compiled plan: see [`BootstrappingPlan`](crate::layouts::BootstrappingPlan).
     ///
     /// Under [`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant), the module, of degree
-    /// `2N`, also runs EvalMod on the conjugate-invariant ring of degree `N`.
+    /// `2N`, also runs EvalMod on the conjugate-invariant ring of degree `N`. A plan on the
+    /// [replicated route](crate::layouts::ReplicatedRoute) refreshes a replicated input into `ct_out` at its width and
+    /// the leveled scale, the route's steps reading it from the run.
     /// [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k) and
     /// [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k) place the widths.
     ///

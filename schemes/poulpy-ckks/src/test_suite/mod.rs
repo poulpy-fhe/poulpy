@@ -4,7 +4,8 @@
 //! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
 //! Downstream backend crates instantiate these independent mathematical tests
 //! through [`ckks_backend_test_suite!`] and the frozen encoding and setup
-//! fixtures through [`ckks_determinism_test_suite!`]. The [`parity`] suite
+//! fixtures through [`ckks_determinism_test_suite!`] and
+//! [`conjugate_invariant_determinism_test_suite!`]. The [`parity`] suite
 //! compares a caller-selected pair through production operation dispatch.
 
 use crate::{Scale, ckks_log_delta};
@@ -372,6 +373,18 @@ macro_rules! ckks_backend_rank2_test_suite {
             run_ring_test_result!(
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip_factored,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip_factored
+            );
+            run_ring_test_result!(
+                replicated_transforms_apply_matrices,
+                $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
@@ -785,6 +798,34 @@ macro_rules! ckks_backend_test_suite {
             run_ring_test_result!(
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip_factored,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip_factored
+            );
+            run_ring_test_result!(
+                replicated_transforms_apply_matrices,
+                $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
+            );
+            run_test_result!(
+                replicated_bootstrap,
+                $crate::test_suite::replicated::test_replicated_bootstrap
+            );
+            run_test_result!(
+                replicated_bootstrap_factored,
+                $crate::test_suite::replicated::test_replicated_bootstrap_factored
+            );
+            run_test_result!(
+                replicated_bootstrap_small_periods,
+                $crate::test_suite::replicated::test_replicated_bootstrap_small_periods
+            );
+            run_test_result!(
+                replicated_embedding_matches_the_encoder,
+                $crate::test_suite::replicated::test_replicated_embedding_matches_the_encoder
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
@@ -1444,7 +1485,7 @@ macro_rules! ckks_backend_test_suite {
     };
 }
 
-pub use crate::{ckks_backend_test_suite, ckks_determinism_test_suite};
+pub use crate::{ckks_backend_test_suite, ckks_determinism_test_suite, conjugate_invariant_determinism_test_suite};
 
 pub mod add;
 pub mod add_many;
@@ -1484,6 +1525,7 @@ pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod replicated;
+pub mod replicated_presets;
 pub mod rotate;
 pub mod round;
 pub mod ship;

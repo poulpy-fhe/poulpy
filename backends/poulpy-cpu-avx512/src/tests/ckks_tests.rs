@@ -1,5 +1,3 @@
-use poulpy_ckks::ckks_determinism_test_suite;
-
 /// The small S2C-first and C2S-first presets at their 52-bit radix, the bootstrap key plan and the
 /// conjugate-invariant bootstrap refusals, by default.
 mod small_bootstrapping_presets {
@@ -131,21 +129,37 @@ mod bootstrapping_presets {
     }
 }
 
-ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512, backend = crate::FFT64Avx512, f32);
+mod replicated_bootstrapping_presets {
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
 
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512, backend = crate::NTT4x30Avx512, f32);
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ntt4x30() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx512>(52);
+    }
 
-#[cfg(feature = "enable-ifma")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifma, backend = crate::NTT3x42Ifma, f32);
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ntt4x30_rayon() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx512Rayon>(52);
+    }
 
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512rayon, backend = crate::FFT64Avx512Rayon, f32);
+    #[cfg(feature = "enable-ifma")]
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ifma() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+    }
 
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512rayon, backend = crate::NTT4x30Avx512Rayon, f32);
-
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifmarayon, backend = crate::NTT3x42IfmaRayon, f32);
+    #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ifma_rayon() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
+    }
+}
 
 // Paired OEP validation. Serial backends follow AVX -> AVX-512 -> IFMA.
 // Rayon backends validate against their serial counterparts.

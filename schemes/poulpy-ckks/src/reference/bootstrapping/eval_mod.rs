@@ -13,7 +13,7 @@ use crate::{
     CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps,
-        CKKSPow2Ops, CKKSSubOps,
+        CKKSPow2Ops, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     checked_log_budget_sub, ckks_ensure, ckks_ensure_operand,
     layouts::{
@@ -131,7 +131,12 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
             + CKKSLinearTransformationOps<BE>
             + GLWEKeyswitch<BE>
             + GLWECITrace<BE>
-            + GLWERotate<BE>,
+            + GLWERotate<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSRoundOps<BE>,
         Module<BE>:
             CKKSEvalModOps<BE, ConjugateInvariant> + CKKSPow2Ops<BE, ConjugateInvariant> + CKKSSubOps<BE, ConjugateInvariant>,
         R: CKKSCtBounds,
@@ -139,6 +144,9 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
         P: CKKSEvalModInfos<BE, F>,
     {
         let module: &Module<BE> = self.borrow();
+        if let (Some(stage), Some(eval_mod)) = (plan.replicated_stage(), plan.eval_mod_replicated()) {
+            return super::replicated::eval_mod_tmp_bytes(module, res, a, stage, eval_mod, keys_layout);
+        }
         match plan.eval_mod_ci() {
             Some(eval_mod_ci) => {
                 let (boot_layout, _) = bootstrap_layouts(res, a);
@@ -174,7 +182,9 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
             + GLWECITrace<BE>
             + GLWECIEmbed<BE>
             + GLWERotate<BE>
-            + GLWESwitchDegree<BE>,
+            + GLWESwitchDegree<BE>
+            + CKKSRotateOps<BE>
+            + CKKSRoundOps<BE>,
         Module<BE>:
             CKKSEvalModOps<BE, ConjugateInvariant> + CKKSPow2Ops<BE, ConjugateInvariant> + CKKSSubOps<BE, ConjugateInvariant>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
@@ -185,6 +195,19 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
     {
         let module: &Module<BE> = self.borrow();
         const OP: &str = EVAL_MOD_OP;
+        if let (Some(stage), Some(eval_mod)) = (plan.replicated_stage(), plan.eval_mod_replicated()) {
+            super::replicated::check_eval_mod(OP, module, res, a, stage, plan.eval_mod_plan().consumed_bits())?;
+            let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
+            if let Some(keys_layout) = keys.keys_layout() {
+                let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes_reference(res, a, plan, keys_layout);
+                ckks_ensure!(
+                    scratch.available() >= bytes,
+                    "{OP} needs a scratch arena of {bytes} bytes, got {}",
+                    scratch.available()
+                );
+            }
+            return super::replicated::eval_mod(module, res, a, stage, eval_mod, keys, tsk, scratch);
+        }
         crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
         ensure_rank_one(OP, a, res)?;
         ensure_one_degree(OP, module.n(), a, res)?;

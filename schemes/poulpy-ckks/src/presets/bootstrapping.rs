@@ -36,6 +36,7 @@
 //! | --- | ---: | ---: |
 //! | `2^16` | 1707 | 342 |
 //! | `2^15` | 851 | 162 |
+//! | `2^14` | 424 | 77 |
 //!
 //! The bounds shape the keys: each key takes the digit of fewest rows whose
 //! modulus, auxiliary guard included, fits the bound of its secret (see
@@ -98,9 +99,9 @@ struct EvalModSpec {
 }
 
 /// Hamming weight of the dense secret of the presets.
-const DENSE_HAMMING_WEIGHT: usize = 1024;
+pub(super) const DENSE_HAMMING_WEIGHT: usize = 1024;
 /// Hamming weight of the ephemeral sparse secret of the presets.
-const SPARSE_HAMMING_WEIGHT: usize = 32;
+pub(super) const SPARSE_HAMMING_WEIGHT: usize = 32;
 
 /// Where the modulus bounds that shape the keys of a preset come from.
 #[derive(Clone, Copy, Debug)]
@@ -1613,16 +1614,16 @@ mod tests {
 
     #[test]
     fn a_gap_below_the_sparse_bound_of_its_keys_is_refused() {
-        const C2S: &[(usize, usize)] = &[(3, 1), (3, 512), (3, 64), (2, 8), (2, 2)];
-        const S2C: &[(usize, usize)] = &[(3, 4), (4, 32), (6, 1024)];
-        // The weight-32 secret of degree 2^14 is bounded at 77 bits, below a dense-to-sparse key of one digit.
-        // The shaping refuses it before the validation sees a key.
-        let Err(err) = n16_d35_k733_p20_s2c().unwrap().with_log_gap(2, C2S, S2C) else {
-            panic!("the dense-to-sparse key fits a 77-bit bound");
+        const C2S: &[(usize, usize)] = &[(3, 1), (3, 256), (2, 32), (2, 8), (2, 2)];
+        const S2C: &[(usize, usize)] = &[(3, 4), (3, 32), (6, 2048)];
+        // The weight-32 secret of degree 2^13 is bounded at 37 bits, below the 48-bit input of the dense-to-sparse key,
+        // which no digit fits. The shaping refuses it before the validation sees a key.
+        let Err(err) = n16_d35_k733_p20_s2c().unwrap().with_log_gap(3, C2S, S2C) else {
+            panic!("the dense-to-sparse key fits a 37-bit bound");
         };
         assert_eq!(
             err.to_string(),
-            "dense-to-sparse key: a digit of 52 bits on a 48-bit input needs a modulus of 104 bits, above 77"
+            "dense-to-sparse key: a digit of 52 bits on a 48-bit input needs a modulus of 104 bits, above 37"
         );
     }
 

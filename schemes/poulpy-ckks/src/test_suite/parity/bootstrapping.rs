@@ -19,7 +19,7 @@ use crate::{
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
         BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
-        Decode, DftScalar, EncapsulationKeysLayout, Encode, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
+        Decode, DftScalar, EncapsulationKeysLayout, Encode, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, ReplicatedRoute,
         SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
@@ -725,7 +725,92 @@ where
         }
         steps.push(compose_steps(module, &case));
     }
+    results.extend(replicated_bootstrap::<BE, F>(params, module));
     (results, steps)
+}
+
+/// `ckks_bootstrap` on the replicated route of ePrint 2026/2513 for `k = 4` values of `U8_40` (`R = 4`), packed when
+/// the two batches fit the ring, on fixture inputs at the input width, at `Δ_b` and at the leveled scale, and fixture
+/// keys covering the widths of the route, within its queried arena.
+fn replicated_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
+where
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl,
+    F: CKKSEncodingScalar + Sync,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEncodingOps<BE, F, ConjugateInvariant>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
+        + poulpy_core::GLWETrace<BE>
+        + CyclotomicOrder,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE> + LWEInfos,
+    FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
+    <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
+{
+    let (n, b) = (params.n, params.base2k);
+    let layout = crate::shaping::ShapingUnit::U8_40.layout(2).unwrap();
+    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+    let plan = BootstrappingPlan::replicated(
+        ReplicatedRoute {
+            packed: 4 * k * r <= n,
+            ..ReplicatedRoute::paper(layout, n.ilog2() as usize)
+        },
+        ReplicatedRoute::paper_eval_mod(&layout),
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 16 }),
+            eval_round_plus: None,
+        },
+    )
+    .unwrap();
+    let ctx = compile_context::<BE, F>(module, b.into(), &plan);
+    let route = *plan.replicated_route().unwrap();
+    let k_in = plan.replicated_input_k().unwrap();
+    let k_out = k_in + route.level_log_delta;
+    let widths = ctx.replicated_key_widths(module, k_out).unwrap();
+    let widest = widths
+        .rotation_keys
+        .values()
+        .copied()
+        .chain([widths.tensor_key])
+        .max()
+        .unwrap();
+    let atk = key_layout(n, b, widest, 1, 1, 1);
+    let d2s = key_layout(n, b, plan.replicated_raise_input_k().unwrap(), 1, 1, 1);
+    let s2d = key_layout(n, b, plan.replicated_raised_k(k_out).unwrap(), 1, 1, 1);
+    let elements = ctx.replicated_galois_elements(module);
+    let keys = FixtureKeys {
+        rotation_keys: elements
+            .iter()
+            .map(|&p| (p, prepared_automorphism_key(module, &atk, p, (p as u8).wrapping_add(71))))
+            .collect(),
+        tensor_key: prepared_tensor_key(module, &atk, 73),
+        encapsulation_keys: Some((prepared_gglwe(module, &d2s, 79), Some(prepared_gglwe(module, &s2d, 83)))),
+        first_factor_keys: HashMap::new(),
+    };
+    let keys_layout = keys_layout(elements.into_iter(), &atk, &d2s, &s2d, None, true);
+    let replicated = |k: usize, log_delta: usize| {
+        let mut layout_at = ct_layout(n, b, k, log_delta, SlotsKind::Complex);
+        layout_at.meta.slot_layout = SlotLayout::Replicated(layout);
+        layout_at
+    };
+    // An input at `Δ_b`, and one at the leveled scale, which SlotsToCoeffs lifts.
+    let lift = route.log_delta - route.level_log_delta;
+    [(k_in, route.log_delta), (k_in - lift, route.level_log_delta)]
+        .into_iter()
+        .map(|(k, log_delta)| {
+            let a = fixture_ciphertext(module, &replicated(k, log_delta), 89);
+            let mut res = fixture_ciphertext(module, &replicated(k_out, route.level_log_delta), 97);
+            let bytes = module.ckks_bootstrap_tmp_bytes(&res, &a, &ctx, &keys_layout);
+            let result = with_scratch::<BE, _>(bytes, |scratch| module.ckks_bootstrap(&mut res, &a, &ctx, &keys, scratch));
+            assert!(result.is_ok(), "replicated at 2^{log_delta}: {result:?}");
+            (result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&res)])
+        })
+        .collect()
 }
 
 /// Runs one step on exactly `bytes` of poisoned scratch.
