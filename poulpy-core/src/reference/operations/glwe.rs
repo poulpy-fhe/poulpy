@@ -3336,6 +3336,13 @@ pub fn glwe_right_operand_prepare<BE, M, B, BP, Rg: Ring>(
     BP: CnvPVecRToBackendMut<BE, Rg>,
 {
     let mut b_prep = b_prep.to_backend_mut();
+    let b_n = b.n().as_usize();
+    let prep_n = if b.rank().as_usize() == 0 {
+        b_n.max(BE::MIN_DEGREE)
+    } else {
+        b_n
+    };
+    assert_eq!(b_prep.n(), prep_n, "right operand degree does not match its preparation");
     glwe_prepare_canonical(module, b_prep.size(), b, b_k, scratch, |b, scratch| {
         module.cnv_pvec_right_prepare(&mut b_prep, b, scratch)
     });
