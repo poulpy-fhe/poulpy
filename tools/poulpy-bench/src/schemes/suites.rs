@@ -43,9 +43,6 @@ use crate::{
 pub use super::ckks_bootstrapping::{
     bench_ckks_bootstrapping, bench_ckks_bootstrapping_replayed_with_client, bench_ckks_bootstrapping_with_client,
 };
-pub use super::ckks_replicated_bootstrapping::{
-    bench_ckks_replicated_bootstrapping, bench_ckks_replicated_bootstrapping_with_client,
-};
 
 // Op tables for each CKKS capability group, one per `poulpy-ckks` API trait.
 // Each function returns the raw [`BenchOp`] table for that group only,
@@ -57,23 +54,23 @@ pub use super::ckks_replicated_bootstrapping::{
 
 pub fn ckks_add_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 3]
 where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE> + GLWEFill<BE>,
 {
     [
         BenchOp {
             layer: "ckks",
             name: "ckks_add_into",
-            runner: ckks::runner_ckks_add_into::<BE, _>,
+            runner: ckks::runner_ckks_add_into::<BE, _, ckks::CiphertextOperand>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_add_pt_vec_into",
-            runner: ckks::runner_ckks_add_pt_vec_into::<BE, _>,
+            name: "ckks_add_into_pt",
+            runner: ckks::runner_ckks_add_into::<BE, _, ckks::PlaintextOperand>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_add_pt_const_into",
-            runner: ckks::runner_ckks_add_pt_const_into::<BE, _>,
+            name: "ckks_add_into_const",
+            runner: ckks::runner_ckks_add_into::<BE, _, ckks::ConstantOperand>,
         },
     ]
 }
@@ -82,23 +79,23 @@ where
 
 pub fn ckks_sub_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 3]
 where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE> + GLWEFill<BE>,
 {
     [
         BenchOp {
             layer: "ckks",
             name: "ckks_sub_into",
-            runner: ckks::runner_ckks_sub_into::<BE, _>,
+            runner: ckks::runner_ckks_sub_into::<BE, _, ckks::CiphertextOperand>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_sub_pt_vec_into",
-            runner: ckks::runner_ckks_sub_pt_vec_into::<BE, _>,
+            name: "ckks_sub_into_pt",
+            runner: ckks::runner_ckks_sub_into::<BE, _, ckks::PlaintextOperand>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_sub_pt_const_into",
-            runner: ckks::runner_ckks_sub_pt_const_into::<BE, _>,
+            name: "ckks_sub_into_const",
+            runner: ckks::runner_ckks_sub_into::<BE, _, ckks::ConstantOperand>,
         },
     ]
 }
@@ -140,7 +137,7 @@ where
 
 pub fn ckks_mul_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 4]
 where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
 {
     [
         BenchOp {
@@ -155,13 +152,13 @@ where
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_mul_pt_vec_into",
-            runner: ckks::runner_ckks_mul_pt_vec_into::<BE, _>,
+            name: "ckks_mul_pt_into",
+            runner: ckks::runner_ckks_mul_pt_into::<BE, _, ckks::PlaintextOperand>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_mul_pt_const_into",
-            runner: ckks::runner_ckks_mul_pt_const_into::<BE, _>,
+            name: "ckks_mul_pt_into_const",
+            runner: ckks::runner_ckks_mul_pt_into::<BE, _, ckks::ConstantOperand>,
         },
     ]
 }
@@ -382,13 +379,14 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + CKKSRotateOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + CKKSEncodingOps<BE, f64>,
+        + CKKSEncodingOps<BE, f64>
+        + GLWEFill<BE>,
 {
     vec![
         BenchOp {
             layer: "ckks",
             name: "ckks_add_into",
-            runner: ckks::runner_ckks_add_into::<BE, _>,
+            runner: ckks::runner_ckks_add_into::<BE, _, ckks::CiphertextOperand>,
         },
         BenchOp {
             layer: "ckks",
@@ -397,8 +395,8 @@ where
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_mul_pt_vec_into",
-            runner: ckks::runner_ckks_mul_pt_vec_into::<BE, _>,
+            name: "ckks_mul_pt_into",
+            runner: ckks::runner_ckks_mul_pt_into::<BE, _, ckks::PlaintextOperand>,
         },
         BenchOp {
             layer: "ckks",
@@ -556,8 +554,8 @@ pub mod standard {
     use poulpy_hal::layouts::Backend;
 
     use super::{
-        CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory,
-        Module, ModuleNew, ckks_standard_ops,
+        CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWEFill,
+        GLWETensorKeyPreparedFactory, Module, ModuleNew, ckks_standard_ops,
     };
     use crate::{bench_ops, is_standard_n, schemes::params::default_bench_params_ckks};
 
@@ -573,7 +571,8 @@ pub mod standard {
             + GLWETensorKeyPreparedFactory<BE>
             + CKKSRotateOps<BE>
             + GLWEAutomorphismKeyPreparedFactory<BE>
-            + CKKSEncodingOps<BE, f64>,
+            + CKKSEncodingOps<BE, f64>
+            + GLWEFill<BE>,
     {
         bench_ops(
             PhantomData::<BE>,
@@ -592,8 +591,8 @@ pub mod light {
     use poulpy_hal::layouts::Backend;
 
     use super::{
-        CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory,
-        Module, ModuleNew, ckks_standard_ops,
+        CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWEFill,
+        GLWETensorKeyPreparedFactory, Module, ModuleNew, ckks_standard_ops,
     };
     use crate::{bench_ops, is_light_n, schemes::params::default_bench_params_ckks};
 
@@ -610,7 +609,8 @@ pub mod light {
             + GLWETensorKeyPreparedFactory<BE>
             + CKKSRotateOps<BE>
             + GLWEAutomorphismKeyPreparedFactory<BE>
-            + CKKSEncodingOps<BE, f64>,
+            + CKKSEncodingOps<BE, f64>
+            + GLWEFill<BE>,
     {
         bench_ops(
             PhantomData::<BE>,

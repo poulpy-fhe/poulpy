@@ -1496,7 +1496,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
         check(
             "a vector off the diagonals' frame",
             InvalidOperand,
-            "ckks_dot_product_prepared_pt_vec_add",
+            "ckks_dot_product_prepared_pt_add",
             &layout,
             &narrower,
             &mask,

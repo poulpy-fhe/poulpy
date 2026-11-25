@@ -34,8 +34,8 @@ pub use trace::*;
 use crate::oep::{
     AutomorphismImpl, DecryptionImpl, GGLWECopyImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
     GGSWConversionImpl, GGSWCopyImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl,
-    GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl,
-    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, SamplingImpl, SecretImpl,
+    GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEShiftImpl, GLWESubImpl,
+    GLWETensoringImpl, SamplingImpl, SecretImpl,
 };
 use crate::{
     GLWEDecrypt, GLWENoise,
@@ -74,7 +74,6 @@ pub trait TestBackend<Rg: Ring = Standard>:
     + GGSWExternalProductImpl<Rg>
     + GLWETensoringImpl<Rg>
     + GGLWEProductDigitsStridedImpl<Rg>
-    + GLWEMulConstImpl<Rg>
     + GLWEMulPlainImpl<Rg>
     + GLWEShiftImpl<Rg>
     + GLWENormalizeImpl<Rg>
@@ -107,7 +106,6 @@ where
         + GGSWExternalProductImpl<Rg>
         + GLWETensoringImpl<Rg>
         + GGLWEProductDigitsStridedImpl<Rg>
-        + GLWEMulConstImpl<Rg>
         + GLWEMulPlainImpl<Rg>
         + GLWEShiftImpl<Rg>
         + GLWENormalizeImpl<Rg>

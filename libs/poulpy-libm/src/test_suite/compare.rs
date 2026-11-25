@@ -12,7 +12,7 @@ use poulpy_hal::{
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -67,16 +67,19 @@ where
     let lo = F::from_f64(-0.2).unwrap();
     let hi = F::from_f64(0.25).unwrap();
     let step = |v| (host_composite.evaluate(v) + F::one()) * half;
-    let max_const = |v| v + step(lo - v) * (lo - v);
-    let min_const = |v| v - step(v - hi) * (v - hi);
-    let want_max_const: Vec<F> = a.iter().copied().map(max_const).collect();
-    let want_min_const: Vec<F> = a.iter().copied().map(min_const).collect();
-    let want_clamp: Vec<F> = a.iter().copied().map(|v| min_const(max_const(v))).collect();
+    // `fmax` by a plaintext, the clamp's lower bound included, takes the reversed difference, `lo - v`.
+    let max_pt = |v| v + step(lo - v) * (lo - v);
+    let min_pt = |v| v - step(v - hi) * (v - hi);
+    let want_max_pt: Vec<F> = a.iter().copied().map(max_pt).collect();
+    let want_min_pt: Vec<F> = a.iter().copied().map(min_pt).collect();
+    let want_clamp: Vec<F> = a.iter().copied().map(|v| min_pt(max_pt(v))).collect();
 
-    let mut host_bounds = host_module.ckks_plaintext_alloc(2usize.into(), base.base2k.into(), coeff_meta.k());
-    host_bounds.set_meta(coeff_meta.meta());
-    host_bounds.encode_host_floats(&[lo, hi]).unwrap();
-    let bounds = upload_pt(module, &host_bounds);
+    let [lo_pt, hi_pt] = [lo, hi].map(|v| {
+        upload_pt(
+            module,
+            &crate::plan::encode_constant(host_module, base.base2k.into(), coeff_meta, v).unwrap(),
+        )
+    });
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
 
@@ -124,22 +127,21 @@ where
     for (op, want, label) in [
         (0, &want_max, "fmax"),
         (1, &want_min, "fmin"),
-        (2, &want_max_const, "fmax_const"),
-        (3, &want_min_const, "fmin_const"),
+        (2, &want_max_pt, "fmax by a plaintext"),
+        (3, &want_min_pt, "fmin by a plaintext"),
         (4, &want_clamp, "clamp"),
     ] {
         let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
         match op {
             0 => module.ckks_fmax(&mut res, &op0, &op1, &composite, &tsk, &conj_key, &mut scratch.borrow()),
             1 => module.ckks_fmin(&mut res, &op0, &op1, &composite, &tsk, &conj_key, &mut scratch.borrow()),
-            2 => module.ckks_fmax_const(&mut res, &op0, &bounds, 0, &composite, &tsk, &conj_key, &mut scratch.borrow()),
-            3 => module.ckks_fmin_const(&mut res, &op0, &bounds, 1, &composite, &tsk, &conj_key, &mut scratch.borrow()),
+            2 => module.ckks_fmax(&mut res, &op0, &lo_pt, &composite, &tsk, &conj_key, &mut scratch.borrow()),
+            3 => module.ckks_fmin(&mut res, &op0, &hi_pt, &composite, &tsk, &conj_key, &mut scratch.borrow()),
             _ => module.ckks_clamp(
                 &mut res,
                 &op0,
-                &bounds,
-                0,
-                1,
+                &lo_pt,
+                &hi_pt,
                 &composite,
                 &tsk,
                 &conj_key,

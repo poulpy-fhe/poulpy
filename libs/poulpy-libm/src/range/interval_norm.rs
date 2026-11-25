@@ -2,24 +2,25 @@
 
 use anyhow::{Context, Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
-use poulpy_core::layouts::{Base2K, LWEInfos};
+use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     AlignedBuf,
     layouts::{HostBytesBackend, Module, Ring},
 };
 
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, SetCKKSInfos,
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar},
+    CKKSInfos, CKKSLayout,
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
+
+use crate::plan::encode_constant;
 
 /// Compression factor `L` (experimental, from the reference).
 pub const COMPRESSION_L: f64 = 2.45;
 
 /// Prepared interval-normalization constants.
 pub struct IntervalNorm<P> {
-    pub(crate) consts: P,
-    pub(crate) n: usize,
+    pub(crate) consts: Vec<P>,
     pub(crate) coeff_log_delta: usize,
 }
 
@@ -38,12 +39,12 @@ impl<Rg: Ring> IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Rg>> {
                 F::from_f64(4.0 / den).ok_or_else(|| anyhow!("interval_norm: c_{i} not representable"))
             })
             .collect::<Result<_>>()?;
-        let mut consts = module.ckks_plaintext_alloc(n.into(), base2k, coeff_meta.k());
-        consts.set_meta(coeff_meta.meta());
-        consts.encode_host_floats(&c).context("interval_norm")?;
+        let consts = c
+            .into_iter()
+            .map(|c| encode_constant(module, base2k, coeff_meta, c).context("interval_norm"))
+            .collect::<Result<_>>()?;
         Ok(Self {
             consts,
-            n,
             coeff_log_delta: coeff_meta.log_delta(),
         })
     }
@@ -51,13 +52,13 @@ impl<Rg: Ring> IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Rg>> {
 
 impl<P> IntervalNorm<P> {
     /// Per-step constants.
-    pub fn consts(&self) -> &P {
+    pub fn consts(&self) -> &[P] {
         &self.consts
     }
 
     /// Number of compression steps `ceil(log_L(max))`.
     pub fn steps(&self) -> usize {
-        self.n
+        self.consts.len()
     }
 
     /// Scale the constants were encoded at.
@@ -67,19 +68,18 @@ impl<P> IntervalNorm<P> {
 
     /// Consumed modulus bits.
     pub fn consumed_bits(&self, log_delta: usize) -> usize {
-        2 * self.n * log_delta
+        2 * self.steps() * log_delta
     }
 
     /// Multiplicative depth.
     pub fn depth(&self) -> usize {
-        2 * self.n
+        2 * self.steps()
     }
 
     /// Maps prepared plaintexts.
-    pub fn map_plaintexts<Q>(self, f: impl FnOnce(&P) -> Q) -> IntervalNorm<Q> {
+    pub fn map_plaintexts<Q>(self, f: impl FnMut(&P) -> Q) -> IntervalNorm<Q> {
         IntervalNorm {
-            consts: f(&self.consts),
-            n: self.n,
+            consts: self.consts.iter().map(f).collect(),
             coeff_log_delta: self.coeff_log_delta,
         }
     }

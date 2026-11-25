@@ -45,7 +45,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     /// Computes `dst = conj(src)`, the automorphism of Galois element `-1`.
     ///
     /// # Errors
-    /// Returns [`crate::CKKSCompositionError::MissingAutomorphismKey`] for
+    /// Returns [`crate::CKKSCompositionError::MissingAutomorphismKey`] or [`crate::CKKSCompositionError::AutomorphismKeyTooNarrow`] for
     /// missing keys or insufficient coverage, before changing `dst`.
     ///
     /// As [`Self::ckks_conjugate_rotate_into`] with `k = 0`.
@@ -66,7 +66,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `MissingAutomorphismKey` when `keys` has no conjugation key covering `dst.k()`. `dst` is untouched on `Err`.
+    /// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` when `keys` has no conjugation key covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -80,7 +80,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `MissingAutomorphismKey` when `keys` has no key for the conjugate rotation covering `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is
+    /// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` when `keys` has no key for the conjugate rotation covering `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is
     /// narrower than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,

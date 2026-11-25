@@ -109,7 +109,7 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// and `outbound` in place of `inbound`, and when a ciphertext of `folded` has a radix
     /// the backend cannot hold, a scale above its width, no bit of message budget above its
     /// scale, or a width above that of `outs`, or `outbound` does not cover that width.
-    /// `MissingAutomorphismKey` when `automorphisms` is `None` or refuses an element of
+    /// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` when `automorphisms` is `None` or refuses an element of
     /// [`Self::ckks_unfold_galois_elements`] at the width it splits, and `InvalidOperand`
     /// when the key it returns has a gadget layout its backend view or the packed degree
     /// contradicts. `outs` and `folded` are untouched on `Err`.

@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWECopy, GLWENormalize, GLWEShift, GLWESub,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
     api::{VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRshSub, VecZnxRshTmpBytes},
@@ -9,18 +9,20 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_binary, reference::carry_verb::ckks_carry_verb_reference,
+    CKKSInfos, SetCKKSInfos, api::CKKSSubOps, checked_log_budget_sub, ckks_offset_binary,
+    reference::carry_verb::ckks_carry_verb_reference,
 };
 
 ckks_carry_verb_reference! {
     verb: sub,
     doc_verb: "subtraction",
     trait_name: CKKSSubReference,
+    ops: CKKSSubOps,
     glwe_bound: GLWESub,
     glwe_into: glwe_sub,
     glwe_assign: glwe_sub_assign,
     glwe_lsh_verb: glwe_lsh_sub,
-    pt_vec_bounds: [VecZnxLshSub, VecZnxRshSub],
+    pt_bounds: [VecZnxLshSub, VecZnxRshSub],
 }
 
 impl<BE: Backend, Rg: Ring> CKKSSubReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}

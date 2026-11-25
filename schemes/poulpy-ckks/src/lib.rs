@@ -47,8 +47,9 @@
 //! DFT (products, rotations, conjugation, keyswitching, decryption) normalizes a
 //! flag-clear operand first. A value several such operations read is best
 //! normalized once with `glwe_normalize_assign`, and serializing requires a
-//! normalized ciphertext. The dot products accumulate every term, and the next
-//! DFT that reads the sum normalizes it; `ckks_add_many` normalizes its sum in
+//! normalized ciphertext. `ckks_dot_product` relinearizes once into a canonical
+//! sum, or, on its per-pair route, accumulates every term, the next DFT that reads
+//! the sum normalizing it; `ckks_add_many` normalizes its sum in
 //! place after every `normalize_after` additions the caller asks for, which
 //! poulpy-core's `max_lazy_terms` sizes, and `ckks_inner_sum` and
 //! `ckks_replicate` leave their sum canonical, as poulpy-core's trace does.
@@ -58,7 +59,7 @@
 //! digits that keep it there, 3907 at radix 54 over `2^16 * 2 * 20`
 //! coefficients, and the caller keeps its other sums within it. Where its
 //! pairs share layouts and `ckks_mul_into` takes its one-pass product, on rank 1,
-//! `ckks_dot_product_ct` and `ckks_dot_product_prepared` add their products in
+//! `ckks_dot_product` and `ckks_dot_product_prepared` add their products in
 //! the transform domain instead, and the radix must hold them, as they state.
 //!
 //! ## Modules
@@ -84,6 +85,7 @@ use poulpy_hal::layouts::CyclotomicOrder;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::layouts::galois_element;
 use poulpy_hal::layouts::{Backend, Ring, Standard};
+use std::ops::Neg;
 
 pub mod api;
 pub mod approximation;
@@ -129,8 +131,8 @@ pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ckks_ensure_operand,
-    ensure_base2k_match, ensure_operand_degrees, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range,
-    ensure_plaintext_const_operand, ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
+    ensure_base2k_match, ensure_operand_degrees, ensure_plaintext_alignment, ensure_plaintext_degree_embeds,
+    ensure_plaintext_operand, invalid_operand,
 };
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
@@ -211,6 +213,20 @@ pub(crate) fn operand_rotation_galois_element<M: CyclotomicOrder + ?Sized, Rg: R
 ) -> CKKSResult<i64> {
     let order = operand_cyclotomic_order::<M, Rg>(op, module, n)?;
     Ok(galois_element(rotation.rem_euclid(order / 4), order))
+}
+
+/// Writes `src(X^gal)` in `Z[X]/(X^n + 1)`, `n = src.len()`, into `dst`.
+pub(crate) fn znx_automorphism_host<T: Copy + Neg<Output = T>>(gal: i64, src: &[T], dst: &mut [T]) {
+    let n = src.len();
+    let g = gal.rem_euclid(2 * n as i64) as usize;
+    for (i, &c) in src.iter().enumerate() {
+        let e = i * g % (2 * n);
+        if e < n {
+            dst[e] = c;
+        } else {
+            dst[e - n] = -c;
+        }
+    }
 }
 
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {
@@ -527,34 +543,14 @@ pub(crate) fn mul_pt_params_raw(
 
 /// The operand checks of a product of `a` by the plaintext polynomial `pt` into `res`, in their order: the radix,
 /// the degree embedding, then the budget. Returns the product's `(log_budget, log_delta, cnv_offset)`.
-pub(crate) fn ckks_mul_pt_vec_checks<BE, R, A, P>(op: &'static str, res: &R, a: &A, pt: &P) -> CKKSResult<(usize, usize, usize)>
-where
-    BE: Backend,
-    R: CKKSInfos,
-    A: CKKSInfos,
-    P: CKKSInfos + IntPolyInfos,
-{
-    ensure_base2k_match(op, a.base2k().as_usize(), pt.base2k().as_usize())?;
-    ensure_plaintext_degree_embeds(op, a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
-    get_mul_pt_params(op, res, a, pt)
-}
-
-/// The operand checks of a product of `a` by coefficient `pt_coeff` of `pt` into `res`, in their order: the radix,
-/// the coefficient index, then the budget. Returns the product's `(log_budget, log_delta, cnv_offset)`.
-pub(crate) fn ckks_mul_pt_const_checks<R, A, P>(
-    op: &'static str,
-    res: &R,
-    a: &A,
-    pt: &P,
-    pt_coeff: usize,
-) -> CKKSResult<(usize, usize, usize)>
+pub(crate) fn ckks_mul_pt_checks<R, A, P>(op: &'static str, res: &R, a: &A, pt: &P) -> CKKSResult<(usize, usize, usize)>
 where
     R: CKKSInfos,
     A: CKKSInfos,
     P: CKKSInfos + IntPolyInfos,
 {
     ensure_base2k_match(op, a.base2k().as_usize(), pt.base2k().as_usize())?;
-    ensure_plaintext_coeff_in_range(op, "plaintext", pt_coeff, pt.n().as_usize())?;
+    ensure_plaintext_degree_embeds(op, a.n().as_usize(), pt.n().as_usize())?;
     get_mul_pt_params(op, res, a, pt)
 }
 

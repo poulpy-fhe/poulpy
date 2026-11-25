@@ -1,14 +1,13 @@
 use std::fmt::Debug;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{HostBytesBackend, Module, Ring};
 
-use crate::SlotsKind;
 use crate::{
-    CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    CoeffsMeta,
+    layouts::{CKKSPlaintextOwned, CKKSScalar, eval_mod::encode_bsgs_with, masked::encode_host_constants},
 };
 
 pub use poulpy_core::layouts::{
@@ -16,10 +15,18 @@ pub use poulpy_core::layouts::{
     evaluate_coeffs, split_degree,
 };
 
-/// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
+/// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of constants, each constant `c` of a baby step on its
+/// own host plaintext `c·π_S` of the slot layout of `coeff_meta`, at the degree of the period of `π_S`: 1 on the full
+/// layout, `2R` on a replicated one (`R` on the conjugate-invariant ring), which every backend reads.
 ///
-/// Each encoder rejects a zero torus width, `coeff_meta.k = 0`, with
-/// [`CKKSCompositionError::InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before allocating anything.
+/// Each encoder returns, in this order: on both layouts,
+/// [`CKKSCompositionError::InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a zero
+/// `coeff_meta.k`, before allocating anything, then
+/// [`LimbReallocationShrinksBelowMetadata`](crate::CKKSCompositionError::LimbReallocationShrinksBelowMetadata) for a
+/// scale above `coeff_meta.k`; on a replicated layout only, `InvalidOperand`, under its own name, for a period above
+/// the degree of `module`, for a unit whose shaping profile the ring refuses, and for a `coeff_meta` of 126 bits of
+/// scale and budget or more, which leaves no shaping pass within `i128`; and on both layouts an error for a constant
+/// not representable at the coefficient scale.
 pub trait CKKSPolynomialEncode {
     /// Decomposes and encodes using [`DEFAULT_SPLIT_STRATEGY`].
     fn encode_bsgs<Rg: Ring>(
@@ -59,7 +66,7 @@ where
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
-        self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
+        encode_host_bsgs("encode_bsgs", self, module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY, false)
     }
 
     fn encode_bsgs_with<Rg: Ring>(
@@ -69,18 +76,7 @@ where
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
-        coeff_meta.ensure_width("encode_bsgs_with")?;
-        let mut step_idx = 0usize;
-        self.decompose_bsgs_with(strategy, |baby_coeffs| {
-            let mut pt = module.ckks_plaintext_alloc(baby_coeffs.len().into(), base2k, coeff_meta.k);
-            let mut meta = coeff_meta.meta;
-            meta.slots = SlotsKind::Real;
-            pt.set_meta(meta);
-            pt.encode_host_floats(baby_coeffs)
-                .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
-            step_idx += 1;
-            Ok(pt)
-        })
+        encode_host_bsgs("encode_bsgs_with", self, module, base2k, coeff_meta, strategy, false)
     }
 
     fn encode_bsgs_folded_with<Rg: Ring>(
@@ -90,17 +86,27 @@ where
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
-        coeff_meta.ensure_width("encode_bsgs_folded_with")?;
-        let mut step_idx = 0usize;
-        self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
-            let mut pt = module.ckks_plaintext_alloc(baby_coeffs.len().into(), base2k, coeff_meta.k);
-            pt.set_meta(coeff_meta.meta);
-            pt.encode_host_floats(baby_coeffs)
-                .map_err(|e| anyhow!("encode_bsgs_folded: step {step_idx}: {e}"))?;
-            step_idx += 1;
-            Ok(pt)
-        })
+        encode_host_bsgs("encode_bsgs_folded_with", self, module, base2k, coeff_meta, strategy, true)
     }
+}
+
+/// The encoders of [`CKKSPolynomialEncode`], refusing under `op`.
+fn encode_host_bsgs<F, Rg: Ring>(
+    op: &'static str,
+    polynomial: &Polynomial<F>,
+    module: &Module<HostBytesBackend>,
+    base2k: Base2K,
+    coeff_meta: CoeffsMeta,
+    strategy: SplitStrategy,
+    folded: bool,
+) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>>
+where
+    F: FloatConst + CKKSScalar,
+{
+    coeff_meta.ensure_width(op)?;
+    encode_bsgs_with(polynomial, strategy, folded, &mut |values: &[F]| {
+        encode_host_constants(op, module, base2k, coeff_meta, values)
+    })
 }
 
 /// A plaintext polynomial with complex coefficients `re[k] + i·im[k]`.

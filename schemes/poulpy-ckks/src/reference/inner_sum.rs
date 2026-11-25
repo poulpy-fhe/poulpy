@@ -71,7 +71,7 @@ pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     }
 
     /// Refuses, before any write and in this order, a window exceeding the slots of `res`, a mean of `Integer` slots,
-    /// a missing key of a rotation at the width `min(a.k(), res.k())` (`MissingAutomorphismKey`), the budget of the
+    /// a missing key of a rotation at the width `min(a.k(), res.k())` (`MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`), the budget of the
     /// copy into `res` and of the mean's division (`InsufficientHomomorphicCapacity`), then an arena below
     /// [`Self::ckks_inner_sum_tmp_bytes_reference`] at the widest key layout. Then the selected `ckks_copy` of `a` into
     /// `res`, poulpy-core's summed `glwe_trace_assign` over the levels of the window, and, for a mean, the selected
@@ -276,12 +276,7 @@ impl Sum {
         for (rotation, element) in self.rotations().zip(self.galois_elements(module, n)) {
             let key = keys
                 .get_automorphism_key(element, k)
-                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                    op,
-                    rotation,
-                    k: k.into(),
-                    source,
-                })?;
+                .map_err(|source| CKKSCompositionError::automorphism_key_lookup(op, rotation, k.into(), source))?;
             most = most.max(Some(bytes(&key)));
         }
         let log_budget = checked_log_budget_sub(op, a.log_budget(), a.k().as_usize() - k.as_usize())?;

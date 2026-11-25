@@ -2,20 +2,20 @@
 //! constituents, are sized by their queries and match the portable backend.
 use super::OverrideBackend;
 use super::carry::{
-    ADD_ASSIGN_CALLS, ADD_ASSIGN_EXTRA, ADD_CONST_CALLS, ADD_PT_VEC_CALLS, ADD_PT_VEC_EXTRA, CI_ADD_ASSIGN_CALLS,
-    CI_ADD_ASSIGN_EXTRA, SUB_ASSIGN_CALLS, SUB_ASSIGN_EXTRA,
+    ADD_ASSIGN_CALLS, ADD_ASSIGN_EXTRA, ADD_PT_CALLS, CI_ADD_ASSIGN_CALLS, CI_ADD_ASSIGN_EXTRA, SUB_ASSIGN_CALLS,
+    SUB_ASSIGN_EXTRA,
 };
 use crate::FFT64Portable;
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSCopyOps, CKKSMulAddOps,
         CKKSMulOps, CKKSMulSubOps, CKKSSubOps,
     },
     layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, PolynomialApproximation},
-    polynomial::BSGSPolynomial,
     test_suite::{
         CKKSTestParams,
+        helpers::upload_pt,
         parity::{
             helpers::{Snapshot, fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
             layout,
@@ -29,7 +29,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, ConjugateInvariant, Module, ScratchOwned, Standard},
+    layouts::{Backend, ConjugateInvariant, HostBytesBackend, HostStaged, Module, ScratchOwned, Standard},
     source::Source,
 };
 use std::cell::Cell;
@@ -258,7 +258,7 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
     let tsk = tensor_key_layout();
     let tmp = module_test.glwe_bytes_of_from_infos(&res);
     assert_eq!(
-        <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_ct_tmp_bytes(
+        <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_tmp_bytes(
             &module_test,
             &res,
             &a,
@@ -275,7 +275,7 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
         .max(<Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.size()))
     );
     assert_eq!(
-        <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_ct_tmp_bytes(
+        <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_tmp_bytes(
             &module_test,
             &res,
             &a,
@@ -293,28 +293,13 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
     );
     for (query, product, add) in [
         (
-            <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_pt_vec_tmp_bytes(
+            <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_pt_tmp_bytes(
                 &module_test,
                 &res,
                 &a,
                 &pt,
             ),
-            <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_vec_tmp_bytes(
-                &module_test,
-                &res,
-                &a,
-                &pt,
-            ),
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.size()),
-        ),
-        (
-            <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_pt_const_tmp_bytes(
-                &module_test,
-                &res,
-                &a,
-                &pt,
-            ),
-            <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_const_tmp_bytes(
+            <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_tmp_bytes(
                 &module_test,
                 &res,
                 &a,
@@ -323,28 +308,13 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
             <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.size()),
         ),
         (
-            <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_pt_vec_tmp_bytes(
+            <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_pt_tmp_bytes(
                 &module_test,
                 &res,
                 &a,
                 &pt,
             ),
-            <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_vec_tmp_bytes(
-                &module_test,
-                &res,
-                &a,
-                &pt,
-            ),
-            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_tmp_bytes(&module_test, res.size()),
-        ),
-        (
-            <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_pt_const_tmp_bytes(
-                &module_test,
-                &res,
-                &a,
-                &pt,
-            ),
-            <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_const_tmp_bytes(
+            <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_tmp_bytes(
                 &module_test,
                 &res,
                 &a,
@@ -367,18 +337,18 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
     );
 
     macro_rules! probe {
-        ($calls:ident, $ops:ident, $query:ident, $op:ident $(, $coeff:expr)?) => {{
+        ($calls:ident, $ops:ident, $query:ident, $op:ident) => {{
             let want = run_pt_form(
                 &module_ref,
                 |r, a, pt| <Module<FFT64Portable> as $ops<FFT64Portable, Standard>>::$query(&module_ref, r, a, pt),
-                |r, a, pt, s| module_ref.$op(r, a, pt $(, $coeff)?, s),
+                |r, a, pt, s| module_ref.$op(r, a, pt, s),
             );
             let mut got = None;
             let calls = count(&$calls, || {
                 got = Some(run_pt_form(
                     &module_test,
                     |r, a, pt| <Module<OverrideBackend> as $ops<OverrideBackend, Standard>>::$query(&module_test, r, a, pt),
-                    |r, a, pt, s| module_test.$op(r, a, pt $(, $coeff)?, s),
+                    |r, a, pt, s| module_test.$op(r, a, pt, s),
                 ));
             });
             assert_eq!(calls, 1, stringify!($op));
@@ -388,28 +358,14 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
     probe!(
         ADD_ASSIGN_CALLS,
         CKKSMulAddOps,
-        ckks_mul_add_pt_vec_tmp_bytes,
-        ckks_mul_add_pt_vec_into
-    );
-    probe!(
-        ADD_ASSIGN_CALLS,
-        CKKSMulAddOps,
-        ckks_mul_add_pt_const_tmp_bytes,
-        ckks_mul_add_pt_const_into,
-        3
+        ckks_mul_add_pt_tmp_bytes,
+        ckks_mul_add_pt_into
     );
     probe!(
         SUB_ASSIGN_CALLS,
         CKKSMulSubOps,
-        ckks_mul_sub_pt_vec_tmp_bytes,
-        ckks_mul_sub_pt_vec_into
-    );
-    probe!(
-        SUB_ASSIGN_CALLS,
-        CKKSMulSubOps,
-        ckks_mul_sub_pt_const_tmp_bytes,
-        ckks_mul_sub_pt_const_into,
-        3
+        ckks_mul_sub_pt_tmp_bytes,
+        ckks_mul_sub_pt_into
     );
 
     // The ciphertext forms under one tensor key, encrypted on the portable backend and prepared on each.
@@ -444,7 +400,7 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
     for subtract in [false, true] {
         let a_ref = fixture_ciphertext::<_, Standard>(&module_ref, &source_layout(), 41);
         let mut want = fixture_ciphertext::<_, Standard>(&module_ref, &source_layout(), 31);
-        let bytes = <Module<FFT64Portable> as CKKSMulAddOps<FFT64Portable, Standard>>::ckks_mul_add_ct_tmp_bytes(
+        let bytes = <Module<FFT64Portable> as CKKSMulAddOps<FFT64Portable, Standard>>::ckks_mul_add_tmp_bytes(
             &module_ref,
             &want,
             &a_ref,
@@ -453,16 +409,16 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
         );
         with_scratch::<FFT64Portable, _>(bytes, |s| {
             if subtract {
-                module_ref.ckks_mul_sub_ct_into(&mut want, &a_ref, &a_ref, &key_ref, s)
+                module_ref.ckks_mul_sub_into(&mut want, &a_ref, &a_ref, &key_ref, s)
             } else {
-                module_ref.ckks_mul_add_ct_into(&mut want, &a_ref, &a_ref, &key_ref, s)
+                module_ref.ckks_mul_add_into(&mut want, &a_ref, &a_ref, &key_ref, s)
             }
         })
         .unwrap();
         let mut got = fixture_ciphertext::<_, Standard>(&module_test, &source_layout(), 31);
         let calls = if subtract { &SUB_ASSIGN_CALLS } else { &ADD_ASSIGN_CALLS };
         let bytes = if subtract {
-            <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_ct_tmp_bytes(
+            <Module<OverrideBackend> as CKKSMulSubOps<OverrideBackend, Standard>>::ckks_mul_sub_tmp_bytes(
                 &module_test,
                 &got,
                 &a,
@@ -470,7 +426,7 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
                 &tsk,
             )
         } else {
-            <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_ct_tmp_bytes(
+            <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_tmp_bytes(
                 &module_test,
                 &got,
                 &a,
@@ -481,9 +437,9 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
         let entered = count(calls, || {
             with_scratch::<OverrideBackend, _>(bytes, |s| {
                 if subtract {
-                    module_test.ckks_mul_sub_ct_into(&mut got, &a, &a, &key_test, s)
+                    module_test.ckks_mul_sub_into(&mut got, &a, &a, &key_test, s)
                 } else {
-                    module_test.ckks_mul_add_ct_into(&mut got, &a, &a, &key_test, s)
+                    module_test.ckks_mul_add_into(&mut got, &a, &a, &key_test, s)
                 }
             })
             .unwrap();
@@ -501,20 +457,20 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
     let narrow = fixture_ciphertext::<_, Standard>(&module_test, &layout(params(), 1, b, b - 1, 0, SlotsKind::Complex), 42);
     let mut out = fixture_ciphertext::<_, Standard>(&module_test, &source_layout(), 31);
     let unchanged = snapshot::<OverrideBackend, _, Standard>(&out);
-    let bytes = <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_pt_vec_tmp_bytes(
+    let bytes = <Module<OverrideBackend> as CKKSMulAddOps<OverrideBackend, Standard>>::ckks_mul_add_pt_tmp_bytes(
         &module_test,
         &out,
         &narrow,
         &pt,
     );
     let calls = count(&ADD_ASSIGN_CALLS, || {
-        let err = with_scratch::<OverrideBackend, _>(bytes, |s| module_test.ckks_mul_add_pt_vec_into(&mut out, &narrow, &pt, s))
+        let err = with_scratch::<OverrideBackend, _>(bytes, |s| module_test.ckks_mul_add_pt_into(&mut out, &narrow, &pt, s))
             .unwrap_err();
         assert!(
             matches!(
                 err.composition(),
                 Some(CKKSCompositionError::MultiplicationPrecisionUnderflow {
-                    op: "ckks_mul_add_pt_vec_into",
+                    op: "ckks_mul_add_pt_into",
                     ..
                 })
             ),
@@ -533,189 +489,108 @@ fn affine_forms_enter_the_selected_plaintext_additions() {
     let pt = fixture_plaintext::<_, Standard>(&module_test, &plaintext_layout(), 43);
     let res = fixture_ciphertext::<_, Standard>(&module_test, &source_layout(), 31);
     assert_eq!(
-        <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_const_tmp_bytes(
+        <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_tmp_bytes(
             &module_test,
             &res,
             &a,
             &pt
         ),
-        <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_const_tmp_bytes(
-            &module_test,
-            &res,
-            &a,
-            &pt
-        )
-        .max(
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(
-                &module_test,
-                res.size()
+        <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_tmp_bytes(&module_test, &res, &a, &pt)
+            .max(
+                <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.size())
             )
-        )
     );
     assert_eq!(
-        <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_vec_tmp_bytes(
-            &module_test,
-            &res,
-            &a,
-            &pt
-        ),
-        <Module<OverrideBackend> as CKKSMulOps<OverrideBackend, Standard>>::ckks_mul_pt_vec_tmp_bytes(
-            &module_test,
-            &res,
-            &a,
-            &pt
-        )
-        .max(
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_vec_tmp_bytes(
-                &module_test,
-                res.size()
-            )
-        )
-    );
-    assert_eq!(
-        <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_vec_tmp_bytes(&module_test, res.size()),
-        <Module<FFT64Portable> as CKKSAddOps<FFT64Portable, Standard>>::ckks_add_pt_vec_tmp_bytes(&module_ref, res.size())
-            + ADD_PT_VEC_EXTRA
+        <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.size()),
+        <Module<FFT64Portable> as CKKSAddOps<FFT64Portable, Standard>>::ckks_add_tmp_bytes(&module_ref, res.size())
+            + ADD_ASSIGN_EXTRA
     );
 
-    let affine_const = |r: &Module<FFT64Portable>| {
+    let affine = |r: &Module<FFT64Portable>| {
         run_pt_form(
             r,
             |res, a, pt| {
-                <Module<FFT64Portable> as CKKSAffineOps<FFT64Portable, Standard>>::ckks_affine_pt_const_tmp_bytes(r, res, a, pt)
+                <Module<FFT64Portable> as CKKSAffineOps<FFT64Portable, Standard>>::ckks_affine_pt_tmp_bytes(r, res, a, pt)
             },
-            |res, a, pt, s| r.ckks_affine_pt_const_into(res, a, pt, 1, 3, s),
+            |res, a, pt, s| r.ckks_affine_pt_into(res, a, pt, pt, s),
         )
     };
     let mut got = None;
-    let calls = count(&ADD_CONST_CALLS, || {
+    let calls = count(&ADD_PT_CALLS, || {
         got = Some(run_pt_form(
             &module_test,
             |res, a, pt| {
-                <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_const_tmp_bytes(
+                <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_tmp_bytes(
                     &module_test,
                     res,
                     a,
                     pt,
                 )
             },
-            |res, a, pt, s| module_test.ckks_affine_pt_const_into(res, a, pt, 1, 3, s),
+            |res, a, pt, s| module_test.ckks_affine_pt_into(res, a, pt, pt, s),
         ));
     });
     assert_eq!(calls, 1);
-    assert_eq!(got.unwrap(), affine_const(&module_ref));
+    assert_eq!(got.unwrap(), affine(&module_ref));
 
-    let affine_vec = |r: &Module<FFT64Portable>| {
+    // The in-place form, from `res` itself.
+    let assign = |r: &Module<FFT64Portable>| {
         run_pt_form(
             r,
-            |res, a, pt| {
-                <Module<FFT64Portable> as CKKSAffineOps<FFT64Portable, Standard>>::ckks_affine_pt_vec_tmp_bytes(r, res, a, pt)
+            |res, _, pt| {
+                <Module<FFT64Portable> as CKKSAffineOps<FFT64Portable, Standard>>::ckks_affine_pt_tmp_bytes(r, res, res, pt)
             },
-            |res, a, pt, s| r.ckks_affine_pt_vec_into(res, a, pt, pt, s),
+            |res, _, pt, s| r.ckks_affine_pt_assign(res, pt, pt, s),
         )
     };
     let mut got = None;
-    let calls = count(&ADD_PT_VEC_CALLS, || {
+    let entered = count(&ADD_PT_CALLS, || {
         got = Some(run_pt_form(
             &module_test,
-            |res, a, pt| {
-                <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_vec_tmp_bytes(
+            |res, _, pt| {
+                <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_tmp_bytes(
                     &module_test,
                     res,
-                    a,
+                    res,
                     pt,
                 )
             },
-            |res, a, pt, s| module_test.ckks_affine_pt_vec_into(res, a, pt, pt, s),
+            |res, _, pt, s| module_test.ckks_affine_pt_assign(res, pt, pt, s),
         ));
     });
-    assert_eq!(calls, 1);
-    assert_eq!(got.unwrap(), affine_vec(&module_ref));
-
-    // The in-place forms, from `res` itself.
-    for (calls, vec) in [(&ADD_CONST_CALLS, false), (&ADD_PT_VEC_CALLS, true)] {
-        let assign = |r: &Module<FFT64Portable>| {
-            run_pt_form(
-                r,
-                |res, _, pt| {
-                    if vec {
-                        <Module<FFT64Portable> as CKKSAffineOps<FFT64Portable, Standard>>::ckks_affine_pt_vec_tmp_bytes(
-                            r, res, res, pt,
-                        )
-                    } else {
-                        <Module<FFT64Portable> as CKKSAffineOps<FFT64Portable, Standard>>::ckks_affine_pt_const_tmp_bytes(
-                            r, res, res, pt,
-                        )
-                    }
-                },
-                |res, _, pt, s| {
-                    if vec {
-                        r.ckks_affine_pt_vec_assign(res, pt, pt, s)
-                    } else {
-                        r.ckks_affine_pt_const_assign(res, pt, 1, 3, s)
-                    }
-                },
-            )
-        };
-        let mut got = None;
-        let entered = count(calls, || {
-            got = Some(run_pt_form(
-                &module_test,
-                |res, _, pt| {
-                    if vec {
-                        <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_vec_tmp_bytes(
-                            &module_test,
-                            res,
-                            res,
-                            pt,
-                        )
-                    } else {
-                        <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_const_tmp_bytes(
-                            &module_test,
-                            res,
-                            res,
-                            pt,
-                        )
-                    }
-                },
-                |res, _, pt, s| {
-                    if vec {
-                        module_test.ckks_affine_pt_vec_assign(res, pt, pt, s)
-                    } else {
-                        module_test.ckks_affine_pt_const_assign(res, pt, 1, 3, s)
-                    }
-                },
-            ));
-        });
-        assert_eq!(entered, 1, "vec = {vec}");
-        assert_eq!(got.unwrap(), assign(&module_ref), "vec = {vec}");
-    }
+    assert_eq!(entered, 1);
+    assert_eq!(got.unwrap(), assign(&module_ref));
 }
 
-/// A linear polynomial behind a plaintext interval map, its plaintexts allocated on `module` and filled with uniform
-/// digits from fixed seeds.
-fn approximation<BE: Backend<ZnxWord = i64>>(module: &Module<BE>) -> PolynomialApproximation<CKKSPlaintextOwned<BE>>
+/// A linear polynomial behind a plaintext interval map, its constants encoded on the host and uploaded to `module`, and
+/// its map allocated on `module` and filled with uniform digits from a fixed seed.
+fn approximation<BE: HostStaged>(module: &Module<BE>) -> PolynomialApproximation<CKKSPlaintextOwned<BE>>
 where
     Module<BE>: CKKSPlaintextAlloc<BE> + GLWEFill<BE>,
 {
-    use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
-    let seed = Cell::new(50u8);
-    let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE>> {
-        let mut pt = module.ckks_plaintext_alloc::<Standard>(count.into(), 16usize.into(), 32usize.into());
-        pt.set_meta(GLWEPlaintextMeta {
+    use poulpy_ckks::polynomial::{Basis, CKKSPolynomialEncode, Polynomial, SplitStrategy};
+    let poly = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
+        .encode_bsgs_with(
+            &Module::<HostBytesBackend>::new(64),
+            16usize.into(),
+            CoeffsMeta::from_delta_budget(8, 24),
+            SplitStrategy::MinDepth,
+        )
+        .unwrap()
+        .map_baby_steps_ref(|pt| upload_pt(module, pt));
+    let mut source = Source::new([51; 32]);
+    let affine = [(); 2].map(|_| {
+        let mut constant = module.ckks_plaintext_alloc::<Standard>(1usize.into(), 16usize.into(), 32usize.into());
+        constant.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(8),
             ..Default::default()
         });
-        seed.set(seed.get() + 1);
-        module.glwe_fill_from_source(&mut pt, &mut Source::new([seed.get(); 32]));
-        Ok(pt)
-    };
-    let poly: BSGSPolynomial<CKKSPlaintextOwned<BE>> = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
-        .decompose_bsgs_with(SplitStrategy::MinDepth, |c| coeffs(c.len()))
-        .unwrap();
+        module.glwe_fill_from_source(&mut constant, &mut source);
+        constant
+    });
     PolynomialApproximation {
         poly,
-        affine: Some(coeffs(2).unwrap()),
+        affine: Some(affine),
         scale_pow2: None,
         coeff_log_delta: 8,
     }
@@ -748,8 +623,8 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
     let approx = approximation(&module_test);
     let src = fixture_ciphertext::<_, Standard>(&module_test, &approximation_input(), 41);
     let mut res = fixture_ciphertext::<_, Standard>(&module_test, &approximation_input(), 31);
-    let affine = approx.affine.as_ref().unwrap();
-    let coeffs = approx.poly.baby_step(0);
+    let [_, scale] = approx.affine.as_ref().unwrap();
+    let coeffs = &approx.poly.baby_step(0)[0];
     let eval = module_test
         .ckks_all_ops_tmp_bytes(&res, coeffs, &tsk)
         .max(module_test.ckks_all_ops_tmp_bytes(&src, coeffs, &tsk));
@@ -764,16 +639,16 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
         bytes,
         OverrideBackend::scratch_aligned(module_test.glwe_bytes_of_from_infos(&src))
             + eval.max(
-                <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_const_tmp_bytes(
+                <Module<OverrideBackend> as CKKSAffineOps<OverrideBackend, Standard>>::ckks_affine_pt_tmp_bytes(
                     &module_test,
                     &src,
                     &src,
-                    affine
+                    scale
                 )
             )
     );
     super::REAL_CALLS.set(0);
-    let calls = count(&ADD_CONST_CALLS, || {
+    let calls = count(&ADD_PT_CALLS, || {
         with_scratch::<OverrideBackend, _>(bytes, |s| {
             module_test.ckks_polynomial_approximation_eval(&mut res, &src, &approx, &super::NoTensorKey, s)
         })
@@ -787,7 +662,7 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
     let short = fixture_ciphertext::<_, Standard>(&module_test, &layout(params(), 1, 20, 16, 0, SlotsKind::Complex), 42);
     let unchanged = snapshot::<OverrideBackend, _, Standard>(&res);
     super::REAL_CALLS.set(0);
-    let calls = count(&ADD_CONST_CALLS, || {
+    let calls = count(&ADD_PT_CALLS, || {
         let err = with_scratch::<OverrideBackend, _>(bytes, |s| {
             module_test.ckks_polynomial_approximation_eval(&mut res, &short, &approx, &super::NoTensorKey, s)
         })

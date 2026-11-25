@@ -20,7 +20,7 @@ macro_rules! ckks_carry_verb_oep {
             /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
             /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
             pub unsafe trait $Impl<Rg: ::poulpy_hal::layouts::Ring = ::poulpy_hal::layouts::Standard>: Backend {
-                #[doc = concat!("Scratch bound of [`Self::ckks_", stringify!($verb), "_into`] and [`Self::ckks_", stringify!($verb), "_assign`]; may report less than the reference, never less than the body takes.")]
+                #[doc = concat!("Scratch bound of [`Self::ckks_", stringify!($verb), "_into`] and [`Self::ckks_", stringify!($verb), "_assign`] on either route; may report less than the reference, never less than the body takes.")]
                 fn [<ckks_ $verb _tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize;
                 #[doc = concat!("Reproduces [`ckks_", stringify!($verb), "_into_reference`](crate::reference::", stringify!($verb), "::", stringify!($Reference), "::ckks_", stringify!($verb), "_into_reference) bit for bit, within [`Self::ckks_", stringify!($verb), "_tmp_bytes`]; free in kernels and scratch use.")]
                 fn [<ckks_ $verb _into>]<Dst, A, B>(
@@ -42,15 +42,13 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<Self, Rg> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<Self, Rg> + CKKSInfos;
-                #[doc = concat!("Default body: the unit plaintext carved from scratch plus the larger of [`Self::ckks_", stringify!($verb), "_pt_const_tmp_bytes`] and [`Self::ckks_", stringify!($verb), "_pt_vec_tmp_bytes`] at `res_size`. Scratch bound of [`Self::ckks_", stringify!($verb), "_one_assign`]; may report less than the reference, never less than the body takes.")]
+                    Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds;
+                #[doc = concat!("Default body: the unit plaintext carved from scratch plus [`Self::ckks_", stringify!($verb), "_tmp_bytes`] at `res_size`. Scratch bound of [`Self::ckks_", stringify!($verb), "_one_assign`]; may report less than the reference, never less than the body takes.")]
                 fn [<ckks_ $verb _one_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize {
-                    crate::layouts::slots::one_pt_tmp_bytes::<Self>(res_size)
-                        + Self::[<ckks_ $verb _pt_const_tmp_bytes>](module, res_size)
-                            .max(Self::[<ckks_ $verb _pt_vec_tmp_bytes>](module, res_size))
+                    crate::layouts::slots::one_pt_tmp_bytes::<Self>(res_size) + Self::[<ckks_ $verb _tmp_bytes>](module, res_size)
                 }
-                #[doc = concat!("Default body: `ckks_", stringify!($verb), "_one_assign_derived`, which carves the unit plaintext of the slot layout of `dst` from scratch at its radix: on a full layout the selected `ckks_", stringify!($verb), "_pt_const_assign` of that constant at coefficient 0 of both operands, on a replicated layout the selected `ckks_", stringify!($verb), "_pt_vec_assign` of the masked one `π_S` at the scale of `dst`. An override reproduces it bit for bit within [`Self::ckks_", stringify!($verb), "_one_tmp_bytes`]; free in kernels and scratch use, a kept unit plaintext included.")]
+                #[doc = concat!("Default body: `ckks_", stringify!($verb), "_one_assign_derived`, which carves the unit plaintext of the slot layout of `dst` from scratch at its radix, a constant of degree 1 on a full layout and the masked one `π_S` at the scale of `dst` on a replicated layout, then takes the selected `ckks_", stringify!($verb), "_assign` of it. An override reproduces it bit for bit within [`Self::ckks_", stringify!($verb), "_one_tmp_bytes`]; free in kernels and scratch use, a kept unit plaintext included.")]
                 fn [<ckks_ $verb _one_assign>]<Dst>(
                     module: &Module<Self>,
                     dst: &mut Dst,
@@ -60,58 +58,6 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos {
                     crate::oep::derived::carry_verb::[<ckks_ $verb _one_assign_derived>](module, dst, scratch)
                 }
-                #[doc = concat!("Scratch bound of [`Self::ckks_", stringify!($verb), "_pt_vec_into`] and [`Self::ckks_", stringify!($verb), "_pt_vec_assign`]; may report less than the reference, never less than the body takes.")]
-                fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize;
-                #[doc = concat!("Reproduces [`ckks_", stringify!($verb), "_pt_vec_into_reference`](crate::reference::", stringify!($verb), "::", stringify!($Reference), "::ckks_", stringify!($verb), "_pt_vec_into_reference) bit for bit, within [`Self::ckks_", stringify!($verb), "_pt_vec_tmp_bytes`]; free in kernels and scratch use.")]
-                fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
-                    module: &Module<Self>,
-                    dst: &mut Dst,
-                    a: &A,
-                    pt: &P,
-                    scratch: &mut ScratchArena<'_, Self>,
-                ) -> Result<()>
-                where
-                    Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-                    P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                #[doc = concat!("Reproduces [`ckks_", stringify!($verb), "_pt_vec_assign_reference`](crate::reference::", stringify!($verb), "::", stringify!($Reference), "::ckks_", stringify!($verb), "_pt_vec_assign_reference) bit for bit, within [`Self::ckks_", stringify!($verb), "_pt_vec_tmp_bytes`]; free in kernels and scratch use.")]
-                fn [<ckks_ $verb _pt_vec_assign>]<Dst, P>(
-                    module: &Module<Self>,
-                    dst: &mut Dst,
-                    pt: &P,
-                    scratch: &mut ScratchArena<'_, Self>,
-                ) -> Result<()>
-                where
-                    Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                #[doc = concat!("Scratch bound of [`Self::ckks_", stringify!($verb), "_pt_const_into`] and [`Self::ckks_", stringify!($verb), "_pt_const_assign`]; may report less than the reference, never less than the body takes.")]
-                fn [<ckks_ $verb _pt_const_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize;
-                #[doc = concat!("Reproduces [`ckks_", stringify!($verb), "_pt_const_into_reference`](crate::reference::", stringify!($verb), "::", stringify!($Reference), "::ckks_", stringify!($verb), "_pt_const_into_reference) bit for bit, within [`Self::ckks_", stringify!($verb), "_pt_const_tmp_bytes`]; free in kernels and scratch use.")]
-                fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
-                    module: &Module<Self>,
-                    dst: &mut Dst,
-                    dst_coeff: usize,
-                    a: &A,
-                    pt: &P,
-                    pt_coeff: usize,
-                    scratch: &mut ScratchArena<'_, Self>,
-                ) -> Result<()>
-                where
-                    Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-                    P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                #[doc = concat!("Reproduces [`ckks_", stringify!($verb), "_pt_const_assign_reference`](crate::reference::", stringify!($verb), "::", stringify!($Reference), "::ckks_", stringify!($verb), "_pt_const_assign_reference) bit for bit, within [`Self::ckks_", stringify!($verb), "_pt_const_tmp_bytes`]; free in kernels and scratch use.")]
-                fn [<ckks_ $verb _pt_const_assign>]<Dst, P>(
-                    module: &Module<Self>,
-                    dst: &mut Dst,
-                    dst_coeff: usize,
-                    pt: &P,
-                    pt_coeff: usize,
-                    scratch: &mut ScratchArena<'_, Self>,
-                ) -> Result<()>
-                where
-                    Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
             }
 
             #[doc = concat!("Selects the reference implementation of the CKKS ", $doc_verb, " contract for `$be`.")]
@@ -148,7 +94,6 @@ macro_rules! ckks_carry_verb_oep {
                             )
                         }
 
-
                         fn [<ckks_ $verb _assign>]<Dst, A>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
@@ -157,116 +102,14 @@ macro_rules! ckks_carry_verb_oep {
                         ) -> $crate::CKKSResult<()>
                         where
                             Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $d ring>
-                                + $crate::CKKSInfos
+                                + $crate::CKKSCtBounds
                                 + $crate::SetCKKSInfos,
-                            A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring> + $crate::CKKSInfos,
+                            A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring> + $crate::CKKSCtBounds,
                         {
                             $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _assign_reference>](
                                 module, dst, a, scratch,
                             )
                         }
-
-
-
-                        fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                            $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](
-                                module, res_size,
-                            )
-                        }
-
-                        fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
-                            module: &::poulpy_hal::layouts::Module<Self>,
-                            dst: &mut Dst,
-                            a: &A,
-                            pt: &P,
-                            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                        ) -> $crate::CKKSResult<()>
-                        where
-                            Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + $crate::SetCKKSInfos,
-                            A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring> + $crate::CKKSCtBounds,
-                            P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + ::poulpy_core::layouts::IntPolyInfos,
-                        {
-                            $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _pt_vec_into_reference>](
-                                module, dst, a, pt, scratch,
-                            )
-                        }
-
-
-                        fn [<ckks_ $verb _pt_vec_assign>]<Dst, P>(
-                            module: &::poulpy_hal::layouts::Module<Self>,
-                            dst: &mut Dst,
-                            pt: &P,
-                            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                        ) -> $crate::CKKSResult<()>
-                        where
-                            Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + $crate::SetCKKSInfos,
-                            P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + ::poulpy_core::layouts::IntPolyInfos,
-                        {
-                            $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _pt_vec_assign_reference>](
-                                module, dst, pt, scratch,
-                            )
-                        }
-
-
-                        fn [<ckks_ $verb _pt_const_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                            $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _pt_const_tmp_bytes_reference>](
-                                module, res_size,
-                            )
-                        }
-
-                        fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
-                            module: &::poulpy_hal::layouts::Module<Self>,
-                            dst: &mut Dst,
-                            dst_coeff: usize,
-                            a: &A,
-                            pt: &P,
-                            pt_coeff: usize,
-                            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                        ) -> $crate::CKKSResult<()>
-                        where
-                            Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + $crate::SetCKKSInfos,
-                            A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring> + $crate::CKKSCtBounds,
-                            P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + ::poulpy_core::layouts::IntPolyInfos,
-                        {
-                            $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _pt_const_into_reference>](
-                                module, dst, dst_coeff, a, pt, pt_coeff, scratch,
-                            )
-                        }
-
-
-                        fn [<ckks_ $verb _pt_const_assign>]<Dst, P>(
-                            module: &::poulpy_hal::layouts::Module<Self>,
-                            dst: &mut Dst,
-                            dst_coeff: usize,
-                            pt: &P,
-                            pt_coeff: usize,
-                            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                        ) -> $crate::CKKSResult<()>
-                        where
-                            Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + $crate::SetCKKSInfos,
-                            P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $d ring>
-                                + $crate::CKKSCtBounds
-                                + ::poulpy_core::layouts::IntPolyInfos,
-                        {
-                            $crate::reference::$verb::$Reference::<$d be, $d ring>::[<ckks_ $verb _pt_const_assign_reference>](
-                                module, dst, dst_coeff, pt, pt_coeff, scratch,
-                            )
-                        }
-
                     }
                 };
             }

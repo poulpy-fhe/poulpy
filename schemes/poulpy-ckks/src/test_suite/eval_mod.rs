@@ -143,7 +143,7 @@ fn run_eval_mod_case<BE, F, E>(
     let mut lit = lit;
     lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
     let compile_bytes = CKKSEncodingHostOps::<BE, F>::ckks_encoding_host_tmp_bytes(module, params.n / 2);
-    let params_be = with_scratch::<BE, _>(compile_bytes, |s| {
+    let mut params_be = with_scratch::<BE, _>(compile_bytes, |s| {
         ckks_eval_mod_compile::<BE, F, Standard>(params.base2k.into(), lit, module, s)
     })
     .expect("ckks_eval_mod_compile");
@@ -254,6 +254,27 @@ fn run_eval_mod_case<BE, F, E>(
             "{label}: {case}: a refused EvalMod wrote an operand"
         );
     }
+    // A real EvalMod short of a range-extension constant is refused on an empty arena.
+    if let Some(last) = params_be.range_extension_consts.as_mut().and_then(Vec::pop) {
+        let steps = params_be.plan.f_mod_log_interval_reduction;
+        let mut input = fixture_ciphertext(module, &test_params.prec(), 74);
+        let before = (snapshot::<BE, _, Standard>(&res), snapshot::<BE, _, Standard>(&input));
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut input, &params_be, &tsk, s)).unwrap_err();
+        let want = CKKSCompositionError::InvalidOperand {
+            op: "ckks_eval_mod",
+            reason: format!(
+                "the range extension takes one constant per step, got {} for {steps} steps",
+                steps - 1
+            ),
+        };
+        assert_ckks_error(&format!("{label}: a short range extension"), &err, want);
+        assert_eq!(
+            (snapshot::<BE, _, Standard>(&res), snapshot::<BE, _, Standard>(&input)),
+            before,
+            "{label}: a short range extension: a refused EvalMod wrote an operand"
+        );
+        params_be.range_extension_consts.as_mut().expect("popped above").push(last);
+    }
     // A tensor key of one digit, narrower than the width EvalMod relinearizes at, is refused before `ct` or `res` is
     // written.
     let narrow_tsk = gen_tsk(
@@ -280,7 +301,7 @@ fn run_eval_mod_case<BE, F, E>(
     assert!(
         matches!(
             err.composition(),
-            Some(CKKSCompositionError::MissingRelinearizationKey { op: "ckks_eval_mod", .. })
+            Some(CKKSCompositionError::RelinearizationKeyTooNarrow { op: "ckks_eval_mod", .. })
         ),
         "{label}: a narrow tensor key: {err}"
     );
@@ -422,6 +443,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", lit, 18.0);
 }
@@ -451,6 +473,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", lit, 18.0);
 }
@@ -480,6 +503,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
 }
@@ -509,6 +533,7 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", lit, 18.0);
 }
@@ -535,6 +560,7 @@ where
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
+        packed: false,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", lit, 18.0);
 }
@@ -564,6 +590,7 @@ pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
         f_mod_log_delta: 60,
+        packed: false,
     };
     assert!(lit.folds_even_base());
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);

@@ -13,8 +13,9 @@ use crate::{
     api::CKKSRoundOps,
     checked_log_budget_sub, ckks_offset_unary,
     layouts::validation::ensure_scratch,
-    reference::mul::{is_replicated, take_wide, with_shaped_bytes},
+    reference::mul::{is_replicated, with_shaped_bytes},
     shaping::product_depth,
+    shaping::take_wide,
 };
 
 pub trait CKKSRotateReference<BE: Backend, Rg: Ring = Standard> {

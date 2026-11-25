@@ -238,13 +238,8 @@ where
 }
 
 /// Encodes and decodes planar slots through the two slot-composition OEP
-/// methods, for every slot count up to the module's capacity whose degree
-/// reaches `floor`.
-fn slot_codec<BE, F, Rg: Ring>(
-    module: &Module<BE>,
-    params: CKKSTestParams,
-    floor: usize,
-) -> Vec<(CKKSPlaintextOwned<BE, Rg>, Vec<F>)>
+/// methods, for every slot count up to the module's capacity.
+fn slot_codec<BE, F, Rg: Ring>(module: &Module<BE>, params: CKKSTestParams) -> Vec<(CKKSPlaintextOwned<BE, Rg>, Vec<F>)>
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F, Rg>,
     F: CKKSEncodingScalar,
@@ -267,7 +262,6 @@ where
     let max_slots = module.ckks_max_slots::<Rg>();
     (0..=max_slots.ilog2())
         .map(|log| 2 << log)
-        .filter(|&len| slot_coeff_count::<BE, Rg>(module, len) >= floor)
         .map(|len| {
             let layout = CKKSLayout {
                 glwe_layout: GLWELayout {
@@ -320,8 +314,7 @@ where
     diagonal_within_query::<BT, F, Rg>(module_test, params);
 }
 
-/// A map of period 1 encodes within [`ckks_linear_transformation_encode_tmp_bytes`] exactly, on a plaintext at the
-/// backend's minimum degree whose slots repeat the one value.
+/// A map of period 1 encodes within [`ckks_linear_transformation_encode_tmp_bytes`] exactly, on a plaintext of one slot.
 fn diagonal_within_query<BE, F, Rg: Ring>(module: &Module<BE>, params: CKKSTestParams)
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F, Rg>,
@@ -344,7 +337,7 @@ where
         )
     })
     .unwrap();
-    assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), BE::MIN_DEGREE);
+    assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), module.n() / slots);
 }
 
 /// Pairs the two slot-composition OEP methods exactly, for every slot count up
@@ -358,10 +351,9 @@ where
     Module<BR>: GLWEFill<BR, Rg>,
     Module<BT>: GLWEFill<BT, Rg>,
 {
-    // Both sides encode the slot counts whose degree both backends allocate.
-    let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE);
-    let reference = slot_codec::<BR, F, Rg>(module_ref, params, floor);
-    let tested = slot_codec::<BT, F, Rg>(module_test, params, floor);
+    // Every slot count, below the backends' floors too.
+    let reference = slot_codec::<BR, F, Rg>(module_ref, params);
+    let tested = slot_codec::<BT, F, Rg>(module_test, params);
     assert_eq!(reference.len(), tested.len());
     for ((pt_r, slots_r), (pt_t, slots_t)) in reference.iter().zip(&tested) {
         assert!(

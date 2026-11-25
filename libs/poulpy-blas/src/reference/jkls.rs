@@ -38,7 +38,7 @@ pub trait BlasJklsReference<BE: Backend, Rg: Ring = Standard> {
     }
 
     /// The JKLS kernel: `res = sum_t lhs[t] rhs[t]` by poulpy-ckks's `ckks_dot_product_prepared`, which is
-    /// `ckks_dot_product_ct` of the terms the pairs were prepared from, bit for bit, with no operand transformed. On
+    /// `ckks_dot_product` of the terms the pairs were prepared from, bit for bit, with no operand transformed. On
     /// pairs prepared from terms that share one layout per side, it relinearizes once, with the tensor key at
     /// `max(lhs.k, rhs.k)`. On rank 1, with one `base2k` across `res`, the terms and the key, and an offset of at least
     /// `base2k` in poulpy-ckks's ct x ct rule, that is poulpy-core's `glwe_mul_prepared_relinearize_sum`: the pairs'
@@ -105,9 +105,9 @@ pub trait BlasJklsReference<BE: Backend, Rg: Ring = Standard> {
     /// One unit of a product by public matrices under `JklsStored` or `JklsGalois`, a source at a time: for each source
     /// in order, `first` by the map hook into one block, its masks by the map hook into `masks.len()` blocks and the
     /// copy of the first into a term, each term prepared into one of `masks.len() + 1` operands by
-    /// `ckks_left_operand_prepare`, then, for each block of `res`, poulpy-ckks's `ckks_dot_product_prepared_pt_vec_dft` of the
-    /// first source's terms into the block's accumulator, carved from scratch, and `ckks_dot_product_prepared_pt_vec_dft_add`
-    /// of the others'; each block of `res` is then finished by `ckks_dot_product_prepared_pt_vec_from_dft`. The heap holds
+    /// `ckks_left_operand_prepare`, then, for each block of `res`, poulpy-ckks's `ckks_dot_product_prepared_pt_dft` of the
+    /// first source's terms into the block's accumulator, carved from scratch, and `ckks_dot_product_prepared_pt_dft_add`
+    /// of the others'; each block of `res` is then finished by `ckks_dot_product_prepared_pt_from_dft`. The heap holds
     /// one source's blocks and prepared terms, allocated once and refilled.
     ///
     /// # Panics
@@ -170,9 +170,9 @@ impl<BE: Backend, Rg: Ring> BlasJklsReference<BE, Rg> for Module<BE> {
             .max(BE::blas_map_blocks_tmp_bytes(self, 1, &term, &staged, masks, keys))
             .max(self.ckks_copy_tmp_bytes(&term, &staged))
             .max(self.ckks_left_operand_prepare_tmp_bytes(&term))
-            .max(self.ckks_dot_product_prepared_pt_vec_dft_tmp_bytes(res, &term, plaintext))
-            .max(self.ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes(res, &term, plaintext))
-            .max(self.ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes(res, &term, plaintext));
+            .max(self.ckks_dot_product_prepared_pt_dft_tmp_bytes(res, &term, plaintext))
+            .max(self.ckks_dot_product_prepared_pt_dft_add_tmp_bytes(res, &term, plaintext))
+            .max(self.ckks_dot_product_prepared_pt_from_dft_tmp_bytes(res, &term, plaintext));
         acc.checked_mul(outputs)
             .and_then(|accs| accs.checked_add(step))
             .expect("blas_jkls_pt_unit: scratch bytes overflow usize")
@@ -252,15 +252,15 @@ impl<BE: Backend, Rg: Ring> BlasJklsReference<BE, Rg> for Module<BE> {
                 pts.extend((0..per).map(|k| &block_pts[k % block_pts.len()]));
                 let mut acc = acc.to_backend_mut();
                 if l == 0 {
-                    self.ckks_dot_product_prepared_pt_vec_dft(&mut acc, &**block, &terms, &pts, galois, &mut rest)?;
+                    self.ckks_dot_product_prepared_pt_dft(&mut acc, &**block, &terms, &pts, galois, &mut rest)?;
                 } else {
-                    self.ckks_dot_product_prepared_pt_vec_dft_add(&mut acc, &**block, &terms, &pts, galois, &mut rest)?;
+                    self.ckks_dot_product_prepared_pt_dft_add(&mut acc, &**block, &terms, &pts, galois, &mut rest)?;
                 }
             }
         }
         for (o, (block, acc)) in res.iter_mut().zip(&mut accs).enumerate() {
             let pt = &plaintexts[o * inner][0];
-            self.ckks_dot_product_prepared_pt_vec_from_dft(&mut **block, &mut acc.to_backend_mut(), &lefts[0], pt, &mut rest)?;
+            self.ckks_dot_product_prepared_pt_from_dft(&mut **block, &mut acc.to_backend_mut(), &lefts[0], pt, &mut rest)?;
         }
         Ok(())
     }

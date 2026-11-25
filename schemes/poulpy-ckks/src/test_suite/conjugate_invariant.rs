@@ -4,7 +4,8 @@ use poulpy_hal::layouts::{Backend, ZnxView};
 use std::collections::HashMap;
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, SetCKKSInfos, SlotLayout,
+    SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos,
@@ -16,11 +17,15 @@ use crate::{
         eval_mod::{EvalModPlan, EvalModType, ckks_eval_mod_compile},
     },
     polynomial::SplitStrategy,
+    shaping::product_depth,
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk, GLWECITrace,
     api::{GLWECIKeyPreparedFactory, GLWESecretCIEmbed, GLWESecretPreparedFactory},
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretAlloc, LWEInfos},
+    layouts::{
+        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
+        GLWESecretAlloc, LWEInfos,
+    },
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
@@ -152,15 +157,15 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_output!(&copied, &re1);
 
     let mut add_plaintext = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(add_plaintext.max_size()), |s| {
-        module.ckks_add_pt_vec_into(&mut add_plaintext, &ct1, &pt2, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(add_plaintext.max_size()), |s| {
+        module.ckks_add_into(&mut add_plaintext, &ct1, &pt2, s)
     })
     .unwrap();
     assert_output!(&add_plaintext, &want_sum);
 
     let mut multiply_plaintext = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&multiply_plaintext, &ct1, &pt2), |s| {
-        module.ckks_mul_pt_vec_into(&mut multiply_plaintext, &ct1, &pt2, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&multiply_plaintext, &ct1, &pt2), |s| {
+        module.ckks_mul_pt_into(&mut multiply_plaintext, &ct1, &pt2, s)
     })
     .unwrap();
     let want_product = re1.iter().zip(&re2).map(|(a, b)| a * b).collect::<Vec<_>>();
@@ -274,8 +279,8 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let want2 = (0..slots).map(|i| re2[i % pt_slots]).collect::<Vec<_>>();
     assert_output!(&ct2, &want2);
     let mut mixed = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&mixed, &ct1, &pt), |s| {
-        module.ckks_mul_pt_vec_into(&mut mixed, &ct1, &pt, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&mixed, &ct1, &pt), |s| {
+        module.ckks_mul_pt_into(&mut mixed, &ct1, &pt, s)
     })
     .unwrap();
     let mixed_want = (0..slots).map(|i| re1[i] * want2[i]).collect::<Vec<_>>();
@@ -636,9 +641,9 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
-            fn ckks_ci_replicated_bootstrap() -> anyhow::Result<()> {
+            fn ckks_ci_bootstrap_replicated() -> anyhow::Result<()> {
                 let params = $params;
-                $crate::test_suite::replicated::test_replicated_ci_bootstrap::<$backend>(
+                $crate::test_suite::replicated::test_ckks_bootstrap_replicated_ci::<$backend>(
                     params,
                     &Module::<$backend>::new((2 * params.n) as u64),
                 )
@@ -702,9 +707,8 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_polynomials_are_shaped);
             run_replicated!(test_replicated_polynomial_fallback_is_shaped);
             run_replicated!(test_replicated_eval_mod_is_shaped);
-            run_replicated!(test_replicated_conversions_round_trip);
-            run_replicated!(test_replicated_conversions_round_trip_factored);
-            run_replicated!(test_replicated_transforms_apply_matrices);
+            run_replicated!(test_ckks_to_and_from_replicated);
+            run_replicated!(test_ckks_to_and_from_replicated_apply_matrices);
             #[test]
             fn ckks_ci_round_error_is_shaped() {
                 let params = $params;
@@ -747,6 +751,7 @@ where
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(60, params.base2k),
         f_mod_log_delta: 60,
+        packed: false,
     };
     let input_log_delta = 40;
     let dsize = 2;
@@ -1042,22 +1047,29 @@ where
             "{label}: {err}"
         );
     };
-    let embed_refused =
-        |label: &str, res: &CKKSLayout, src: &crate::layouts::CKKSCiphertextOwned<BE, ConjugateInvariant>, bytes: usize| {
-            let mut res = fixture_ciphertext(&standard, res, 61);
-            let before = snapshot::<BE, _, Standard>(&res);
-            let err = with_scratch::<BE, _>(bytes, |s| standard.ckks_ci_embed(&mut res, src, &embed_key, s)).unwrap_err();
-            assert_eq!(
-                snapshot::<BE, _, Standard>(&res),
-                before,
-                "{label}: the refusal wrote the output"
-            );
-            err
-        };
-    let trace_refused = |label: &str, res: &CKKSLayout, src: &crate::layouts::CKKSCiphertextOwned<BE>, bytes: usize| {
+    let embed_refused = |label: &str,
+                         res: &CKKSLayout,
+                         src: &crate::layouts::CKKSCiphertextOwned<BE, ConjugateInvariant>,
+                         key: &GLWECIEmbedKeyPrepared<BE::OwnedBuf, BE>,
+                         bytes: usize| {
+        let mut res = fixture_ciphertext(&standard, res, 61);
+        let before = snapshot::<BE, _, Standard>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| standard.ckks_ci_embed(&mut res, src, key, s)).unwrap_err();
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&res),
+            before,
+            "{label}: the refusal wrote the output"
+        );
+        err
+    };
+    let trace_refused = |label: &str,
+                         res: &CKKSLayout,
+                         src: &crate::layouts::CKKSCiphertextOwned<BE>,
+                         key: &GLWECITraceKeyPrepared<BE::OwnedBuf, BE>,
+                         bytes: usize| {
         let mut res = fixture_ciphertext(&ci, res, 62);
         let before = snapshot::<BE, _, ConjugateInvariant>(&res);
-        let err = with_scratch::<BE, _>(bytes, |s| standard.ckks_ci_trace(&mut res, src, &trace_key, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(bytes, |s| standard.ckks_ci_trace(&mut res, src, key, s)).unwrap_err();
         assert_eq!(
             snapshot::<BE, _, ConjugateInvariant>(&res),
             before,
@@ -1066,60 +1078,147 @@ where
         err
     };
     let (k, base2k) = (params.k, params.base2k);
-    let err = embed_refused("conjugate-invariant degree", &ci_layout(k, base2k), &ct, 0);
+    let err = embed_refused("conjugate-invariant degree", &ci_layout(k, base2k), &ct, &embed_key, 0);
     invalid("conjugate-invariant degree", &err, "ckks_ci_embed");
-    let err = embed_refused("narrow storage", &standard_layout(k - base2k, base2k), &ct, 0);
+    let err = embed_refused("narrow storage", &standard_layout(k - base2k, base2k), &ct, &embed_key, 0);
     invalid("narrow storage", &err, "ckks_ci_embed");
-    let err = embed_refused("other radix", &standard_layout(k + base2k, base2k - 1), &ct, 0);
+    let err = embed_refused("other radix", &standard_layout(k + base2k, base2k - 1), &ct, &embed_key, 0);
     invalid("other radix", &err, "ckks_ci_embed");
     let past_key = embed_key.gglwe_layout().max_input_k().as_usize() + 1;
     let wide = fixture_ciphertext(&ci, &ci_layout(past_key, base2k), 63);
-    let err = embed_refused("past the key", &standard_layout(past_key, base2k), &wide, 0);
+    let err = embed_refused("past the key", &standard_layout(past_key, base2k), &wide, &embed_key, 0);
     invalid("past the key", &err, "ckks_ci_embed");
-    // A replicated source switches at its shaping depth: a key short of it, or an arena below the query of a
-    // replicated source, is refused before any write.
+    // A replicated source switches at its shaping depth: the suite's keys fall short of it, and keys covering it reach
+    // the arena check of the replicated query.
     let replicated = crate::SlotLayout::Replicated(crate::shaping::ShapingUnit::U16_20.layout(1).unwrap());
     let mut replicated_ct = ct.clone();
     crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_ct, replicated);
-    let lambda = crate::shaping::product_depth(replicated, replicated_ct.log_delta()).unwrap();
-    let key_covers = |key_k: usize, k: usize| key_k >= k + lambda;
-    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &replicated_ct, &embed_key);
-    let err = embed_refused("replicated", &standard_layout(k, base2k), &replicated_ct, bytes - 1);
-    if key_covers(
-        embed_key.gglwe_layout().max_input_k().as_usize(),
-        replicated_ct.k().as_usize(),
-    ) {
-        assert_ckks_internal("replicated", &err, "ckks_ci_embed: scratch below its query");
-    } else {
-        invalid("replicated", &err, "ckks_ci_embed");
+    let depth = product_depth(replicated, replicated_ct.log_delta()).unwrap();
+    let wide_k = replicated_ct.k().as_usize() + depth;
+    for key_k in [embed_key.gglwe_layout().max_input_k(), trace_key.gglwe_layout().max_input_k()] {
+        assert!(key_k.as_usize() < wide_k, "a suite key covers the shaping depth");
+    }
+    let wide_layout = standard_params.ksk_layout(wide_k);
+    let keygen_bytes = standard
+        .glwe_ci_key_encrypt_sk_tmp_bytes(&wide_layout)
+        .max(standard.glwe_ci_key_prepare_tmp_bytes(&wide_layout));
+    let (wide_embed_key, wide_trace_key) = with_scratch::<BE, _>(keygen_bytes, |s| {
+        gen_ci_keys(&standard_params, &standard, &ci_sk_raw, &standard_sk_raw, wide_k, s)
+    });
+    let short_key = |name: &str, op: &'static str| CKKSCompositionError::InvalidOperand {
+        op,
+        reason: format!("the input is wider than the {name} key's max_input_k"),
+    };
+    let err = embed_refused(
+        "replicated, short key",
+        &standard_layout(k, base2k),
+        &replicated_ct,
+        &embed_key,
+        0,
+    );
+    assert_ckks_error("replicated, short key", &err, short_key("embed", "ckks_ci_embed"));
+    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &replicated_ct, &wide_embed_key);
+    let err = embed_refused(
+        "replicated, short arena",
+        &standard_layout(k, base2k),
+        &replicated_ct,
+        &wide_embed_key,
+        bytes - 1,
+    );
+    assert_ckks_internal("replicated, short arena", &err, "ckks_ci_embed: scratch below its query");
+    // The key check is exact: a source at the key's `max_input_k` less its shaping depth passes it, one bit wider not.
+    let edge = wide_embed_key.gglwe_layout().max_input_k().as_usize() - depth;
+    for (src_k, past) in [(edge, false), (edge + 1, true)] {
+        let mut src = fixture_ciphertext(&ci, &ci_layout(src_k, base2k), 67);
+        crate::SetGLWEPlaintextInfos::set_slot_layout(&mut src, replicated);
+        let err = embed_refused(
+            "replicated, at the key",
+            &standard_layout(src_k, base2k),
+            &src,
+            &wide_embed_key,
+            0,
+        );
+        match past {
+            true => assert_ckks_error("replicated, past the key", &err, short_key("embed", "ckks_ci_embed")),
+            false => assert_ckks_internal("replicated, at the key", &err, "ckks_ci_embed: scratch below its query"),
+        }
     }
     let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &ct, &embed_key);
-    let err = embed_refused("short arena", &standard_layout(k, base2k), &ct, bytes - 1);
+    let err = embed_refused("short arena", &standard_layout(k, base2k), &ct, &embed_key, bytes - 1);
     assert_ckks_internal("short arena", &err, "ckks_ci_embed: scratch below its query");
 
     let ci_degree = fixture_ciphertext(&standard, &ci_layout(k, base2k), 66);
-    let err = trace_refused("conjugate-invariant source degree", &ci_layout(k - 1, base2k), &ci_degree, 0);
+    let err = trace_refused(
+        "conjugate-invariant source degree",
+        &ci_layout(k - 1, base2k),
+        &ci_degree,
+        &trace_key,
+        0,
+    );
     invalid("conjugate-invariant source degree", &err, "ckks_ci_trace");
-    let err = trace_refused("narrow storage", &ci_layout(k - 1 - base2k, base2k), &extended, 0);
+    let err = trace_refused("narrow storage", &ci_layout(k - 1 - base2k, base2k), &extended, &trace_key, 0);
     invalid("narrow storage", &err, "ckks_ci_trace");
     let past_key = trace_key.gglwe_layout().max_input_k().as_usize() + 1;
     let wide = fixture_ciphertext(&standard, &standard_layout(past_key, base2k), 64);
-    let err = trace_refused("past the key", &ci_layout(past_key, base2k), &wide, 0);
+    let err = trace_refused("past the key", &ci_layout(past_key, base2k), &wide, &trace_key, 0);
     invalid("past the key", &err, "ckks_ci_trace");
     let mut replicated_extended = extended.clone();
     crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_extended, replicated);
-    let bytes = standard.ckks_ci_trace_tmp_bytes(&back, &replicated_extended, &trace_key);
-    let err = trace_refused("replicated", &ci_layout(k - 1, base2k), &replicated_extended, bytes - 1);
-    if key_covers(
-        trace_key.gglwe_layout().max_input_k().as_usize(),
-        replicated_extended.k().as_usize(),
-    ) {
-        assert_ckks_internal("replicated", &err, "ckks_ci_trace: scratch below its query");
-    } else {
-        invalid("replicated", &err, "ckks_ci_trace");
+    let err = trace_refused(
+        "replicated, short key",
+        &ci_layout(k - 1, base2k),
+        &replicated_extended,
+        &trace_key,
+        0,
+    );
+    assert_ckks_error("replicated, short key", &err, short_key("trace", "ckks_ci_trace"));
+    let bytes = standard.ckks_ci_trace_tmp_bytes(&back, &replicated_extended, &wide_trace_key);
+    let err = trace_refused(
+        "replicated, short arena",
+        &ci_layout(k - 1, base2k),
+        &replicated_extended,
+        &wide_trace_key,
+        bytes - 1,
+    );
+    assert_ckks_internal("replicated, short arena", &err, "ckks_ci_trace: scratch below its query");
+    let edge = wide_trace_key.gglwe_layout().max_input_k().as_usize() - depth;
+    for (src_k, past) in [(edge, false), (edge + 1, true)] {
+        let mut src = fixture_ciphertext(&standard, &standard_layout(src_k, base2k), 68);
+        crate::SetGLWEPlaintextInfos::set_slot_layout(&mut src, replicated);
+        let err = trace_refused(
+            "replicated, at the key",
+            &ci_layout(src_k - 1, base2k),
+            &src,
+            &wide_trace_key,
+            0,
+        );
+        match past {
+            true => assert_ckks_error("replicated, past the key", &err, short_key("trace", "ckks_ci_trace")),
+            false => assert_ckks_internal("replicated, at the key", &err, "ckks_ci_trace: scratch below its query"),
+        }
     }
+    // `U = 3 + 2Y^2` has no conjugate-invariant shift, so the trace cannot round into the conjugate-invariant ring.
+    let no_shift = SlotLayout::Replicated(ReplicatedLayout::new(1, 1, &[3, 0, 2, 0]).unwrap());
+    let no_shift_k = wide_trace_key.gglwe_layout().max_input_k().as_usize() - product_depth(no_shift, ct.log_delta()).unwrap();
+    let mut src = fixture_ciphertext(&standard, &standard_layout(no_shift_k, base2k), 69);
+    crate::SetGLWEPlaintextInfos::set_slot_layout(&mut src, no_shift);
+    let err = trace_refused(
+        "replicated, no conjugate-invariant shift",
+        &ci_layout(no_shift_k - 1, base2k),
+        &src,
+        &wide_trace_key,
+        0,
+    );
+    assert_ckks_error(
+        "replicated, no conjugate-invariant shift",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_ci_trace",
+            reason: "no power of Y shifts the shaping polynomial onto a conjugate-invariant one".into(),
+        },
+    );
     let spent = fixture_ciphertext(&standard, &standard_layout(ct.log_delta(), base2k), 65);
-    let err = trace_refused("no budget", &ci_layout(k - 1, base2k), &spent, 0);
+    let err = trace_refused("no budget", &ci_layout(k - 1, base2k), &spent, &trace_key, 0);
     assert!(
         matches!(
             err.composition(),
@@ -1128,7 +1227,7 @@ where
         "no budget: {err}"
     );
     let bytes = standard.ckks_ci_trace_tmp_bytes(&back, &extended, &trace_key);
-    let err = trace_refused("short arena", &ci_layout(k - 1, base2k), &extended, bytes - 1);
+    let err = trace_refused("short arena", &ci_layout(k - 1, base2k), &extended, &trace_key, bytes - 1);
     assert_ckks_internal("short arena", &err, "ckks_ci_trace: scratch below its query");
 }
 

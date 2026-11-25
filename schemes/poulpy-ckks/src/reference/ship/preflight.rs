@@ -64,7 +64,7 @@ where
         .context("SHIP encapsulation scratch size overflows usize")?;
 
     let mut tree = module
-        .ckks_add_pt_vec_tmp_bytes(raised.size())
+        .ckks_add_tmp_bytes(raised.size())
         .max(BE::ckks_ship_masking_accumulate_tmp_bytes(module, plan, base2k));
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {

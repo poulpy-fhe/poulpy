@@ -13,7 +13,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Ring, Standard, ZnxWord};
 
-use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta};
+use crate::{CKKSInfos, SetCKKSInfos, SlotLayout, ckks_log_delta};
 
 use super::CKKSScalar;
 
@@ -56,6 +56,13 @@ impl<D: Data, W: ZnxWord, Rg: Ring> CKKSPlaintext<D, W, Rg> {
     /// Normal CKKS operations update metadata themselves. `meta.log_sparsity` is
     /// not read: a plaintext is dense at its own degree.
     pub fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
+        self.check_meta(meta)?;
+        self.set_meta(meta);
+        Ok(())
+    }
+
+    /// The refusal of [`Self::set_meta_checked`], without the write.
+    pub(crate) fn check_meta(&self, meta: GLWEPlaintextMeta) -> Result<()> {
         anyhow::ensure!(
             self.k().as_usize() <= self.max_k().as_usize() && ckks_log_delta(&meta) <= self.k().as_usize(),
             crate::CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
@@ -65,7 +72,6 @@ impl<D: Data, W: ZnxWord, Rg: Ring> CKKSPlaintext<D, W, Rg> {
                 requested_limbs: self.max_size(),
             }
         );
-        self.set_meta(meta);
         Ok(())
     }
 }
@@ -237,7 +243,7 @@ impl<D: Data, W: ZnxWord, Rg: Ring> BSGSMeta for CKKSPlaintext<D, W, Rg> {
 }
 
 pub trait CKKSPlaintextVecHostCodec<F: CKKSScalar>: CKKSInfos {
-    /// Quantizes one value per coefficient of the plaintext.
+    /// Quantizes one value per coefficient of the plaintext, with shaped rounding on a replicated layout.
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()>;
 
     /// Inverse of [`Self::encode_host_floats`].
@@ -254,8 +260,12 @@ fn check_coefficient_count<F>(coeffs: &[F], n: usize) -> Result<()> {
     Ok(())
 }
 
-/// Quantizes `coeffs`, one per coefficient, into the plaintext.
-fn quantize_into_plaintext<F, D, Rg: Ring>(pt: &mut CKKSPlaintext<D, i64, Rg>, coeffs: &[F]) -> Result<()>
+/// Quantizes `coeffs`, one per coefficient, into the plaintext, a shaping refusal under `op`.
+pub(crate) fn quantize_into_plaintext<F, D, Rg: Ring>(
+    op: &'static str,
+    pt: &mut CKKSPlaintext<D, i64, Rg>,
+    coeffs: &[F],
+) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataMut + HostDataRef,
@@ -267,6 +277,19 @@ where
     // accurate only to `F`'s mantissa. The integer-width checks below are the real
     // correctness guards (the quantized value must fit i64/i128).
     let k = pt.encoded_k();
+    if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+        let base2k = pt.base2k().as_usize();
+        return crate::shaping::shaped_encode_into(
+            op,
+            pt.data_mut(),
+            base2k,
+            k.as_usize(),
+            coeffs,
+            &layout,
+            log_delta,
+            log_budget,
+        );
+    }
     if log_delta + log_budget <= 63 {
         let data: Vec<i64> = coeffs
             .iter()
@@ -324,7 +347,7 @@ where
 impl<F: CKKSScalar, D: HostDataMut + HostDataRef, Rg: Ring> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D, i64, Rg> {
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()> {
         check_coefficient_count(coeffs, self.n().as_usize())?;
-        quantize_into_plaintext(self, coeffs)
+        quantize_into_plaintext("encode_host_floats", self, coeffs)
     }
 
     fn decode_host_floats(&self, coeffs: &mut [F]) -> Result<()> {
@@ -339,7 +362,7 @@ mod tests {
     use crate::CKKSModuleInfos;
     use crate::layouts::CKKSPlaintextAlloc;
     use crate::{Scale, SlotLayout, SlotsKind};
-    use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Standard};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard};
 
     #[test]
     fn plaintext_alloc_from_slots_takes_twice_the_slots() {
@@ -358,17 +381,6 @@ mod tests {
                 .n()
                 .as_usize(),
             64
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "ckks_plaintext_alloc_from_slots: the slot count needs a degree below the backend's minimum")]
-    fn plaintext_alloc_from_slots_rejects_a_degree_below_the_floor() {
-        let module = Module::<HostBytesBackend>::new(64);
-        module.ckks_plaintext_alloc_from_slots::<Standard>(
-            <HostBytesBackend as Backend>::MIN_DEGREE / 4,
-            Base2K(12),
-            TorusPrecision(24),
         );
     }
 

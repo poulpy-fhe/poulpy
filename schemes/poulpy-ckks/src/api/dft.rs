@@ -51,7 +51,9 @@ pub trait CKKSDFTOps<BE: Backend> {
         Src: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
+    /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper). The chain of a plan on a
+    /// [replicated layout](crate::layouts::DFTPlan::with_slot_layout) starts with its normalized trace, a `Decode`
+    /// reading `ct` in that layout and leaving it on the full layout.
     fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
@@ -68,8 +70,9 @@ pub trait CKKSDFTOps<BE: Backend> {
     /// `&DFTMatrixPrepared<BE, Encode, Split>`, or a view of one that keeps its plan
     /// ([`MaskedFactors`](crate::layouts::MaskedFactors), [`HeadFactors`](crate::layouts::HeadFactors)) evaluates its
     /// `Split` chain unsplit: the output is half a `Standard` encode, and a later split or the composer doubles it.
-    /// A run of a plan on the [replicated route](crate::layouts::ReplicatedRoute) runs CoeffsToSlots as the route says,
-    /// refusing an input off the full layout and a missing key of its trace before any write.
+    /// A run of a plan on a [replicated layout](crate::layouts::BootstrappingPlan::with_slot_layout) runs CoeffsToSlots
+    /// as the plan says, its chain refusing before any write an input off the full layout, of a degree whose slots do not
+    /// hold the layout, or short of budget, keys or arena.
     fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
@@ -85,9 +88,10 @@ pub trait CKKSDFTOps<BE: Backend> {
     /// `SlotsToCoeffs`, `Standard` format (in place). `dft` labels the output through
     /// [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of a
     /// C2S-first plan uses to end the bootstrap. The [`HeadFactors`](crate::layouts::HeadFactors) of a `Split` matrix
-    /// evaluate its chain unsplit, short of the last factor, on the input the run takes. A run of a plan on the
-    /// [replicated route](crate::layouts::ReplicatedRoute) runs SlotsToCoeffs as the route says, refusing an input off
-    /// the route's layout, scale or input width and a missing key of its trace before any write.
+    /// evaluate its chain unsplit, short of the last factor, on the input the run takes. A run of a plan on a
+    /// [replicated layout](crate::layouts::BootstrappingPlan::with_slot_layout) runs SlotsToCoeffs as the plan says, on
+    /// its input lifted by [`CKKSDFTFactors::input_lift`], its chain refusing an input off the plan's layout, of a
+    /// degree whose slots do not hold the layout, short of budget, keys, storage for the lift or arena, before any write.
     fn ckks_slots_to_coeffs_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
@@ -214,8 +218,9 @@ where
                 .first_diagonal_plaintext()
                 .expect("ckks_dft_matrix_prepared_bytes_of_from_infos: every factor has a diagonal");
             let diagonals: usize = factor.index().index.iter().map(Vec::len).sum();
+            let n = first.n().as_usize().max(BE::MIN_DEGREE);
             diagonals
-                .checked_mul(self.cnv_pvec_right_bytes_of(first.n().as_usize(), 1, first.size(), PrepareHint::Reuse))
+                .checked_mul(self.cnv_pvec_right_bytes_of(n, 1, first.size(), PrepareHint::Reuse))
                 .and_then(|factor_bytes| bytes.checked_add(factor_bytes))
                 .expect("ckks_dft_matrix_prepared_bytes_of_from_infos: the byte count overflows usize")
         })

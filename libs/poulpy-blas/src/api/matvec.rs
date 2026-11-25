@@ -65,7 +65,7 @@ pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// - The implementation runs [`validate_blas_matvec_pt`](crate::layouts::validate_blas_matvec_pt) before any
     ///   write, so on its errors `res` and the operands are untouched: `InvalidOperand` for a vector, shape, layout,
-    ///   operand or period it rejects; then, key by key, `MissingAutomorphismKey` for a key `keys` lacks, the baby steps
+    ///   operand or period it rejects; then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` for a key `keys` lacks, the baby steps
     ///   at `a.k` and the giant steps at the width of `res`'s result, or `InvalidOperand` for a key of another rank than
     ///   the ciphertexts'.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
@@ -117,7 +117,7 @@ pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// - The implementation runs [`validate_blas_grid_to_vector`](crate::layouts::validate_blas_grid_to_vector) before
     ///   any write, so on its errors `res` and the operands are untouched: `InvalidOperand` for a grid, line, vector,
-    ///   shape, layout, operand or period it rejects; then, key by key, `MissingAutomorphismKey` or `InvalidOperand`
+    ///   shape, layout, operand or period it rejects; then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` or `InvalidOperand`
     ///   for a key of another rank.
     /// - poulpy-ckks's budget errors as [`Self::blas_matvec_pt`]'s, before any write.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
@@ -173,7 +173,7 @@ pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// - The implementation runs [`validate_blas_vector_to_grid`](crate::layouts::validate_blas_vector_to_grid) before
     ///   any write, so on its errors `res` and the operands are untouched: `InvalidOperand` for a vector, grid, shape,
-    ///   operand, line, layout or period it rejects; then, key by key, `MissingAutomorphismKey` or `InvalidOperand`
+    ///   operand, line, layout or period it rejects; then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` or `InvalidOperand`
     ///   for a key of another rank.
     /// - poulpy-ckks's budget errors as [`Self::blas_matvec_pt`]'s, before any write.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
@@ -237,8 +237,8 @@ pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// - The implementation runs [`validate_blas_matvec_diagonal`](crate::layouts::validate_blas_matvec_diagonal) before any write, so on
     ///   its errors `res` and the operands are untouched: `InvalidOperand` for a vector, layout, radix above 62 or matrix
-    ///   it rejects; then `MissingAutomorphismKey` for a rotation key `keys` lacks, the baby steps at `a.k` and the
-    ///   giant steps at the result's width, `MissingRelinearizationKey` for the tensor key `keys` lacks at
+    ///   it rejects; then `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` for a rotation key `keys` lacks, the baby steps at `a.k` and the
+    ///   giant steps at the result's width, `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow` for the tensor key `keys` lacks at
     ///   `max(a.k, m.k)`, or `InvalidOperand` for a key of another rank.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
     ///   `MultiplicationPrecisionUnderflow` when the smaller budget of `a` and a diagonal is below the larger scale, and
@@ -275,7 +275,7 @@ pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     /// with `s` in the mask and every diagonal `t` `m` holds. With `D_t` the diagonals and entry `(b, g)` of the storage
     /// holding `rot(D_(b + g), -g)`, that is `m_(row + g) rot(v, b)` added to entry `(b, g)`: one prepared mask `m_0`,
     /// read through the Galois element of `-(row + g)`, times the baby rotation `rot(v, b)`, by poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt_vec_add`. A mask of several slots writes several rows at once. A resident product reads
+    /// `ckks_dot_product_prepared_pt_add`. A mask of several slots writes several rows at once. A resident product reads
     /// the diagonals once prepared again
     /// ([`BlasDiagonalCiphertextPreparedFactory::blas_diagonal_ciphertext_prepare`](crate::api::BlasDiagonalCiphertextPreparedFactory::blas_diagonal_ciphertext_prepare)),
     /// a streamed one reads them as they are. Its keys are [`append_row_diagonal_galois_elements`](crate::layouts::append_row_diagonal_galois_elements): the rotations of
@@ -299,7 +299,7 @@ pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// - The implementation runs [`validate_blas_append_row_diagonal`](crate::layouts::validate_blas_append_row_diagonal) before any
     ///   write, so on its errors `m` and the operands are untouched: `InvalidOperand` for a vector, layout, matrix or
-    ///   mask it rejects, or an append changing the diagonals' slot kind or sparsity; then `MissingAutomorphismKey` at
+    ///   mask it rejects, or an append changing the diagonals' slot kind or sparsity; then `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` at
     ///   `v.k`, or `InvalidOperand` for a key of another rank.
     /// - poulpy-ckks's errors of the first accumulate come before any write to `m`: `InvalidOperand` for a `v` whose
     ///   product by the mask is not at the diagonals' frame.

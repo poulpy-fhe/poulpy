@@ -28,9 +28,10 @@ use crate::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
         CKKSCiphertextOwned, CKKSEvalModInfos, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
         EncodedLut, EvalRoundPlus, SparseSecretEncapsulation,
-        eval_mod::{EvalModPlan, EvalModType},
+        eval_mod::{EvalMod, EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
+    shaping::ShapingUnit,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -976,6 +977,48 @@ fn run_case<BE, F, E>(
                     reason: "LUTs must have the same message modulus".into(),
                 },
             );
+            let replicated_meta = CoeffsMeta {
+                meta: GLWEPlaintextMeta {
+                    slot_layout: SlotLayout::Replicated(ShapingUnit::U16_40.layout(1).unwrap()),
+                    ..coeffs_meta.meta
+                },
+                ..coeffs_meta
+            };
+            let replicated_luts = vec![
+                EncodedLut::general(
+                    host_module,
+                    &tables[0],
+                    params.base2k.into(),
+                    replicated_meta,
+                    SplitStrategy::MinDepth,
+                )
+                .unwrap(),
+            ];
+            let other_layout = "the constants are encoded for another slot layout than the input's";
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut outputs[..1], &ct, &ctx, &replicated_luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "replicated LUT constants",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_functional_bootstrap",
+                    reason: other_layout.into(),
+                },
+            );
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_lut(&mut outputs[..1], &raised, &run, &replicated_luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "LUT step of replicated constants",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_eval_lut",
+                    reason: other_layout.into(),
+                },
+            );
             let off_circle = OffCirclePlan {
                 ctx: &ctx,
                 plan: EvalModPlan {
@@ -1092,7 +1135,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         &self.plan
     }
 
-    fn eval_mod_standard(&self) -> Option<&crate::layouts::eval_mod::EvalMod<F, CKKSPlaintextOwned<BE>>> {
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
         self.ctx.eval_mod().filter(|_| self.runs_eval_mod)
     }
 
@@ -1112,7 +1155,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         false
     }
 
-    fn message_slots(&self) -> Option<SlotsKind> {
+    fn message(&self) -> Option<GLWEPlaintextMeta> {
         None
     }
 

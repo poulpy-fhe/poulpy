@@ -109,10 +109,10 @@ pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// - The implementation runs [`validate_blas_matmul`](crate::layouts::validate_blas_matmul) before any write, so on
     ///   its errors `res`, its batch record and the factors are untouched: `InvalidOperand` for a grid, shape, layout,
-    ///   context or radix above 62 it rejects, then, key by key, `MissingAutomorphismKey` for a key of the preparations
+    ///   context or radix above 62 it rejects, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` for a key of the preparations
     ///   `keys` lacks, at the widths [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] and
     ///   [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] state, or
-    ///   `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key
+    ///   `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key
     ///   of another rank than the factors' blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write to `res`, and leave it untouched too:
     ///   the terms' `MultiplicationPrecisionUnderflow` when the budget of `a` or `b`, its `k - log_delta`, is below what
@@ -208,10 +208,10 @@ pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     ///   before any write, so on its errors `res`, its batch record and the operands are untouched: `InvalidOperand`
     ///   for an operand without a batch record, a grid, shape, layout or radix above 62 it rejects, or a hot operand at
     ///   another `log_d` than `ctx`'s or under a context encoded for another slot count or radix; then, key by key,
-    ///   `MissingAutomorphismKey` for a key of a hot side's terms `keys` lacks, at the widths
+    ///   `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` for a key of a hot side's terms `keys` lacks, at the widths
     ///   [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] and
     ///   [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] state from that side's `k`, or
-    ///   `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key
+    ///   `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key
     ///   of another rank than the operands'.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too: a hot
     ///   side's `MultiplicationPrecisionUnderflow` when its budget, `k - log_delta`, is below what its terms spend, `2p`,
@@ -260,7 +260,7 @@ pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Under `JklsStored` and `JklsGalois`, JKLS's masks go on the ciphertext: every block of `a` goes through
     /// `b.first()`, sigma, then through `ctx`'s phi^k, `1 <= k < d`, a block row at a time, the row's `K d` terms prepared
-    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt_vec` of those
+    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt` of those
     /// terms by `b`'s prepared plaintexts: `psi^k(tau(B_lj))` stored under `JklsStored`, `tau(B_lj)` read through the
     /// Galois element of the rotation by `k d` under `JklsGalois`. It spends three scales, `2 p_B + p`, for `p` the
     /// context's scale. It adds the `K d` products in the transform domain, and each mask adds one diagonal per giant
@@ -287,7 +287,7 @@ pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Block `(i, j)` of `res` is poulpy-ckks's `ckks_linear_transformation_eval_sum_into` of the `K` terms `(a_il, b_lj)`,
     /// or under `Jkls` `(s_il, b_lj)` for `s_il` the block `a_il` through `b.first()`, or under `JklsStored` and
-    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt_vec` of the row's `K d` masked terms by `b`'s plaintexts,
+    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt` of the row's `K d` masked terms by `b`'s plaintexts,
     /// labelled, as by poulpy-ckks's plaintext product, with the smaller of `a`'s label and the largest label the
     /// `b.count()` distinct matrices allow, for `S` the slots of a block:
     ///
@@ -311,7 +311,7 @@ pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     /// - The implementation runs [`validate_blas_matmul_pt_right`](crate::layouts::validate_blas_matmul_pt_right)
     ///   before any write, so on its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid,
     ///   shape, layout, operand or count it rejects, a context it rejects under `JklsStored` and `JklsGalois`, or more
-    ///   than one public matrix there, then, key by key, `MissingAutomorphismKey` for a key `keys` lacks: under
+    ///   than one public matrix there, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` for a key `keys` lacks: under
     ///   `Diagonal` the baby steps of `b`'s maps at `a.k` and their giant steps at the result's `k`; under `Jkls` the
     ///   first map's baby steps at `a.k` and giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B` and
     ///   giant steps at the result's `k`; under `JklsStored` and `JklsGalois` the first map's baby steps at `a.k` and
@@ -366,7 +366,7 @@ pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     /// Under `JklsStored` and `JklsGalois`, every block of `a` goes through `b.first()`, tau, then through `ctx`'s column
     /// halves of psi^k, `rows_left(k)` and `rows_right(k)`, a block column at a time, the column's `K (2d - 1)` terms
     /// prepared once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt_vec` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
+    /// `ckks_dot_product_prepared_pt` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
     /// through Galois elements. `ctx` must hold those masks: its plan selects one of these paths.
     ///
     /// Under `Diagonal` and `Jkls`, each block of `res` is one linear transformation over its `K = a.rows()` terms,
@@ -498,7 +498,7 @@ pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend, Rg: Ring = Standard>
     /// - The implementation runs
     ///   [`validate_blas_matmul_left_operand_prepare`](crate::layouts::validate_blas_matmul_left_operand_prepare)
     ///   before any write, whatever the hint: `InvalidOperand` for a grid, layout or context it rejects or for `res` of
-    ///   another shape, then, key by key, `MissingAutomorphismKey` for a key `keys` lacks: sigma's baby steps at `a.k`
+    ///   another shape, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` for a key `keys` lacks: sigma's baby steps at `a.k`
     ///   and giant steps at `a.k - p`, each phi^k's baby steps at `a.k - p` and giant steps at `a.k - 2p`; or
     ///   `InvalidOperand` for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error comes from inside a cold preparation: `MultiplicationPrecisionUnderflow` when `a`'s

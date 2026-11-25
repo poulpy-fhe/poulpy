@@ -585,7 +585,9 @@ fn buffers<'a, P: 'a>(maps: impl IntoIterator<Item = &'a LinearTransformation<P>
 }
 
 fn plaintext<BE: Backend<OwnedBuf = AlignedBuf>, Rg: Ring>(pt: &CKKSPlaintextOwned<BE, Rg>) -> &[u8] {
-    pt.data().data()
+    // The allocation pads a buffer below its alignment with bytes no encoding writes.
+    let data = pt.data();
+    &data.data()[..BE::vec_znx_bytes_of(data.n(), data.cols(), data.size())]
 }
 
 fn prepared_diagonal<BE: Backend<OwnedBuf = AlignedBuf>, Rg: Ring>(d: &PreparedDiagonal<AlignedBuf, BE, Rg>) -> &[u8] {
@@ -696,7 +698,7 @@ where
     );
 }
 
-/// Encoding and preparing again into the same allocations overwrites every byte and equals a fresh build, for the
+/// Encoding and preparing again into the same allocations overwrites every byte of each layout and equals a fresh build, for the
 /// context of a plan with and without masks, for public operands of either side and algorithm and for operands of
 /// products of a vector, the operands from other matrices than their first, and, from 16 slots, for a diagonal
 /// ciphertext prepared again after new diagonals; every byte query equals the buffers allocated from its layout.

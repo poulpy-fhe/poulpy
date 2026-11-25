@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     GLWEBSGSOps, GLWEPolynomialEvaluation,
-    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
+    layouts::{BabyStep, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
     oep::GLWEPolynomialEvaluationImpl,
 };
 
@@ -14,14 +14,13 @@ impl<BE: Backend + GLWEPolynomialEvaluationImpl<Rg>, Rg: Ring> GLWEPolynomialEva
         ops: &Ops,
         res: &mut V,
         parity: Parity,
-        coeffs: &P,
+        coeffs: &[P],
         power_basis: &G,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Ops: GLWEBSGSOps<BE, V, P, A, V, Rg>,
         V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg>,
         G: PowerBasisHelper<BE, A, Rg>,
     {
@@ -42,7 +41,6 @@ impl<BE: Backend + GLWEPolynomialEvaluationImpl<Rg>, Rg: Ring> GLWEPolynomialEva
         R: GLWEToBackendMut<BE, Rg>,
         B: BabyStep<BE, Rg, Value = V>,
         V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-        P: GLWEToBackendRef<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg>,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>,

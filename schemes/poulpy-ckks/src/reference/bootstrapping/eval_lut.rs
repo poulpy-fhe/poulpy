@@ -88,8 +88,8 @@ pub trait CKKSEvalLutReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
                     ..res.glwe_layout()
                 })) + module
                     .ckks_square_tmp_bytes(res, res, tsk)
-                    .max(module.ckks_add_pt_const_tmp_bytes(size))
-                    .max(module.ckks_sub_pt_const_tmp_bytes(size)),
+                    .max(module.ckks_add_tmp_bytes(size))
+                    .max(module.ckks_sub_tmp_bytes(size)),
             );
         }
         carved + nested
@@ -141,12 +141,7 @@ pub trait CKKSEvalLutReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
         // Every conjugation of the step (real part, split, LUT symmetrization) switches at a width at most `a.k()`.
         keys.get_automorphism_key(-1, a.k())
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: OP,
-                rotation: 0,
-                k: a.k().into(),
-                source,
-            })?;
+            .map_err(|source| CKKSCompositionError::automorphism_key_lookup(OP, 0, a.k().into(), source))?;
         let a_k = a.k().as_usize();
         for lut in luts {
             check_lut_capacity(OP, a.log_budget(), log_delta, plan.eval_mod_plan(), lut, tensor_key)?;
@@ -167,7 +162,7 @@ pub trait CKKSEvalLutReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         }
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = bootstrap_layouts(&res[0], a).0.glwe_layout;
-        let message_slots = plan.message_slots().unwrap_or(a.slots());
+        let message_slots = plan.message().map_or(a.slots(), |message| message.slots);
         scratch.scope(|scratch| {
             if message_slots.is_real() && plan.real_part_on_real_slots() {
                 let (mut r0, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());

@@ -248,7 +248,7 @@ pub trait BlasMatMulReference<BE: Backend, Rg: Ring = Standard> {
     /// a block row of `a` into such blocks. Under `JklsStored` and `JklsGalois`, in place of the baby steps and the
     /// summed linear transformation, the map hook's query of `ctx`'s masks, phi^k, from those blocks into blocks of the
     /// terms' layout, the copy of one into a block of the terms' layout, the conversion of a term, and poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt_vec` query of a block of `res` by terms of that layout and `b`'s plaintexts. `ctx` is
+    /// `ckks_dot_product_prepared_pt` query of a block of `res` by terms of that layout and `b`'s plaintexts. `ctx` is
     /// read only then.
     fn blas_matmul_pt_right_tmp_bytes_reference<R, A, K>(
         &self,

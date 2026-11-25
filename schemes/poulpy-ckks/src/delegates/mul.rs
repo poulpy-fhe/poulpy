@@ -31,22 +31,13 @@ impl<BE: Backend + CKKSMulImpl<Rg>, Rg: Ring> CKKSMulOps<BE, Rg> for Module<BE> 
         BE::ckks_square_tmp_bytes(self, res, a, tsk)
     }
 
-    fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_mul_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        BE::ckks_mul_pt_vec_tmp_bytes(self, res, a, b)
-    }
-
-    fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos,
-    {
-        BE::ckks_mul_pt_const_tmp_bytes(self, res, a, b)
+        BE::ckks_mul_pt_tmp_bytes(self, res, a, b)
     }
 
     fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -99,51 +90,21 @@ impl<BE: Backend + CKKSMulImpl<Rg>, Rg: Ring> CKKSMulOps<BE, Rg> for Module<BE> 
         BE::ckks_square_assign(self, dst, tsk, scratch)
     }
 
-    fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pt_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_vec_into(self, dst, a, pt, scratch)
+        BE::ckks_mul_pt_into(self, dst, a, pt, scratch)
     }
 
-    fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pt_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_vec_assign(self, dst, pt, scratch)
-    }
-
-    fn ckks_mul_pt_const_into<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
-    {
-        BE::ckks_mul_pt_const_into(self, dst, a, pt, pt_coeff, scratch)
-    }
-
-    fn ckks_mul_pt_const_assign<Dst, P>(
-        &self,
-        dst: &mut Dst,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
-    {
-        BE::ckks_mul_pt_const_assign(self, dst, pt, pt_coeff, scratch)
+        BE::ckks_mul_pt_assign(self, dst, pt, scratch)
     }
 }
 

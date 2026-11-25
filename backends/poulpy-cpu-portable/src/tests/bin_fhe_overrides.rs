@@ -14,7 +14,6 @@ poulpy_core::impl_encryption_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_preparation_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_secret_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_ggsw_rotate_derived_full!(OverrideBackend);
-poulpy_core::impl_glwe_mul_const_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_glwe_mul_plain_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_glwe_add_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_glwe_sub_reference_full!(OverrideBackend, Standard);

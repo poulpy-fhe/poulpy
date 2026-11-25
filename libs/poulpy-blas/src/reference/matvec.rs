@@ -162,7 +162,7 @@ pub trait BlasMatVecReference<BE: Backend, Rg: Ring = Standard> {
     /// Appends row `row` of `m`, `mask` marking the slots it covers: for each baby step `b` the diagonals read, in
     /// ascending order, `rot(v, b)` prepared as a left operand, then every entry `(b, g)` receives `mask` read through the
     /// Galois element of `-(row + g)` times `rot(v, b)`, in storage order, by poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt_vec_add`.
+    /// `ckks_dot_product_prepared_pt_add`.
     fn blas_append_row_diagonal_reference<V, K>(
         &self,
         m: &mut BlasDiagonalCiphertext<BE, Rg>,
@@ -577,7 +577,7 @@ where
     });
     rotated
         .max(left)
-        .max(module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&diagonal, &v, mask))
+        .max(module.ckks_dot_product_prepared_pt_add_tmp_bytes(&diagonal, &v, mask))
 }
 
 /// The body of the row (`axis` [`AppendAxis::Row`]) and column appends at `at`, after their validators: one prepared
@@ -631,7 +631,7 @@ where
                     _ => continue,
                 };
                 let galois = module.ckks_galois_element::<Rg>(shift.rem_euclid(slots));
-                module.ckks_dot_product_prepared_pt_vec_add(&mut d.plaintext, &[&left], &[mask], &[galois], scratch)?;
+                module.ckks_dot_product_prepared_pt_add(&mut d.plaintext, &[&left], &[mask], &[galois], scratch)?;
             }
         }
     }

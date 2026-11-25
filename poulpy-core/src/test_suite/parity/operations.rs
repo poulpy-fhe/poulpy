@@ -17,8 +17,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEFill, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum, GLWEMulXpMinusOne,
-    GLWENegate, GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
+    GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEFill, GLWEMulPlain, GLWEMulPreparedPlainSum, GLWEMulXpMinusOne, GLWENegate,
+    GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
     gadget::cnv_offset_to_limb_offset,
     glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
@@ -982,8 +982,7 @@ pub fn test_glwe_multiplication_parity<BR, BT, Rg: Ring>(
     BR: ParityBackend<Rg>,
     BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEMulConst<BR, Rg>
-        + GLWEMulPlain<BR, Rg>
+    Module<BR>: GLWEMulPlain<BR, Rg>
         + GLWEMulPreparedPlainSum<BR, Rg>
         + GLWEAdd<BR, Rg>
         + CnvPVecAlloc<BR>
@@ -994,8 +993,7 @@ pub fn test_glwe_multiplication_parity<BR, BT, Rg: Ring>(
         + VecZnxDftAlloc<BR>
         + VecZnxIdftNormalize<BR, Rg>
         + VecZnxIdftNormalizeTmpBytes,
-    Module<BT>: GLWEMulConst<BT, Rg>
-        + GLWEMulPlain<BT, Rg>
+    Module<BT>: GLWEMulPlain<BT, Rg>
         + GLWEMulPreparedPlainSum<BT, Rg>
         + CnvPVecAlloc<BT>
         + CnvOps<BT, Rg>
@@ -1023,48 +1021,37 @@ pub fn test_glwe_multiplication_parity<BR, BT, Rg: Ring>(
             module_ref.glwe_fill_from_source(&mut plain_ref, &mut source);
             let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(&infos);
             plain_ref.transfer_into(&mut plain_test);
+            // A constant, which takes the scalar circuit.
+            let const_infos = GLWEPlaintextLayout {
+                n: Degree(1),
+                base2k: infos.base2k,
+                k: infos.k,
+            };
+            let mut const_ref = module_ref.glwe_plaintext_alloc_from_infos(&const_infos);
+            module_ref.glwe_fill_from_source(&mut const_ref, &mut source);
+            let mut const_test = module_test.glwe_plaintext_alloc_from_infos(&const_infos);
+            const_ref.transfer_into(&mut const_test);
             for offset in [0, params.base2k - 1, params.base2k] {
                 for variant in 0..4 {
+                    let (b_ref, b_test) = if variant < 2 {
+                        (&plain_ref, &plain_test)
+                    } else {
+                        (&const_ref, &const_test)
+                    };
                     let mut out_ref = ref_glwe(module_ref, &infos, &mut source);
                     let mut out_test = module_test.glwe_alloc_from_infos(&infos);
                     if variant % 2 == 1 {
                         a_ref.transfer_into(&mut out_ref);
                     }
                     out_ref.transfer_into(&mut out_test);
-                    let mut sr = poisoned_scratch::<BR>(if variant < 2 {
-                        module_ref.glwe_mul_plain_tmp_bytes(&out_ref, &a_ref, &plain_ref)
+                    let mut sr = poisoned_scratch::<BR>(module_ref.glwe_mul_plain_tmp_bytes(&out_ref, &a_ref, b_ref));
+                    let mut st = poisoned_scratch::<BT>(module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, b_test));
+                    if variant % 2 == 0 {
+                        module_ref.glwe_mul_plain(offset, &mut out_ref, &a_ref, b_ref, &mut sr.borrow());
+                        module_test.glwe_mul_plain(offset, &mut out_test, &a_test, b_test, &mut st.borrow());
                     } else {
-                        module_ref.glwe_mul_const_tmp_bytes(&out_ref, &a_ref, &plain_ref)
-                    });
-                    let mut st = poisoned_scratch::<BT>(if variant < 2 {
-                        module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, &plain_test)
-                    } else {
-                        module_test.glwe_mul_const_tmp_bytes(&out_test, &a_test, &plain_test)
-                    });
-                    match variant {
-                        0 => {
-                            module_ref.glwe_mul_plain(offset, &mut out_ref, &a_ref, &plain_ref, &mut sr.borrow());
-                            module_test.glwe_mul_plain(offset, &mut out_test, &a_test, &plain_test, &mut st.borrow());
-                        }
-                        1 => {
-                            module_ref.glwe_mul_plain_assign(offset, &mut out_ref, &plain_ref, &mut sr.borrow());
-                            module_test.glwe_mul_plain_assign(offset, &mut out_test, &plain_test, &mut st.borrow());
-                        }
-                        2 => {
-                            module_ref.glwe_mul_const(offset, &mut out_ref, &a_ref, &plain_ref, params.n - 1, &mut sr.borrow());
-                            module_test.glwe_mul_const(
-                                offset,
-                                &mut out_test,
-                                &a_test,
-                                &plain_test,
-                                params.n - 1,
-                                &mut st.borrow(),
-                            );
-                        }
-                        _ => {
-                            module_ref.glwe_mul_const_assign(offset, &mut out_ref, &plain_ref, params.n - 1, &mut sr.borrow());
-                            module_test.glwe_mul_const_assign(offset, &mut out_test, &plain_test, params.n - 1, &mut st.borrow());
-                        }
+                        module_ref.glwe_mul_plain_assign(offset, &mut out_ref, b_ref, &mut sr.borrow());
+                        module_test.glwe_mul_plain_assign(offset, &mut out_test, b_test, &mut st.borrow());
                     }
                     let mut have = module_ref.glwe_alloc_from_infos(&infos);
                     out_test.transfer_into(&mut have);
@@ -1076,22 +1063,13 @@ pub fn test_glwe_multiplication_parity<BR, BT, Rg: Ring>(
 
                     let mut twin = module_test.glwe_alloc_from_infos(&infos);
                     unnormalized_twin::<BR, BT, Rg>(&a_ref, &mut twin);
-                    let mut st = poisoned_scratch::<BT>(if variant < 2 {
-                        module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, &plain_test)
-                    } else {
-                        module_test.glwe_mul_const_tmp_bytes(&out_test, &a_test, &plain_test)
-                    });
-                    let last = params.n - 1;
-                    match variant {
-                        0 => module_test.glwe_mul_plain(offset, &mut out_test, &twin, &plain_test, &mut st.borrow()),
-                        1 => module_test.glwe_mul_plain_assign(offset, &mut twin, &plain_test, &mut st.borrow()),
-                        2 => module_test.glwe_mul_const(offset, &mut out_test, &twin, &plain_test, last, &mut st.borrow()),
-                        _ => module_test.glwe_mul_const_assign(offset, &mut twin, &plain_test, last, &mut st.borrow()),
-                    }
-                    if variant % 2 == 1 {
-                        twin.transfer_into(&mut have);
-                    } else {
+                    let mut st = poisoned_scratch::<BT>(module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, b_test));
+                    if variant % 2 == 0 {
+                        module_test.glwe_mul_plain(offset, &mut out_test, &twin, b_test, &mut st.borrow());
                         out_test.transfer_into(&mut have);
+                    } else {
+                        module_test.glwe_mul_plain_assign(offset, &mut twin, b_test, &mut st.borrow());
+                        twin.transfer_into(&mut have);
                     }
                     assert_glwe_eq!(
                         out_ref,

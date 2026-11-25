@@ -1,6 +1,6 @@
 use crate::CKKSModuleInfos;
 use crate::{
-    CKKSCompositionError, CKKSError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSError, CKKSInfos, CoeffsMeta, Scale, SetCKKSInfos, SlotLayout,
     api::{CKKSAddOps, CKKSEncodingOps, LinearTransformation},
     encoding::{
         ckks_linear_transformation_encode_from_diagonals, ckks_linear_transformation_encode_into,
@@ -8,8 +8,9 @@ use crate::{
     },
     layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, EvalModPlan, ckks_eval_mod_compile},
     polynomial::{Basis, CKKSPolynomialEncode, Polynomial, SplitStrategy},
+    shaping::ShapingUnit,
 };
-use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy, TorusPrecision};
+use poulpy_core::layouts::{Diagonals, GLWEPlaintextMeta, LWEInfos, LinearTransformationStrategy, TorusPrecision};
 use poulpy_hal::{
     AlignedBuf,
     api::{ReimNew, ScratchOwnedBorrow},
@@ -26,7 +27,7 @@ use super::{
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
-pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
+pub fn test_add_assign_pt_rejects_alignment<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -60,12 +61,12 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
         module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     let before = snapshot::<BE, _, Standard>(&ct);
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_assign(&mut ct, &pt, s)).unwrap_err();
     assert_ckks_error(
-        "add_pt_vec_alignment",
+        "add_pt_alignment",
         &err,
         CKKSCompositionError::PlaintextAlignmentImpossible {
-            op: "ckks_add_pt_vec_assign",
+            op: "ckks_add_assign",
             ct_log_budget: 0,
             pt_log_delta: params.prec().log_delta(),
             // Alignment is checked against the plaintext's effective (meaningful)
@@ -76,7 +77,7 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     assert_eq!(
         snapshot::<BE, _, Standard>(&ct),
         before,
-        "a refused ckks_add_pt_vec_assign wrote res"
+        "a refused ckks_add_assign wrote res"
     );
 }
 
@@ -124,9 +125,10 @@ pub fn test_linear_transformation_encode_from_diagonals_rejects_zero_k<BE, F, E>
 }
 
 /// `ckks_linear_transformation_encode_into` rejects a malformed strategy with an error and a transform of another
-/// schedule with `InvalidOperand`, both before any write, and refills a transform with the bits
-/// `ckks_linear_transformation_encode_from_diagonals` encodes. A `CoeffsMeta` whose scale exceeds its width surfaces
-/// from the allocating encoder as `LimbReallocationShrinksBelowMetadata`, through its context.
+/// schedule or of another degree than the diagonals' period with `InvalidOperand`, a scale finer than the diagonals hold
+/// and, on a replicated layout, a period past their degree, all before any write, and refills a
+/// transform with the bits `ckks_linear_transformation_encode_from_diagonals` encodes. A `CoeffsMeta` whose scale
+/// exceeds its width surfaces from the allocating encoder as `LimbReallocationShrinksBelowMetadata`, through its context.
 pub fn test_linear_transformation_encode_into<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -148,11 +150,11 @@ pub fn test_linear_transformation_encode_into<BE, F, E>(
         }
         ComplexDiagonals::new(re, Diagonals::new(slots))
     };
-    let digits = |lt: &LinearTransformation<CKKSPlaintextOwned<BE, Standard>>| -> Vec<VecZnx<AlignedBuf, i64, Standard>> {
+    let digits = |lt: &LinearTransformation<CKKSPlaintextOwned<BE, Standard>>| -> Vec<(VecZnx<AlignedBuf, i64, Standard>, GLWEPlaintextMeta)> {
         lt.giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| download_pt::<BE, Standard>(&d.plaintext).inner.data().clone())
+            .map(|d| (download_pt::<BE, Standard>(&d.plaintext).inner.data().clone(), d.plaintext.meta()))
             .collect()
     };
     let coeffs_meta: CoeffsMeta = params.prec().into();
@@ -205,6 +207,61 @@ pub fn test_linear_transformation_encode_into<BE, F, E>(
         },
     );
     assert_eq!(digits(&lt), before, "a rejected encoding wrote the transform");
+    // The transform of diagonals of `slots` slots, above the degree of diagonals stored at a period of 2.
+    let mut short_re = Diagonals::new(slots);
+    for index in 0..4 {
+        short_re.set(poulpy_core::layouts::galois_of_rotation(index), vec![F::one(), F::zero()]);
+    }
+    let short = ComplexDiagonals::new(short_re, Diagonals::new(slots));
+    let mut wide = encode(&ones, coeffs_meta).unwrap();
+    let wide_before = digits(&wide);
+    let err = with_scratch::<BE, _>(0, |scratch| {
+        ckks_linear_transformation_encode_into(module, &mut wide, coeffs_meta.meta, &short, strategy, scratch)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "a transform above the period's degree",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_linear_transformation_encode_into",
+            reason: "the transform's diagonals are not of the degree of the diagonals' period".into(),
+        },
+    );
+    assert_eq!(digits(&wide), wide_before, "a rejected degree wrote the transform");
+    // A scale finer than the diagonals hold, and on a replicated layout a period past their degree, before any write.
+    let mut periodic = encode(&short, coeffs_meta).unwrap();
+    let periodic_before = digits(&periodic);
+    let k = periodic.first_diagonal_plaintext().unwrap().k().as_usize();
+    let too_fine = GLWEPlaintextMeta {
+        scale: Scale::Log(k + 1),
+        ..coeffs_meta.meta
+    };
+    let wide_period = GLWEPlaintextMeta {
+        slot_layout: SlotLayout::Replicated(ShapingUnit::U32_45.layout(1).unwrap()),
+        ..coeffs_meta.meta
+    };
+    for (label, meta) in [
+        ("a scale past the diagonals", too_fine),
+        ("a period past the diagonals", wide_period),
+    ] {
+        let err = with_scratch::<BE, _>(0, |scratch| {
+            ckks_linear_transformation_encode_into(module, &mut periodic, meta, &short, strategy, scratch)
+        })
+        .unwrap_err();
+        let refused = match err.composition() {
+            Some(CKKSCompositionError::LimbReallocationShrinksBelowMetadata { .. }) => label == "a scale past the diagonals",
+            Some(CKKSCompositionError::InvalidOperand { op, reason }) => {
+                *op == "ckks_linear_transformation_encode_into" && reason.contains("needs a multiple of")
+            }
+            _ => false,
+        };
+        assert!(refused, "{label}: unexpected error: {err}");
+        assert_eq!(
+            digits(&periodic),
+            periodic_before,
+            "{label}: a rejected encoding wrote the transform"
+        );
+    }
 
     with_scratch::<BE, _>(bytes(&twos), |scratch| {
         ckks_linear_transformation_encode_into(module, &mut lt, coeffs_meta.meta, &twos, strategy, scratch)

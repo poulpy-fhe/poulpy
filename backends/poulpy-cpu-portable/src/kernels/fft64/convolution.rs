@@ -218,14 +218,13 @@ pub fn convolution_by_const_apply_portable<BE, Rg: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
     tmp: &mut [i64],
 ) where
     BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    convolution_by_const_apply_impl::<BE, false, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+    convolution_by_const_apply_impl::<BE, false, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -237,14 +236,13 @@ pub fn convolution_by_const_apply_add_portable<BE, Rg: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
     tmp: &mut [i64],
 ) where
     BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    convolution_by_const_apply_impl::<BE, true, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+    convolution_by_const_apply_impl::<BE, true, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -256,7 +254,6 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool, Rg: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
     tmp: &mut [i64],
 ) where
     BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
@@ -268,6 +265,7 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool, Rg: Ring>(
     poulpy_hal::layouts::assert_dense(b, "convolution_by_const_apply_impl");
     let n: usize = res.n();
     assert_eq!(a.n(), n);
+    assert!(b.n() == 1, "convolution_by_const_apply_impl: b is not a constant");
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -290,7 +288,7 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool, Rg: Ring>(
     let (blocks, b_digits) = tmp[..staging_size * 8 + b_size].split_at_mut(staging_size * 8);
     let (res_blk, a_blk) = blocks.split_at_mut(min_size * 8);
     for (j, digit) in b_digits.iter_mut().enumerate() {
-        *digit = b.at(b_col, j)[b_coeff];
+        *digit = b.at(b_col, j)[0];
     }
 
     for blk_i in 0..n / 8 {

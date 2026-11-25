@@ -826,7 +826,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
 /// exactly (keys are addressed by Galois element), for both directions and the
 /// dense and sparse-repack paths.
 /// Every compiled factor stores its diagonals at the degree the plan's
-/// sparsity replay predicts, `N >> s`, raised to the backend floor.
+/// sparsity replay predicts, `N >> s`.
 fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
     what: &str,
     plan: &DFTPlan,
@@ -838,7 +838,7 @@ fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
     assert_eq!(matrix.factor_operands().len(), sparsity.len(), "{what}: factor count");
     for (i, (lt, s)) in matrix.factor_operands().iter().zip(sparsity).enumerate() {
         let degree = lt.first_diagonal_plaintext().expect("factor has diagonals").n().as_usize();
-        assert_eq!(degree, (n >> s).max(BE::MIN_DEGREE), "{what}: factor {i} plaintext degree");
+        assert_eq!(degree, n >> s, "{what}: factor {i} plaintext degree");
     }
 }
 

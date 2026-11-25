@@ -313,6 +313,7 @@ where
                 split_strategy: SplitStrategy::MinDepth,
                 coeffs_meta: coeff_meta,
                 f_mod_log_delta: 10,
+                packed: false,
             };
             let encoding =
                 <Module<BE> as CKKSEncodingHostOps<BE, F, Standard>>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);

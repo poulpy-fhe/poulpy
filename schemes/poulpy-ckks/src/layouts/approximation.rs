@@ -12,8 +12,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar},
+    CoeffsMeta,
+    layouts::{CKKSPlaintext, CKKSScalar, masked::encode_host_constants},
     polynomial::{BSGSPolynomial, CKKSPolynomialEncode, Polynomial, SplitStrategy},
 };
 
@@ -22,8 +22,8 @@ use crate::{
 pub struct PolynomialApproximation<P> {
     /// BSGS polynomial in its coefficient variable.
     pub poly: BSGSPolynomial<P>,
-    /// Packed `[offset, scale]` interval map, if needed.
-    pub affine: Option<P>,
+    /// The `[offset, scale]` interval map, one constant each, if needed.
+    pub affine: Option<[P; 2]>,
     /// Exact power-of-two scale used instead of plaintext multiplication.
     pub scale_pow2: Option<i32>,
     /// Scale of the prepared plaintexts.
@@ -51,11 +51,18 @@ impl<Rg: Ring> PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, Rg>> {
         let affine = if scale == F::one() && offset == F::zero() {
             None
         } else {
-            let mut pt = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k);
-            pt.set_meta(coeff_meta.meta);
-            pt.encode_host_floats(&[offset, scale])
-                .map_err(|e| anyhow!("polynomial approximation: affine encoding failed: {e}"))?;
-            Some(pt)
+            let constants = encode_host_constants(
+                "PolynomialApproximation::from_polynomial",
+                module,
+                base2k,
+                coeff_meta,
+                &[offset, scale],
+            )
+            .map_err(|e| anyhow!("polynomial approximation: affine encoding failed: {e}"))?;
+            let pair: [_; 2] = constants
+                .try_into()
+                .map_err(|_| anyhow!("polynomial approximation: the affine map takes two constants"))?;
+            Some(pair)
         };
         let scale_pow2 = affine.as_ref().and_then(|_| exact_power_of_two_exponent(scale));
         Ok(Self {
@@ -124,7 +131,7 @@ impl<P> PolynomialApproximation<P> {
     pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> PolynomialApproximation<Q> {
         PolynomialApproximation {
             poly: self.poly.map_baby_steps_ref(&mut f),
-            affine: self.affine.as_ref().map(f),
+            affine: self.affine.as_ref().map(|affine| affine.each_ref().map(&mut f)),
             scale_pow2: self.scale_pow2,
             coeff_log_delta: self.coeff_log_delta,
         }

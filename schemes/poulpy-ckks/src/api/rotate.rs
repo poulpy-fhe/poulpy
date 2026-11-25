@@ -56,7 +56,7 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// A shift of zero slots returns the errors of
     /// [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy), another
-    /// `MissingAutomorphismKey` when `keys` has no key for the shift covering
+    /// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` when `keys` has no key for the shift covering
     /// the consumed input width, including the shaping depth for a replicated layout, and `InsufficientHomomorphicCapacity` when `dst` is narrower
     /// than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_rotate_into<Dst, Src, H>(
@@ -77,7 +77,7 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// `MissingAutomorphismKey` when `keys` has no key for the shift covering `dst.k()`. `dst` is untouched on `Err`.
+    /// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` when `keys` has no key for the shift covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE, Rg>,

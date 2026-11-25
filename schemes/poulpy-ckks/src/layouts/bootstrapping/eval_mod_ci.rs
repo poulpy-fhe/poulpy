@@ -14,8 +14,8 @@ use crate::{
         LtDiagonalMeta,
     },
     layouts::{
-        CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTPlan, Encode, EvalMod,
-        EvalModPlan, Split, eval_mod::ckks_eval_mod_compile,
+        CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTPlan, Encode, EvalMod, EvalModPlan, Split,
+        eval_mod::ckks_eval_mod_compile,
     },
 };
 
@@ -74,7 +74,7 @@ impl EvalModRing {
 /// ([`EvalModRing::ConjugateInvariant`]).
 pub struct EvalModCIPrepared<BE: Backend, F> {
     /// EvalMod in plaintexts of the CI ring.
-    pub(crate) eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
+    pub(crate) eval_mod: EvalMod<F, CKKSPlaintextOwned<BE, ConjugateInvariant>>,
     /// `u`, `1` on slot `j` and `−i` on slot `j + N/2`: the trace of `u·z(X²)`
     /// holds the real parts of `z_j` and `−i·z_j`, `c_j` and `c_{j+N/2}`.
     pub(crate) pre: CIPrePrepared<BE>,
@@ -93,7 +93,7 @@ impl<BE: Backend, F> EvalModCIPrepared<BE, F> {
     }
 
     /// EvalMod in plaintexts of the CI ring.
-    pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>> {
+    pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintextOwned<BE, ConjugateInvariant>> {
         &self.eval_mod
     }
 
@@ -144,7 +144,7 @@ impl<BE: Backend> CIPrePrepared<BE> {
 
 /// [`EvalModCIPrepared`] before its folded factors are prepared.
 pub(super) struct EvalModCI<BE: Backend, F> {
-    eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
+    eval_mod: EvalMod<F, CKKSPlaintextOwned<BE, ConjugateInvariant>>,
     pub(super) pre: CIPre<BE>,
     post: CKKSPlaintextOwned<BE>,
 }

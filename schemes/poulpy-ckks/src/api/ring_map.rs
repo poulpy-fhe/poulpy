@@ -34,9 +34,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 /// In this order, before any write, `dst` staying untouched: `InvalidOperand` when the conjugate-invariant degree is
 /// not half the standard one, the standard degree exceeds the module degree, the ranks differ, `dst` cannot hold the
 /// output width or, for the embedding, has another radix than `src`, then when the key does not have the standard
-/// degree and the ciphertext rank or is narrower than the switched input (`src.k()`); for the trace,
-/// `InsufficientHomomorphicCapacity` when `src` has no bit of budget left; `CKKSError::Internal` with less scratch
-/// than the method's query reports.
+/// degree and the ciphertext rank or is narrower than the switched input (`src.k()`, plus the shaping depth of a
+/// replicated `src`); for the trace, `InsufficientHomomorphicCapacity` when `src` has no bit of budget left, then
+/// `InvalidOperand` for a replicated `src` whose shaping polynomial no power of `Y` shifts onto a conjugate-invariant
+/// one; `CKKSError::Internal` with less scratch than the method's query reports.
 pub trait CKKSCIRingMapOps<BE: Backend> {
     /// Covers every input width `dst` holds: the key switch is sized at its allocated width, and for a replicated
     /// `a_infos` at its shaping depth beside the wide copies.

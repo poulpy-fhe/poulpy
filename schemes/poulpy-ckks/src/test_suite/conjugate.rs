@@ -2,14 +2,14 @@
 //!
 //! # Test inventory
 //!
-//! ## Operations-layer conjugation (`GLWE<_, CKKS>::conjugate`)
+//! ## Operations-layer conjugation (`ckks_conjugate_into`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_conjugate_aligned`] | out-of-place conjugation |
 //! | [`test_conjugate_smaller_output`] | out-of-place conjugation |
 //!
-//! ## Operations-layer conjugation (`GLWE<_, CKKS>::conjugate_assign`)
+//! ## Operations-layer conjugation (`ckks_conjugate_assign`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|

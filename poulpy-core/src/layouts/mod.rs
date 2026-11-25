@@ -1829,20 +1829,21 @@ pub fn digits_aligned(base2k: Base2K, k_digit: TorusPrecision) -> bool {
 /// work   = ceil((digits * k_digit + k_aux) / base2k)
 /// ```
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, k_digit: TorusPrecision, k_aux: TorusPrecision) -> usize {
-    offset_key_work_size(base2k, TorusPrecision(0), input_k, k_digit, k_aux)
+    offset_key_work_size(base2k, TorusPrecision(0), input_k, TorusPrecision(0), k_digit, k_aux)
 }
 
-/// [`key_work_size`] of a key whose rows sit `k_offset` bits lower:
-/// `ceil((k_offset + digits * k_digit + k_aux) / base2k)`.
+/// [`key_work_size`] of a key whose rows sit `k_offset` bits lower, read down to an output of `output_k` bits where that
+/// is wider: `ceil((max(k_offset + digits * k_digit, output_k) + k_aux) / base2k)`.
 pub(crate) fn offset_key_work_size(
     base2k: Base2K,
     k_offset: TorusPrecision,
     input_k: TorusPrecision,
+    output_k: TorusPrecision,
     k_digit: TorusPrecision,
     k_aux: TorusPrecision,
 ) -> usize {
     let digits: u32 = GGLWELayout::dnum_for_input(input_k, k_digit).0;
-    (k_offset.0 + digits * k_digit.0 + k_aux.0).div_ceil(base2k.0) as usize
+    ((k_offset.0 + digits * k_digit.0).max(output_k.0) + k_aux.0).div_ceil(base2k.0) as usize
 }
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -2003,7 +2004,7 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         product_terms,
         extra_live_limbs,
     } = params;
-    let work_size = key_size.min(offset_key_work_size(key_base2k, k_offset, input_k, k_digit, k_aux));
+    let work_size = key_size.min(offset_key_work_size(key_base2k, k_offset, input_k, output_k, k_digit, k_aux));
 
     let base2k = key_base2k.as_usize();
     let live_limbs = (input_k.as_usize() + k_offset.as_usize())

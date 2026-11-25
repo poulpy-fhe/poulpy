@@ -77,10 +77,9 @@ impl_cnv_delegate!(
         a_col: usize,
         b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_by_const_apply(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
+        BE::cnv_by_const_apply(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::cnv_by_const_apply_add_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
@@ -94,10 +93,9 @@ impl_cnv_delegate!(
         a_col: usize,
         b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_by_const_apply_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
+        BE::cnv_by_const_apply_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_apply_dft(
         &self,

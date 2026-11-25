@@ -2,7 +2,7 @@ use crate::layouts::GetTensorKey;
 use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
-use crate::layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper};
+use crate::layouts::{BabyStep, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper};
 
 /// Arithmetic policy of the polynomial evaluation.
 ///
@@ -15,7 +15,6 @@ pub trait GLWEBSGSOps<BE, V, P, A, R = V, Rg: Ring = Standard>
 where
     BE: Backend,
     V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-    P: GLWEToBackendRef<BE, Rg>,
     A: GLWEToBackendRef<BE, Rg>,
     R: GLWEToBackendMut<BE, Rg>,
 {
@@ -27,16 +26,8 @@ where
     /// metadata to that of `seed` and zeroes its data.
     fn init_accumulator(&self, module: &Module<BE>, res: &mut V, seed: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 
-    /// Computes `res[res_coeff] += coeffs[idx]`, normalizing `res`.
-    fn add_pt_const_assign(
-        &self,
-        module: &Module<BE>,
-        res: &mut V,
-        res_coeff: usize,
-        coeffs: &P,
-        idx: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>;
+    /// Computes `res += pt`, normalizing `res`.
+    fn add_pt_assign(&self, module: &Module<BE>, res: &mut V, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 
     /// Tries to evaluate `res = Σ coeffs[idx]·term` in one pass. Returning
     /// `false` leaves `res` untouched and selects the default operation sequence.
@@ -45,33 +36,17 @@ where
         _module: &Module<BE>,
         _res: &mut V,
         _terms: &[(&A, usize)],
-        _coeffs: &P,
+        _coeffs: &[P],
         _scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<bool> {
         Ok(false)
     }
 
-    /// Computes `res = a · coeffs[idx]` (ct × pt), setting `res`'s precision metadata.
-    fn mul_pt_const(
-        &self,
-        module: &Module<BE>,
-        res: &mut V,
-        a: &A,
-        coeffs: &P,
-        idx: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>;
+    /// Computes `res = a · pt` (ct × pt), setting `res`'s precision metadata.
+    fn mul_pt(&self, module: &Module<BE>, res: &mut V, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 
-    /// Computes `res += a · coeffs[idx]` (ct × pt), keeping `res` normalized.
-    fn mul_add_pt_const(
-        &self,
-        module: &Module<BE>,
-        res: &mut V,
-        a: &A,
-        coeffs: &P,
-        idx: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>;
+    /// Computes `res += a · pt` (ct × pt), keeping `res` normalized.
+    fn mul_add_pt(&self, module: &Module<BE>, res: &mut V, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 
     /// Prepares `a` as a reusable right operand for [`Self::mul_prepared_assign`].
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared>;
@@ -102,20 +77,23 @@ where
 /// sequences the GLWE BSGS schedule.
 pub trait GLWEPolynomialEvaluation<BE: Backend, Rg: Ring = Standard> {
     /// Evaluates a single baby step into `res`.
+    ///
+    /// # Errors
+    ///
+    /// When `coeffs` is empty, before any write, and the errors of `ops` and `power_basis`.
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_baby_step<Ops, V, P, A, G>(
         &self,
         ops: &Ops,
         res: &mut V,
         parity: Parity,
-        coeffs: &P,
+        coeffs: &[P],
         power_basis: &G,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Ops: GLWEBSGSOps<BE, V, P, A, V, Rg>,
         V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg>,
         G: PowerBasisHelper<BE, A, Rg>;
 
@@ -134,7 +112,6 @@ pub trait GLWEPolynomialEvaluation<BE: Backend, Rg: Ring = Standard> {
         R: GLWEToBackendMut<BE, Rg>,
         B: BabyStep<BE, Rg, Value = V>,
         V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-        P: GLWEToBackendRef<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg>,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>;

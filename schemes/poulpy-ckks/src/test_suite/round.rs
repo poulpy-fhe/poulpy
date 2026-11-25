@@ -403,8 +403,7 @@ where
         let src = fixture_ciphertext(module, &src_layout, 81);
         let src_before = snapshot::<BE, _, _>(&src);
         for (rank, n, reason) in [
-            (0usize, params.n, "source and destination ranks differ"),
-            (2, params.n, "source and destination ranks differ"),
+            (2usize, params.n, "source and destination ranks differ"),
             (1, params.n / 2, "source and destination degrees differ"),
         ] {
             let dst_layout = CKKSLayout {

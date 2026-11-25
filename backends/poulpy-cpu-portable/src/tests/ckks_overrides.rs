@@ -5,7 +5,6 @@ use poulpy_ckks::api::{
     BSGSPolynomialInfos, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps,
     CKKSPolynomialEvaluationOps, PowerBasisHelper,
 };
-use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_ckks::layouts::eval_mod::EvalMod;
 use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::{
@@ -38,7 +37,7 @@ use poulpy_core::layouts::{
 use poulpy_core::{GLWEAutomorphism, GLWECopy, GLWEFill, GLWERotate, GLWEShift};
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::api::ModuleN;
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, HostBytesBackend, Module, ScratchArena, Standard};
 use poulpy_hal::source::Source;
 use std::cell::{Cell, RefCell};
 thread_local! {
@@ -50,7 +49,9 @@ thread_local! {
  /// whole bootstrap.
  static EVAL_MOD_FORWARD: Cell<bool> = const { Cell::new(false) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
+ static COPY_CALLS: Cell<usize> = const { Cell::new(0) };
  static ROUND_CALLS: Cell<usize> = const { Cell::new(0) };
+ static ROUND_EXTRA: Cell<usize> = const { Cell::new(ROUND_EXTRA_DEFAULT) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
 poulpy_ckks::impl_ckks_plaintext_vec_reference_full!(OverrideBackend);
@@ -69,6 +70,7 @@ unsafe impl CKKSCopyImpl<Standard> for OverrideBackend {
         Dst: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
     {
+        COPY_CALLS.set(COPY_CALLS.get() + 1);
         MAX_COPY_CAPACITY.with(|capacity| capacity.set(capacity.get().max(dst.max_size())));
         let workspace = COPY_WORKSPACE * dst.max_size();
         // The reference refuses before any scratch use, so an arena short of the workspace goes to it and must refuse.
@@ -84,18 +86,20 @@ unsafe impl CKKSCopyImpl<Standard> for OverrideBackend {
 }
 mod carry;
 mod composite;
+mod counted_trace;
 mod dft;
 mod paco_ship;
+mod replicated;
 mod ring_map;
 poulpy_ckks::impl_ckks_neg_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_pow2_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_imag_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_rotate_reference_full!(OverrideBackend);
-poulpy_ckks::impl_ckks_inner_sum_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_inner_sum_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_conjugate_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_encryption_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_reference_full!(OverrideBackend);
-poulpy_ckks::impl_ckks_linear_transformation_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_linear_transformation_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_dot_product_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_add_many_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_add_derived_full!(OverrideBackend);
@@ -115,25 +119,30 @@ unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingI
         crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);
     }
 }
-// The round counts its calls and runs behind a marked region its query adds.
-const ROUND_EXTRA: usize = 960;
-unsafe impl CKKSRoundImpl<Standard> for OverrideBackend {
-    fn ckks_round_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds>(module: &Module<Self>, res: &R, a: &A) -> usize {
-        ROUND_EXTRA + CKKSRoundReference::<Self, Standard>::ckks_round_tmp_bytes_reference(module, res, a)
-    }
+// The round of either ring counts its calls and runs behind a marked region its query adds.
+const ROUND_EXTRA_DEFAULT: usize = 960;
+macro_rules! impl_counted_round {
+    ($ring:ty) => {
+        unsafe impl CKKSRoundImpl<$ring> for OverrideBackend {
+            fn ckks_round_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds>(module: &Module<Self>, res: &R, a: &A) -> usize {
+                ROUND_EXTRA.get() + CKKSRoundReference::<Self, $ring>::ckks_round_tmp_bytes_reference(module, res, a)
+            }
 
-    fn ckks_round<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>) -> CKKSResult<()>
-    where
-        R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
-    {
-        ROUND_CALLS.with(|calls| calls.set(calls.get() + 1));
-        carry::with_marked_region::<ROUND_EXTRA, _>(scratch, |rest| {
-            CKKSRoundReference::<Self, Standard>::ckks_round_reference(module, res, a, rest)
-        })
-    }
+            fn ckks_round<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>) -> CKKSResult<()>
+            where
+                R: GLWEToBackendMut<Self, $ring> + CKKSCtBounds + SetCKKSInfos,
+                A: GLWEToBackendRef<Self, $ring> + CKKSCtBounds,
+            {
+                ROUND_CALLS.with(|calls| calls.set(calls.get() + 1));
+                carry::with_marked_bytes(ROUND_EXTRA.get(), scratch, |rest| {
+                    CKKSRoundReference::<Self, $ring>::ckks_round_reference(module, res, a, rest)
+                })
+            }
+        }
+    };
 }
-::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend, ConjugateInvariant);
+impl_counted_round!(Standard);
+impl_counted_round!(ConjugateInvariant);
 ::poulpy_ckks::impl_ckks_replicated_derived_full!(OverrideBackend);
 // The conjugate-invariant ring, on which a bootstrap's EvalMod runs, takes the reference of the overridden families,
 // the addition aside.
@@ -154,7 +163,7 @@ unsafe impl CKKSPolynomialEvaluationImpl<Standard> for OverrideBackend {
     where
         R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<Self, Standard>,
-        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<Self>,
+        B::Coeffs: CKKSCtBounds + GLWEToBackendRef<Self>,
         A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A, Standard>,
         H: GetTensorKey<Self, Standard>,
@@ -182,7 +191,7 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     ) -> CKKSResult<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<Self>,
+        C: GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + GLWEToBackendRef<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>,
@@ -224,7 +233,7 @@ unsafe impl CKKSEvalModImpl<Standard> for OverrideBackend {
     where
         R: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Standard> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<Self>,
+        P: IntPolyInfos + CKKSCtBounds + BSGSMeta + GLWEToBackendRef<Self>,
         H: GetTensorKey<Self, Standard>,
     {
         EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));
@@ -246,17 +255,15 @@ impl<BE: Backend> GetTensorKey<BE, Standard> for NoTensorKey {
     }
 }
 
-fn polynomial(module: &Module<OverrideBackend>) -> BSGSPolynomial<CKKSPlaintextOwned<OverrideBackend>> {
-    use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
+fn polynomial() -> BSGSPolynomial<CKKSPlaintextOwned<OverrideBackend>> {
+    use poulpy_ckks::polynomial::{Basis, CKKSPolynomialEncode, Polynomial, SplitStrategy};
     Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
-        .decompose_bsgs_with(SplitStrategy::MinDepth, |coeffs| -> anyhow::Result<_> {
-            let mut pt = module.ckks_plaintext_alloc(coeffs.len().into(), 16usize.into(), 32usize.into());
-            pt.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(8),
-                ..Default::default()
-            });
-            Ok(pt)
-        })
+        .encode_bsgs_with(
+            &Module::<HostBytesBackend>::new(64),
+            16usize.into(),
+            CoeffsMeta::from_delta_budget(8, 24),
+            SplitStrategy::MinDepth,
+        )
         .unwrap()
 }
 
@@ -308,10 +315,10 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
         <Module<OverrideBackend> as CKKSCopyOps<OverrideBackend, Standard>>::ckks_copy_tmp_bytes(&module_test, &src, &src)
     );
     let bytes_ref = module_ref.ckks_all_ops_tmp_bytes(&src, &coeff_meta, &key_infos);
-    let real = polynomial(&module_test);
+    let real = polynomial();
     let complex = ComplexBSGSPolynomial {
-        re: polynomial(&module_test),
-        im: polynomial(&module_test),
+        re: polynomial(),
+        im: polynomial(),
     };
 
     let mut want = fixture_ciphertext(&module_ref, &layout, 62);
@@ -379,7 +386,7 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
         ),
         range_extension_consts: None,
         f_mod_input_offset: None,
-        f_mod_bsgs: EvalModBsgs::Real(polynomial(&module)),
+        f_mod_bsgs: EvalModBsgs::Real(polynomial()),
         f_mod_inv_bsgs: None,
         f_mod_poly: EvalModPoly::Real(Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])),
         f_mod_inv_poly: None,
@@ -420,7 +427,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
         polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
         reference::eval_mod::{CKKSEvalModReference, ckks_eval_mod_tmp_bytes_reference},
     };
-    use poulpy_hal::layouts::{HostBytesBackend, ZnxViewMut};
+    use poulpy_hal::layouts::ZnxViewMut;
     let module_test = Module::<OverrideBackend>::new(64);
     let module_ref = Module::<FFT64Oracle>::new(64);
     let host = Module::<HostBytesBackend>::new(64);
@@ -1121,24 +1128,4 @@ fn ckks_round_reference_dispatches_shaping_correction() {
         snapshot::<OverrideBackend, _, _>(&dst),
         snapshot::<crate::FFT64Portable, _, _>(&expected)
     );
-}
-
-#[test]
-fn replicated_conversions_enter_the_round_hook() {
-    let params = poulpy_ckks::test_suite::BASE19_PARAMS_F64;
-    let module = Module::<OverrideBackend>::new(params.n as u64);
-    let host = Module::<poulpy_hal::layouts::HostBytesBackend>::new(params.n as u64);
-    ROUND_CALLS.with(|calls| calls.set(0));
-    SHAPING_CALLS.with(|calls| calls.set(0));
-    // Every conversion of the suite runs on an arena of exactly its query, so the round's marked extra fits only if
-    // the query takes it.
-    poulpy_ckks::test_suite::replicated::test_replicated_conversions_round_trip::<OverrideBackend, f64, Standard>(
-        params, &module, &host,
-    )
-    .unwrap();
-    // One round onto the replicated layout per conversion to it, into a wide and a narrow destination, at the module
-    // degree and at half of it, each with a shaping correction per half. The conversions back gather and trace
-    // without a round.
-    assert_eq!(ROUND_CALLS.with(Cell::get), 4);
-    assert_eq!(SHAPING_CALLS.with(Cell::get), 8);
 }

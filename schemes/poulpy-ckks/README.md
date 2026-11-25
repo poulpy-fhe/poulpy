@@ -170,7 +170,7 @@ all parameters.
 | `api` | Public evaluator traits implemented on `Module<BE>`. |
 | `delegates` | Crate-private dispatch: each API method calls its same-named OEP method. |
 | `oep` | Explicit backend `*Impl` contracts; no blanket selection of operation implementations. `CKKSImpl` aggregates capabilities. |
-| `oep::derived` | Crate-private same-layer defaults: add/subtract one, sums, multiply-accumulate and affine forms, approximations, the encoding checks and plan cache, one-shot polynomial evaluation, the plaintext dot products, the `_assign` and self-caching linear transformations, the six DFT format/direction wrappers, and the PaCo and SHIP drivers. |
+| `oep::derived` | Crate-private same-layer defaults: add/subtract one, sums, multiply-accumulate and affine forms, approximations, the encoding checks and plan cache, one-shot polynomial evaluation, the replicated conversions, the `_assign` and self-caching linear transformations, the six DFT format/direction wrappers, and the PaCo and SHIP drivers. |
 | `reference` | Callable lower-layer algorithms and canonical encoding definitions. Their implementation bounds do not constrain an unrelated override. |
 | `layouts` | Ciphertexts, plaintexts, metadata, allocation, prepared plans, and backend-resident encoding buffers. |
 | `encoding` | PaCo and SHIP scheme embeddings and explicitly named host helpers, also exposed through `reference::encoding`. |
@@ -361,7 +361,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication, and ciphertexts prepared once as product operands |
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
 | `CKKSMulSubOps` | fused `dst -= a * b` variants |
-| `CKKSAffineOps` | fused affine: `dst = a * scale_coeff + offset_coeff` |
+| `CKKSAffineOps` | fused affine: `dst = a * scale + offset` |
 | `CKKSAddManyOps` | sum of a slice, added left to right, normalized at a caller-set cadence |
 | `CKKSInnerSumOps` | inner sums and replications over power-of-two batches of slots |
 | `CKKSDotProductOps` | inner product of ciphertext, prepared-ciphertext or plaintext slices |
@@ -457,8 +457,8 @@ generic code bounds `Module<BE>: CKKSMulOps<BE, Rg>`.
 
 The slot encoder accepts planar real/imaginary buffers, discards imaginary
 inputs, decodes with zero imaginary parts, and marks encoded plaintexts real.
-Plaintexts use one coefficient per real slot, subject to the backend's
-minimum degree. Raw coefficient encoding uses the invariant basis directly.
+Plaintexts use one coefficient per real slot. Raw coefficient encoding uses
+the invariant basis directly.
 
 Leveled arithmetic, real polynomial evaluation, and real linear
 transformations take conjugate-invariant operands like standard ones. Host-side

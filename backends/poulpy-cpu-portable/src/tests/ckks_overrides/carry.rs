@@ -1,13 +1,13 @@
-//! Unit shifts inherit the selected constant-plaintext operation and its budget,
-//! and the ciphertext and plaintext-vector assignments count the compositions entering them.
+//! Unit shifts inherit the selected assignment and its budget, and the assignment
+//! counts the compositions entering each of its routes.
 use super::OverrideBackend;
 use poulpy_ckks::{
-    GLWEPlaintextMeta,
+    CKKSCompositionError, GLWEPlaintextMeta,
     api::{CKKSAddOps, CKKSSubOps},
     reference::{add::CKKSAddReference, sub::CKKSSubReference},
     test_suite::{
         CKKSTestParams,
-        helpers::ckks_spec,
+        helpers::{assert_ckks_error, ckks_spec},
         parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
     },
 };
@@ -18,38 +18,52 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Standard};
 use std::cell::Cell;
 
 thread_local! {
-    pub(super) static ADD_CONST_CALLS: Cell<usize> = const { Cell::new(0) };
-    static SUB_CONST_CALLS: Cell<usize> = const { Cell::new(0) };
     pub(super) static ADD_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
     pub(super) static SUB_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
-    pub(super) static ADD_PT_VEC_CALLS: Cell<usize> = const { Cell::new(0) };
-    pub(super) static SUB_PT_VEC_CALLS: Cell<usize> = const { Cell::new(0) };
-    static CI_ADD_CONST_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static ADD_PT_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static SUB_PT_CALLS: Cell<usize> = const { Cell::new(0) };
     pub(super) static CI_ADD_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
-    static CI_ADD_PT_VEC_CALLS: Cell<usize> = const { Cell::new(0) };
+    static CI_ADD_PT_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
-/// Takes `EXTRA` bytes first, fills them with a pattern, runs `body` on the rest and
-/// asserts the pattern intact.
-pub(super) fn with_marked_region<const EXTRA: usize, R>(
+/// A hook's result, refused when it is an error; a hook returning nothing refuses by panicking.
+pub(super) trait Refusal {
+    fn refused(&self) -> bool;
+}
+
+impl<T, E> Refusal for Result<T, E> {
+    fn refused(&self) -> bool {
+        self.is_err()
+    }
+}
+
+impl Refusal for () {
+    fn refused(&self) -> bool {
+        false
+    }
+}
+
+/// [`with_marked_bytes`] of `EXTRA` bytes.
+pub(super) fn with_marked_region<const EXTRA: usize, R: Refusal>(
     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
     body: impl FnOnce(&mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>) -> R,
 ) -> R {
-    let (mut marker, mut rest) = scratch.borrow().take_region(EXTRA);
-    <OverrideBackend as Backend>::copy_host_to_view(&mut marker, &[0x5A; EXTRA]);
-    let result = body(&mut rest);
-    let mut after = [0u8; EXTRA];
-    <OverrideBackend as Backend>::copy_view_to_host(&<OverrideBackend as Backend>::view_ref_mut(&marker), &mut after);
-    assert!(after == [0x5A; EXTRA], "an override's extra region was overwritten");
-    result
+    with_marked_bytes(EXTRA, scratch, body)
 }
 
-/// As [`with_marked_region`], for an extra of `bytes` chosen at run time.
-pub(super) fn with_marked_bytes<R>(
+/// Takes `bytes` first, fills them with a pattern, runs `body` on the rest and
+/// asserts the pattern intact; on an empty arena, runs `body` on it, for its refusals,
+/// and asserts it refused, so a composition giving the hook no bytes fails.
+pub(super) fn with_marked_bytes<R: Refusal>(
     bytes: usize,
     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
     body: impl FnOnce(&mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>) -> R,
 ) -> R {
+    if scratch.available() == 0 {
+        let result = body(scratch);
+        assert!(result.refused(), "an empty arena reached an override that accepted the call");
+        return result;
+    }
     let (mut marker, mut rest) = scratch.borrow().take_region(bytes);
     <OverrideBackend as Backend>::copy_host_to_view(&mut marker, &vec![0x5A; bytes]);
     let result = body(&mut rest);
@@ -81,24 +95,13 @@ pub(super) fn assert_query_takes_extra(label: &str, set: impl Fn(usize), query: 
     );
 }
 
-// The assignments count their calls and run behind a marked region their queries add; the `_into` forms forward.
+// The assignment counts its calls per route and runs behind a marked region its query adds; the `_into` form forwards.
 macro_rules! impl_carry_with_plaintext_workspace {
-    (
-        $ring:ty,
-        $verb:ident,
-        $Impl:ident,
-        $Reference:ident,
-        $calls:ident,
-        $workspace:expr,
-        $assign_calls:ident,
-        $assign_workspace:expr,
-        $pt_vec_calls:ident,
-        $pt_vec_workspace:expr
-    ) => {
+    ($ring:ty, $verb:ident, $Impl:ident, $Reference:ident, $assign_calls:ident, $pt_calls:ident, $workspace:expr) => {
         ::paste::paste! {
             unsafe impl ::poulpy_ckks::oep::$Impl<$ring> for OverrideBackend {
                 fn [<ckks_ $verb _tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                    $assign_workspace + $Reference::<Self, $ring>::[<ckks_ $verb _tmp_bytes_reference>](module, res_size)
+                    $workspace + $Reference::<Self, $ring>::[<ckks_ $verb _tmp_bytes_reference>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _into>]<Dst, A, B>(
@@ -116,7 +119,6 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     $Reference::<Self, $ring>::[<ckks_ $verb _into_reference>](module, dst, a, b, scratch)
                 }
 
-
                 fn [<ckks_ $verb _assign>]<Dst, A>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
@@ -124,167 +126,69 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
                 ) -> ::poulpy_ckks::CKKSResult<()>
                 where
-                    Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + ::poulpy_ckks::CKKSInfos + ::poulpy_ckks::SetCKKSInfos,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSInfos,
+                    Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
+                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
                 {
-                    $assign_calls.set($assign_calls.get() + 1);
-                    with_marked_region::<{ $assign_workspace }, _>(scratch, |rest| {
+                    let calls = if a.rank().as_usize() == 0 { &$pt_calls } else { &$assign_calls };
+                    calls.set(calls.get() + 1);
+                    with_marked_region::<{ $workspace }, _>(scratch, |rest| {
                         $Reference::<Self, $ring>::[<ckks_ $verb _assign_reference>](module, dst, a, rest)
                     })
                 }
-
-
-
-                fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                    $pt_vec_workspace + $Reference::<Self, $ring>::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](module, res_size)
-                }
-
-                fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut Dst,
-                    a: &A,
-                    pt: &P,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    $Reference::<Self, $ring>::[<ckks_ $verb _pt_vec_into_reference>](module, dst, a, pt, scratch)
-                }
-
-
-                fn [<ckks_ $verb _pt_vec_assign>]<Dst, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut Dst,
-                    pt: &P,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    $pt_vec_calls.set($pt_vec_calls.get() + 1);
-                    with_marked_region::<{ $pt_vec_workspace }, _>(scratch, |rest| {
-                        $Reference::<Self, $ring>::[<ckks_ $verb _pt_vec_assign_reference>](module, dst, pt, rest)
-                    })
-                }
-
-
-                fn [<ckks_ $verb _pt_const_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                    $workspace + $Reference::<Self, $ring>::[<ckks_ $verb _pt_const_tmp_bytes_reference>](module, res_size)
-                }
-
-                fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut Dst,
-                    dst_coeff: usize,
-                    a: &A,
-                    pt: &P,
-                    pt_coeff: usize,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    $Reference::<Self, $ring>::[<ckks_ $verb _pt_const_into_reference>](
-                        module, dst, dst_coeff, a, pt, pt_coeff, scratch,
-                    )
-                }
-
-
-                fn [<ckks_ $verb _pt_const_assign>]<Dst, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut Dst,
-                    dst_coeff: usize,
-                    pt: &P,
-                    pt_coeff: usize,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    $calls.set($calls.get() + 1);
-                    with_marked_region::<{ $workspace }, _>(scratch, |rest| {
-                        $Reference::<Self, $ring>::[<ckks_ $verb _pt_const_assign_reference>](
-                            module, dst, dst_coeff, pt, pt_coeff, rest,
-                        )
-                    })
-                }
-
             }
         }
     };
 }
-const ADD_CONST_EXTRA: usize = 4096;
-const SUB_CONST_EXTRA: usize = 8192;
 pub(super) const ADD_ASSIGN_EXTRA: usize = 1024;
 pub(super) const SUB_ASSIGN_EXTRA: usize = 1536;
-pub(super) const ADD_PT_VEC_EXTRA: usize = 2048;
-pub(super) const SUB_PT_VEC_EXTRA: usize = 3072;
 impl_carry_with_plaintext_workspace!(
     Standard,
     add,
     CKKSAddImpl,
     CKKSAddReference,
-    ADD_CONST_CALLS,
-    ADD_CONST_EXTRA,
     ADD_ASSIGN_CALLS,
-    ADD_ASSIGN_EXTRA,
-    ADD_PT_VEC_CALLS,
-    ADD_PT_VEC_EXTRA
+    ADD_PT_CALLS,
+    ADD_ASSIGN_EXTRA
 );
 impl_carry_with_plaintext_workspace!(
     Standard,
     sub,
     CKKSSubImpl,
     CKKSSubReference,
-    SUB_CONST_CALLS,
-    SUB_CONST_EXTRA,
     SUB_ASSIGN_CALLS,
-    SUB_ASSIGN_EXTRA,
-    SUB_PT_VEC_CALLS,
-    SUB_PT_VEC_EXTRA
+    SUB_PT_CALLS,
+    SUB_ASSIGN_EXTRA
 );
-// The conjugate-invariant addition counts apart, behind extras no standard-ring query takes.
-const CI_ADD_CONST_EXTRA: usize = 4608;
+// The conjugate-invariant addition counts apart, behind an extra no standard-ring query takes.
 pub(super) const CI_ADD_ASSIGN_EXTRA: usize = 1280;
-const CI_ADD_PT_VEC_EXTRA: usize = 2560;
 impl_carry_with_plaintext_workspace!(
     ConjugateInvariant,
     add,
     CKKSAddImpl,
     CKKSAddReference,
-    CI_ADD_CONST_CALLS,
-    CI_ADD_CONST_EXTRA,
     CI_ADD_ASSIGN_CALLS,
-    CI_ADD_ASSIGN_EXTRA,
-    CI_ADD_PT_VEC_CALLS,
-    CI_ADD_PT_VEC_EXTRA
+    CI_ADD_PT_CALLS,
+    CI_ADD_ASSIGN_EXTRA
 );
 
-/// Each unit shift enters the selected constant-plaintext assignment once, its query is the unit plaintext beside the
-/// larger of the selected constant and vector assignments' queries, which add the probe's extras to the reference
-/// queries, and its output equals the oracle's; the arithmetic parity, each operation on its exact poisoned query,
-/// enters every counting assignment.
+/// Each unit shift enters the plaintext route of the selected assignment once, its query is the unit plaintext beside
+/// that assignment's query, which adds the probe's extra to the reference query, and its output equals the oracle's; a
+/// refused one enters no route; the arithmetic parity, each operation on its exact poisoned query, enters every route of
+/// every counting assignment.
 #[test]
 fn unit_shifts_use_selected_plaintext_scratch() {
     let module_ref = Module::<FFT64Oracle>::new(64);
     let module_test = Module::<OverrideBackend>::new(64);
     for size in [1, 3, 8] {
         assert_eq!(
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(&module_test, size),
-            ADD_CONST_EXTRA + <_ as CKKSAddReference<_, Standard>>::ckks_add_pt_const_tmp_bytes_reference(&module_test, size)
+            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, size),
+            ADD_ASSIGN_EXTRA + <_ as CKKSAddReference<_, Standard>>::ckks_add_tmp_bytes_reference(&module_test, size)
         );
         assert_eq!(
-            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(&module_test, size),
-            SUB_CONST_EXTRA + <_ as CKKSSubReference<_, Standard>>::ckks_sub_pt_const_tmp_bytes_reference(&module_test, size)
+            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_tmp_bytes(&module_test, size),
+            SUB_ASSIGN_EXTRA + <_ as CKKSSubReference<_, Standard>>::ckks_sub_tmp_bytes_reference(&module_test, size)
         );
-        // The unit plaintext, carved at the largest degree a masked one takes, beside the larger selected workspace.
+        // The unit plaintext, carved at the largest degree a masked one takes, beside the selected workspace.
         let unit = OverrideBackend::scratch_aligned(OverrideBackend::vec_znx_bytes_of(
             2 << ReplicatedLayout::MAX_LOG_R,
             1,
@@ -292,23 +196,11 @@ fn unit_shifts_use_selected_plaintext_scratch() {
         ));
         assert_eq!(
             <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size),
-            unit + <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(
-                &module_test,
-                size
-            )
-            .max(
-                <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_vec_tmp_bytes(&module_test, size)
-            )
+            unit + <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, size)
         );
         assert_eq!(
             <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size),
-            unit + <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(
-                &module_test,
-                size
-            )
-            .max(
-                <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_vec_tmp_bytes(&module_test, size)
-            )
+            unit + <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_tmp_bytes(&module_test, size)
         );
     }
     let params = CKKSTestParams {
@@ -333,13 +225,13 @@ fn unit_shifts_use_selected_plaintext_scratch() {
         |s| module_ref.ckks_add_one_assign(&mut want, s),
     )
     .unwrap();
-    ADD_CONST_CALLS.set(0);
+    ADD_PT_CALLS.set(0);
     with_scratch::<OverrideBackend, _>(
         <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, got.max_size()),
         |s| module_test.ckks_add_one_assign(&mut got, s),
     )
     .unwrap();
-    assert_eq!(ADD_CONST_CALLS.get(), 1);
+    assert_eq!(ADD_PT_CALLS.get(), 1);
     assert_eq!(
         snapshot::<OverrideBackend, _, Standard>(&got),
         snapshot::<FFT64Oracle, _, Standard>(&want),
@@ -350,27 +242,52 @@ fn unit_shifts_use_selected_plaintext_scratch() {
         |s| module_ref.ckks_sub_one_assign(&mut want, s),
     )
     .unwrap();
-    SUB_CONST_CALLS.set(0);
+    SUB_PT_CALLS.set(0);
     with_scratch::<OverrideBackend, _>(
         <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, got.max_size()),
         |s| module_test.ckks_sub_one_assign(&mut got, s),
     )
     .unwrap();
-    assert_eq!(SUB_CONST_CALLS.get(), 1);
+    assert_eq!(SUB_PT_CALLS.get(), 1);
     assert_eq!(
         snapshot::<OverrideBackend, _, Standard>(&got),
         snapshot::<FFT64Oracle, _, Standard>(&want),
         "ckks_sub_one_assign"
     );
 
-    let counters = [
-        &ADD_CONST_CALLS,
-        &SUB_CONST_CALLS,
-        &ADD_ASSIGN_CALLS,
-        &SUB_ASSIGN_CALLS,
-        &ADD_PT_VEC_CALLS,
-        &SUB_PT_VEC_CALLS,
-    ];
+    let small = Module::<OverrideBackend>::new(32);
+    ADD_PT_CALLS.set(0);
+    SUB_PT_CALLS.set(0);
+    for (op, add) in [("ckks_add_one_assign", true), ("ckks_sub_one_assign", false)] {
+        let before = snapshot::<OverrideBackend, _, Standard>(&got);
+        let bytes = if add {
+            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&small, got.max_size())
+        } else {
+            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&small, got.max_size())
+        };
+        let err = with_scratch::<OverrideBackend, _>(bytes, |s| {
+            if add {
+                small.ckks_add_one_assign(&mut got, s)
+            } else {
+                small.ckks_sub_one_assign(&mut got, s)
+            }
+        })
+        .unwrap_err();
+        let reason = "operand degree exceeds the module degree".into();
+        assert_ckks_error(op, &err, CKKSCompositionError::InvalidOperand { op, reason });
+        assert_eq!(
+            snapshot::<OverrideBackend, _, Standard>(&got),
+            before,
+            "{op}: refused call changed dst"
+        );
+    }
+    assert_eq!(
+        (ADD_PT_CALLS.get(), SUB_PT_CALLS.get()),
+        (0, 0),
+        "a refused unit shift entered the selected assignment"
+    );
+
+    let counters = [&ADD_ASSIGN_CALLS, &SUB_ASSIGN_CALLS, &ADD_PT_CALLS, &SUB_PT_CALLS];
     counters.iter().for_each(|calls| calls.set(0));
     poulpy_ckks::test_suite::parity::test_arithmetic_parity::<FFT64Oracle, OverrideBackend, f64, Standard>(
         params,

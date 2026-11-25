@@ -198,8 +198,7 @@ They do not reproduce NaN, signed-zero, or exact-equality semantics.
 | `fmax` | `ckks_fmax(a, b)` | `a - b` | `S(D) + D + 1` | `s + 1` |
 | `fmin` | `ckks_fmin(a, b)` | `a - b` | `S(D) + D + 1` | `s + 1` |
 
-`ckks_fmax_const` and `ckks_fmin_const` have the same cost and depth as their two-ciphertext forms.
-The ciphertext and plaintext bound must use compatible scales.
+`ckks_fmax` and `ckks_fmin` take a ciphertext or a plaintext `b`; a plaintext bound uses a scale compatible with `a` and enters only the difference, `ckks_fmax` computing `a + step(b - a) * (b - a)` with sign input `b - a`.
 
 ## CKKS support operations
 

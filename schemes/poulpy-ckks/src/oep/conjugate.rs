@@ -34,7 +34,7 @@ pub unsafe trait CKKSConjugateImpl: Backend {
 
     /// Default body: `ckks_conjugate_rotate_into_derived`, the lookup of the automorphism key of the conjugate-rotate
     /// Galois element of `k` at the switch width `min(src.k(), dst.k())`, then [`Self::ckks_conjugate_with_key_into`]
-    /// with it. A missing key is `MissingAutomorphismKey`.
+    /// with it. A missing key is `MissingAutomorphismKey`, one too narrow `AutomorphismKeyTooNarrow`.
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
         k: i64,
@@ -52,7 +52,7 @@ pub unsafe trait CKKSConjugateImpl: Backend {
     }
 
     /// Default body: `ckks_conjugate_assign_derived`, the lookup of the automorphism key of Galois element `-1` at
-    /// `dst.k()`, then [`Self::ckks_conjugate_with_key_assign`] with it. A missing key is `MissingAutomorphismKey`.
+    /// `dst.k()`, then [`Self::ckks_conjugate_with_key_assign`] with it. A missing key is `MissingAutomorphismKey`, one too narrow `AutomorphismKeyTooNarrow`.
     fn ckks_conjugate_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,

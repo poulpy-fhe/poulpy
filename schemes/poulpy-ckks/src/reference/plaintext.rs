@@ -6,15 +6,12 @@ use poulpy_hal::{
         ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub,
         VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Ring, ScratchArena, Standard, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
+    layouts::{Backend, Ring, ScratchArena, Standard},
 };
 
 use crate::GLWEToBackendRef;
 
-use crate::{
-    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, ckks_log_delta, ensure_base2k_match, ensure_plaintext_const_operand,
-    ensure_plaintext_vec_operand,
-};
+use crate::{CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, ckks_log_delta, ensure_base2k_match, ensure_plaintext_operand};
 
 #[derive(Clone, Copy)]
 enum PlaintextShift {
@@ -22,9 +19,10 @@ enum PlaintextShift {
     Lsh(usize),
 }
 
-fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) -> PlaintextShift {
+// A plaintext is encoded across its whole allocation, so its `max_k` is its `encoded_k`.
+fn plaintext_shift<P: CKKSInfos>(ct_log_budget: usize, pt: &P) -> PlaintextShift {
     let available = ct_log_budget + pt.log_delta();
-    let encoded_k = pt.encoded_k().as_usize();
+    let encoded_k = pt.max_k().as_usize();
     if available >= encoded_k {
         PlaintextShift::Rsh(available - encoded_k)
     } else {
@@ -33,7 +31,7 @@ fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) ->
 }
 
 /// `ct += pt`, `pt` aligned to the budget of `ct`, without normalization.
-pub(crate) fn add_pt_vec_raw<BE, M, Dst, A, Rg: Ring>(
+pub(crate) fn add_pt_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
     op: &'static str,
     ct: &mut Dst,
@@ -44,16 +42,9 @@ where
     BE: Backend,
     M: VecZnxRshAdd<BE, Rg> + VecZnxLshAdd<BE, Rg> + ?Sized,
     Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSInfos,
 {
-    ensure_plaintext_vec_operand(
-        op,
-        ct.base2k().as_usize(),
-        ct.n().as_usize(),
-        ct.log_budget(),
-        pt,
-        BE::MIN_DEGREE,
-    )?;
+    ensure_plaintext_operand(op, ct.base2k().as_usize(), ct.n().as_usize(), ct.log_budget(), pt)?;
     let shift = plaintext_shift(ct.log_budget(), pt);
     let base2k = ct.base2k().as_usize();
     ct.set_canonical(false);
@@ -66,90 +57,8 @@ where
     Ok(())
 }
 
-/// Adds coefficient `coeff_pt` of `pt` to coefficient `coeff_ct` of `ct`, aligned to the budget of `ct`, without
-/// normalization.
-pub(crate) fn add_pt_const_raw<BE, M, Dst, A, Rg: Ring>(
-    module: &M,
-    op: &'static str,
-    ct: &mut Dst,
-    coeff_ct: usize,
-    pt: &A,
-    coeff_pt: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend,
-    M: VecZnxRshAdd<BE, Rg> + VecZnxLshAdd<BE, Rg> + ?Sized,
-    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
-{
-    ensure_plaintext_const_operand(
-        op,
-        ct.base2k().as_usize(),
-        ct.n().as_usize(),
-        coeff_ct,
-        ct.log_budget(),
-        pt,
-        coeff_pt,
-    )?;
-    let shift = plaintext_shift(ct.log_budget(), pt);
-    let base2k = ct.base2k().as_usize();
-    ct.set_canonical(false);
-    let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
-    let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
-    let mut ct_win = vec_znx_backend_mut_from_mut::<BE, Rg>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
-    let pt_win = vec_znx_backend_ref_from_ref::<BE, Rg>(pt_ref.data()).window_coeffs(coeff_pt, 1);
-    match shift {
-        PlaintextShift::Rsh(k) => module.vec_znx_rsh_add(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
-        PlaintextShift::Lsh(k) => module.vec_znx_lsh_add(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
-    }
-
-    Ok(())
-}
-
-/// Subtracts coefficient `coeff_pt` of `pt` from coefficient `coeff_ct` of `ct`, aligned to the budget of `ct`,
-/// without normalization.
-pub(crate) fn sub_pt_const_raw<BE, M, Dst, A, Rg: Ring>(
-    module: &M,
-    op: &'static str,
-    ct: &mut Dst,
-    coeff_ct: usize,
-    pt: &A,
-    coeff_pt: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend,
-    M: VecZnxRshSub<BE, Rg> + VecZnxLshSub<BE, Rg> + ?Sized,
-    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
-{
-    ensure_plaintext_const_operand(
-        op,
-        ct.base2k().as_usize(),
-        ct.n().as_usize(),
-        coeff_ct,
-        ct.log_budget(),
-        pt,
-        coeff_pt,
-    )?;
-    let shift = plaintext_shift(ct.log_budget(), pt);
-    let base2k = ct.base2k().as_usize();
-    ct.set_canonical(false);
-    let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
-    let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
-    let mut ct_win = vec_znx_backend_mut_from_mut::<BE, Rg>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
-    let pt_win = vec_znx_backend_ref_from_ref::<BE, Rg>(pt_ref.data()).window_coeffs(coeff_pt, 1);
-    match shift {
-        PlaintextShift::Rsh(k) => module.vec_znx_rsh_sub(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
-        PlaintextShift::Lsh(k) => module.vec_znx_lsh_sub(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
-    }
-
-    Ok(())
-}
-
 /// `ct -= pt`, `pt` aligned to the budget of `ct`, without normalization.
-pub(crate) fn sub_pt_vec_raw<BE, M, Dst, A, Rg: Ring>(
+pub(crate) fn sub_pt_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
     op: &'static str,
     ct: &mut Dst,
@@ -160,16 +69,9 @@ where
     BE: Backend,
     M: VecZnxRshSub<BE, Rg> + VecZnxLshSub<BE, Rg> + ?Sized,
     Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSInfos,
 {
-    ensure_plaintext_vec_operand(
-        op,
-        ct.base2k().as_usize(),
-        ct.n().as_usize(),
-        ct.log_budget(),
-        pt,
-        BE::MIN_DEGREE,
-    )?;
+    ensure_plaintext_operand(op, ct.base2k().as_usize(), ct.n().as_usize(), ct.log_budget(), pt)?;
     let shift = plaintext_shift(ct.log_budget(), pt);
     let base2k = ct.base2k().as_usize();
     ct.set_canonical(false);
@@ -218,6 +120,7 @@ pub trait CKKSPlaintextVecReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
                 op: "ckks_extract_pt",
                 ct_n: src.n().as_usize(),
                 pt_n: dst.n().as_usize(),
+                rule: "the ciphertext's",
             }
             .into());
         }

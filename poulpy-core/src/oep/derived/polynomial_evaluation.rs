@@ -6,7 +6,7 @@
 
 use crate::{
     api::GLWEBSGSOps,
-    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, Parity, PowerBasisHelper},
+    layouts::{BabyStep, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, Parity, PowerBasisHelper},
 };
 use anyhow::{Result, ensure};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
@@ -22,18 +22,18 @@ pub(crate) fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A, Rg: Ring
     ops: &Ops,
     res: &mut V,
     parity: Parity,
-    coeffs: &P,
+    coeffs: &[P],
     power_basis: &G,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     Ops: GLWEBSGSOps<BE, V, P, A, V, Rg>,
     V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-    P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     A: GLWEToBackendRef<BE, Rg>,
     G: PowerBasisHelper<BE, A, Rg>,
 {
-    let degree = coeffs.n().as_usize() - 1;
+    ensure!(!coeffs.is_empty(), "a baby step holds no constant");
+    let degree = coeffs.len() - 1;
 
     let (first, step) = match parity {
         Parity::Even => (2, 2),
@@ -49,7 +49,7 @@ where
     }
     if !terms.is_empty() && ops.eval_baby_linear_combination(module, res, &terms, coeffs, scratch)? {
         if parity != Parity::Odd {
-            ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
+            ops.add_pt_assign(module, res, &coeffs[0], scratch)?;
         }
         res.set_noise(None);
         return Ok(());
@@ -58,11 +58,11 @@ where
     ops.init_accumulator(module, res, power_basis.get(init_power)?, scratch)?;
 
     if parity != Parity::Odd {
-        ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
+        ops.add_pt_assign(module, res, &coeffs[0], scratch)?;
     }
 
     for (xpow, i) in &terms {
-        ops.mul_add_pt_const(module, res, xpow, coeffs, *i, scratch)?;
+        ops.mul_add_pt(module, res, xpow, &coeffs[*i], scratch)?;
     }
 
     res.set_noise(None);
@@ -89,7 +89,6 @@ where
     R: GLWEToBackendMut<BE, Rg>,
     B: BabyStep<BE, Rg, Value = V>,
     V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
-    P: GLWEToBackendRef<BE, Rg>,
     A: GLWEToBackendRef<BE, Rg>,
     G: PowerBasisHelper<BE, A, Rg>,
     H: GetTensorKey<BE, Rg>,

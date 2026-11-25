@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeGLWE, ScratchArenaTakeGLWETensor,
+    GLWECopy, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeGLWE, ScratchArenaTakeGLWETensor,
     glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
     glwe_right_operand_prepare_tmp_bytes,
     layouts::{
@@ -18,11 +18,15 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSLayout, SlotLayout, SlotsKind,
     api::CKKSRoundOps,
-    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext, validation::ensure_scratch},
+    layouts::{
+        CKKSCiphertextViewMut,
+        validation::{ensure_scratch, factor_layout},
+    },
     shaping::MAX_PASS_BITS,
+    shaping::take_wide,
 };
 use crate::{
-    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, get_mul_ct_params,
+    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_checks, get_mul_ct_params,
     layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     mul_ct_params_raw,
 };
@@ -205,8 +209,8 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     }
 
     /// `glwe_left_operand_prepare` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,
-    /// into `res`, which then reports `a`'s metadata. `InvalidOperand` for an `a` of another layout than `res`'s,
-    /// before any write.
+    /// into `res`, which then reports `a`'s metadata. `InvalidOperand` for an `a` below the backend's minimum degree or
+    /// of another layout than `res`'s, before any write.
     fn ckks_left_operand_prepare_reference<A>(
         &self,
         res: &mut CKKSLeftOperandPrepared<BE, Rg>,
@@ -217,14 +221,17 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Self: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + Sized,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
-        crate::ensure_operand_degrees("ckks_left_operand_prepare", self, [res.n(), a.n()])?;
-        check_source_layout("ckks_left_operand_prepare", res, a)?;
+        const OP: &str = "ckks_left_operand_prepare";
+        crate::ensure_operand_degrees(OP, self, [res.n(), a.n()])?;
+        check_preparable::<BE>(OP, a, false)?;
+        check_source_layout(OP, res, a)?;
         glwe_left_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
         Ok(())
     }
 
-    /// As [`Self::ckks_left_operand_prepare_reference`], by `glwe_right_operand_prepare` into a right operand.
+    /// As [`Self::ckks_left_operand_prepare_reference`], by `glwe_right_operand_prepare` into a right operand, which
+    /// embeds a plaintext below the backend's minimum degree at it.
     fn ckks_right_operand_prepare_reference<A>(
         &self,
         res: &mut CKKSRightOperandPrepared<BE, Rg>,
@@ -235,8 +242,10 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Self: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + Sized,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
-        crate::ensure_operand_degrees("ckks_right_operand_prepare", self, [res.n(), a.n()])?;
-        check_source_layout("ckks_right_operand_prepare", res, a)?;
+        const OP: &str = "ckks_right_operand_prepare";
+        crate::ensure_operand_degrees(OP, self, [res.n(), a.n()])?;
+        check_preparable::<BE>(OP, a, true)?;
+        check_source_layout(OP, res, a)?;
         glwe_right_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
         Ok(())
@@ -464,7 +473,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         )
     }
 
-    fn ckks_mul_pt_vec_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_mul_pt_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         Self: GLWEBytesOf<BE> + CKKSRoundOps<BE, Rg>,
         R: CKKSCtBounds,
@@ -474,35 +483,16 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     {
         let plain = |res: &GLWELayout, _: TorusPrecision| {
             let b_infos = GLWEPlaintextLayout {
-                n: res.n(),
+                n: b.n(),
                 base2k: res.base2k(),
-                k: b.k(),
+                k: b.max_k(),
             };
             self.glwe_bytes_of_from_infos(a) + self.glwe_mul_plain_tmp_bytes(res, a, &b_infos)
         };
         with_shaped_bytes(self, res, a.k(), is_replicated(a), plain)
     }
 
-    fn ckks_mul_pt_const_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
-    where
-        Self: GLWEBytesOf<BE> + CKKSRoundOps<BE, Rg>,
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos,
-        Self: GLWEMulConst<BE, Rg>,
-    {
-        let plain = |res: &GLWELayout, _: TorusPrecision| {
-            let b_infos = GLWEPlaintextLayout {
-                n: res.n(),
-                base2k: res.base2k(),
-                k: b.k(),
-            };
-            self.glwe_bytes_of_from_infos(res) + self.glwe_mul_const_tmp_bytes(res, a, &b_infos)
-        };
-        with_shaped_bytes(self, res, a.k(), is_replicated(a), plain)
-    }
-
-    fn ckks_mul_pt_vec_into_reference<Dst, A, P>(
+    fn ckks_mul_pt_into_reference<Dst, A, P>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -520,10 +510,10 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
-        const OP: &str = "ckks_mul_pt_vec_into";
+        const OP: &str = "ckks_mul_pt_into";
         crate::ensure_operand_degrees(OP, self, [dst.n(), a.n()])?;
-        let slot_layout = crate::layouts::validation::product_layout(OP, &[a.slot_layout(), pt.slot_layout()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, dst, a, pt)?;
+        let slot_layout = crate::layouts::validation::product_layout(OP, &[a.slot_layout(), factor_layout(a, pt)])?;
+        let (res_log_budget, res_log_delta, cnv_offset) = ckks_mul_pt_checks(OP, dst, a, pt)?;
         let stamp = MulStamp {
             log_budget: res_log_budget,
             log_delta: res_log_delta,
@@ -533,21 +523,21 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
             slots: Some(a.slots().join(pt.slots())),
             slot_layout: Some(slot_layout),
         };
+        ensure_scratch(OP, scratch, self.ckks_mul_pt_tmp_bytes_reference(dst, a, pt))?;
         match crate::shaping::product_depth(slot_layout, pt.log_delta()) {
             None => {
-                mul_pt_vec_into_at(self, dst, a, pt, cnv_offset, &stamp, scratch);
+                mul_pt_into_at(self, dst, a, pt, cnv_offset, &stamp, scratch);
                 Ok(())
             }
             Some(lambda) => {
-                ensure_scratch(OP, scratch, self.ckks_mul_pt_vec_tmp_bytes_reference(dst, a, pt))?;
                 let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
-                mul_pt_vec_into_at(self, &mut wide, a, pt, cnv_offset, &stamp.widen(lambda), &mut scratch);
+                mul_pt_into_at(self, &mut wide, a, pt, cnv_offset, &stamp.widen(lambda), &mut scratch);
                 round_into(self, dst, &wide, &stamp, &mut scratch)
             }
         }
     }
 
-    fn ckks_mul_pt_vec_assign_reference<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pt_assign_reference<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE, Rg>
@@ -558,12 +548,13 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
             + GLWEBytesOf<BE>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        const OP: &str = "ckks_mul_pt_vec_assign";
+        const OP: &str = "ckks_mul_pt_assign";
         crate::ensure_operand_degrees(OP, self, [dst.n()])?;
-        let slot_layout = crate::layouts::validation::product_layout(OP, &[dst.slot_layout(), pt.slot_layout()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, dst, dst, pt)?;
+        let slot_layout = crate::layouts::validation::product_layout(OP, &[dst.slot_layout(), factor_layout(&*dst, pt)])?;
+        let (res_log_budget, res_log_delta, cnv_offset) = ckks_mul_pt_checks(OP, dst, dst, pt)?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
         let slots = dst.slots().join(pt.slots());
+        ensure_scratch(OP, scratch, self.ckks_mul_pt_tmp_bytes_reference(dst, dst, pt))?;
         if let Some(lambda) = crate::shaping::product_depth(slot_layout, pt.log_delta()) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
@@ -572,9 +563,8 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
                 slots: Some(slots),
                 slot_layout: Some(slot_layout),
             };
-            ensure_scratch(OP, scratch, self.ckks_mul_pt_vec_tmp_bytes_reference(dst, dst, pt))?;
             let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
-            mul_pt_vec_into_at(self, &mut wide, &*dst, pt, cnv_offset, &stamp.widen(lambda), &mut scratch);
+            mul_pt_into_at(self, &mut wide, &*dst, pt, cnv_offset, &stamp.widen(lambda), &mut scratch);
             return round_into(self, dst, &wide, &stamp, &mut scratch);
         }
         scratch.scope(|scratch_local| {
@@ -586,107 +576,6 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
             dst.set_slots(slots);
             dst.set_slot_layout(slot_layout);
             self.glwe_mul_plain(cnv_offset, dst, &input, pt, &mut op_scratch);
-        });
-        Ok(())
-    }
-
-    fn ckks_mul_pt_const_into_reference<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWEMulConst<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWEBytesOf<BE>,
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
-    {
-        const OP: &str = "ckks_mul_pt_const_into";
-        crate::ensure_operand_degrees(OP, self, [dst.n(), a.n()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = ckks_mul_pt_const_checks(OP, dst, a, pt, pt_coeff)?;
-        // A scalar-constant multiply preserves the operand's sparsity pattern,
-        // slot kind and layout.
-        let stamp = MulStamp {
-            log_budget: res_log_budget,
-            log_delta: res_log_delta,
-            log_sparsity: Some(a.log_sparsity()),
-            slots: Some(a.slots()),
-            slot_layout: Some(a.slot_layout()),
-        };
-        match crate::shaping::product_depth(a.slot_layout(), pt.log_delta()) {
-            None => {
-                mul_pt_const_into_at(self, dst, a, pt, pt_coeff, cnv_offset, &stamp, scratch);
-                Ok(())
-            }
-            Some(lambda) => {
-                ensure_scratch(OP, scratch, self.ckks_mul_pt_const_tmp_bytes_reference(dst, a, pt))?;
-                let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
-                mul_pt_const_into_at(
-                    self,
-                    &mut wide,
-                    a,
-                    pt,
-                    pt_coeff,
-                    cnv_offset,
-                    &stamp.widen(lambda),
-                    &mut scratch,
-                );
-                round_into(self, dst, &wide, &stamp, &mut scratch)
-            }
-        }
-    }
-
-    fn ckks_mul_pt_const_assign_reference<Dst, P>(
-        &self,
-        dst: &mut Dst,
-        cnst: &P,
-        cnst_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWECopy<BE, Rg>
-            + GLWEMulConst<BE, Rg>
-            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + VecZnxCopy<BE, Rg>
-            + CKKSRoundOps<BE, Rg>
-            + GLWEBytesOf<BE>,
-        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    {
-        const OP: &str = "ckks_mul_pt_const_assign";
-        crate::ensure_operand_degrees(OP, self, [dst.n()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = ckks_mul_pt_const_checks(OP, dst, dst, cnst, cnst_coeff)?;
-        if let Some(lambda) = crate::shaping::product_depth(dst.slot_layout(), cnst.log_delta()) {
-            let stamp = MulStamp {
-                log_budget: res_log_budget,
-                log_delta: res_log_delta,
-                log_sparsity: Some(dst.log_sparsity()),
-                slots: Some(dst.slots()),
-                slot_layout: Some(dst.slot_layout()),
-            };
-            ensure_scratch(OP, scratch, self.ckks_mul_pt_const_tmp_bytes_reference(dst, dst, cnst))?;
-            let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
-            mul_pt_const_into_at(
-                self,
-                &mut wide,
-                &*dst,
-                cnst,
-                cnst_coeff,
-                cnv_offset,
-                &stamp.widen(lambda),
-                &mut scratch,
-            );
-            return round_into(self, dst, &wide, &stamp, &mut scratch);
-        }
-        scratch.scope(|scratch_local| {
-            let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
-            self.glwe_copy(&mut input, &*dst, &mut op_scratch);
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-            self.glwe_mul_const(cnv_offset, dst, &input, cnst, cnst_coeff, &mut op_scratch);
         });
         Ok(())
     }
@@ -706,14 +595,14 @@ pub(crate) struct MulStamp {
 
 impl MulStamp {
     /// The stamp of a result computed `lambda` bits under the scale.
-    fn widen(&self, lambda: usize) -> Self {
+    pub(crate) fn widen(&self, lambda: usize) -> Self {
         Self {
             log_delta: self.log_delta + lambda,
             ..*self
         }
     }
 
-    fn set_on<D: SetCKKSInfos>(&self, dst: &mut D) {
+    pub(crate) fn set_on<D: SetCKKSInfos>(&self, dst: &mut D) {
         dst.set_log_budget(self.log_budget);
         dst.set_log_delta(self.log_delta);
         if let Some(log_sparsity) = self.log_sparsity {
@@ -800,7 +689,8 @@ where
     Ok(())
 }
 
-/// The tensor key of a product of width `k`, `MissingRelinearizationKey` for `op` where `tsk` holds none.
+/// The tensor key of a product of width `k`, for `op` `MissingRelinearizationKey` where `tsk` holds none and
+/// `RelinearizationKeyTooNarrow` where it holds one too narrow.
 pub(crate) fn tensor_key_at<'k, BE, T, Rg: Ring>(
     op: &'static str,
     tsk: &'k T,
@@ -811,7 +701,7 @@ where
     T: GetTensorKey<BE, Rg>,
 {
     tsk.get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source }.into())
+        .map_err(|source| CKKSCompositionError::tensor_key_lookup(op, k.into(), source).into())
 }
 
 /// Whether a product of width `tensor_k` takes the one-pass product and relinearization.
@@ -883,6 +773,19 @@ pub(crate) fn check_prepared_layout<D: GLWEInfos, P: GLWEInfos>(op: &'static str
     Ok(())
 }
 
+/// `InvalidOperand` for `op` when `a` is below the backend's minimum degree, except a plaintext when the preparation
+/// `embeds` plaintexts at that degree.
+fn check_preparable<BE: Backend>(op: &'static str, a: &impl GLWEInfos, embeds: bool) -> Result<()> {
+    if a.n().as_usize() < BE::MIN_DEGREE && !(embeds && a.rank().as_usize() == 0) {
+        return Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the operand is below the backend's minimum degree, which its preparation does not embed".into(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Rejects a source of another layout than the prepared operand `res` was allocated for, before any write.
 fn check_source_layout(op: &'static str, res: &impl GLWEInfos, a: &impl GLWEInfos) -> Result<()> {
     if res.glwe_layout() != a.glwe_layout() {
@@ -918,19 +821,6 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos, Rg:
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
 impl<BE: Backend, Rg: Ring> CKKSMulReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}
-
-/// A ciphertext shaped as `dst` at width `k`, for a result rounded into `dst`.
-pub(crate) fn take_wide<'a, BE: Backend + 'a, D: GLWEInfos + CKKSInfos, Rg: Ring>(
-    scratch: &'a mut ScratchArena<'_, BE>,
-    dst: &D,
-    k: usize,
-) -> (CKKSCiphertextViewMut<'a, BE, Rg>, ScratchArena<'a, BE>) {
-    let layout = GLWELayout {
-        k: k.into(),
-        ..dst.glwe_layout()
-    };
-    scratch.borrow().take_ckks_ciphertext_scratch(&layout, dst.meta())
-}
 
 /// `a²` computed `lambda` bits under its scale into `wide`, without rounding:
 /// the square of a destination `lambda` bits narrower than `wide`, labeled
@@ -1107,7 +997,7 @@ where
     )
 }
 
-fn mul_pt_vec_into_at<BE, M, Out, A, P, Rg: Ring>(
+fn mul_pt_into_at<BE, M, Out, A, P, Rg: Ring>(
     module: &M,
     out: &mut Out,
     a: &A,
@@ -1127,27 +1017,6 @@ fn mul_pt_vec_into_at<BE, M, Out, A, P, Rg: Ring>(
     // otherwise produce an empty output.
     stamp.set_on(out);
     module.glwe_mul_plain(cnv_offset, out, a, pt, scratch);
-}
-
-#[allow(clippy::too_many_arguments)]
-fn mul_pt_const_into_at<BE, M, Out, A, P, Rg: Ring>(
-    module: &M,
-    out: &mut Out,
-    a: &A,
-    pt: &P,
-    pt_coeff: usize,
-    cnv_offset: usize,
-    stamp: &MulStamp,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEMulConst<BE, Rg> + ?Sized,
-    Out: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
-    P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-{
-    stamp.set_on(out);
-    module.glwe_mul_const(cnv_offset, out, a, pt, pt_coeff, scratch);
 }
 
 pub(crate) fn is_replicated(infos: &impl CKKSInfos) -> bool {

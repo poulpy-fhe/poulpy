@@ -1,18 +1,16 @@
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSInfos, CoeffsMeta, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
-    api::{
-        BSGSPolynomialInfos, CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps,
-        CKKSEncodingHostOps,
-    },
+    CKKSInfos, CoeffsMeta, SetGLWEPlaintextInfos, SlotsKind,
+    api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps},
     layouts::{CKKSPlaintextAlloc, ScratchArenaTakeCKKSCiphertext},
-    polynomial::{Basis, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
+    polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
 };
 use poulpy_core::{
     GLWEBytesOf,
+    api::TransferInto,
     layouts::{Base2K, GGLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, SetK},
 };
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena};
 
 use crate::{Ct, Pt, ServerBackend, model::RELU_TRIG};
 
@@ -26,24 +24,27 @@ pub(crate) struct Relu {
 }
 
 impl Relu {
-    /// Encodes the polynomial at radix `base2k` and scale `2^log_delta`, the scale of the activations.
+    /// Encodes the polynomial on `host` at radix `base2k` and scale `2^log_delta`, the scale of the activations, and
+    /// moves it to `module`.
     pub(crate) fn new(
         module: &Module<ServerBackend>,
+        host: &Module<HostBytesBackend>,
         base2k: Base2K,
         log_delta: usize,
-        scratch: &mut ScratchArena<'_, ServerBackend>,
     ) -> Result<Self> {
         let meta = CoeffsMeta::from_delta_budget(log_delta, LOG_COEFFS_RANGE);
-        let mut encode = |coeffs: Vec<f64>| {
-            Polynomial::new_with_parity(Basis::Monomial, coeffs, Parity::Full).decompose_bsgs_with(
+        let encode = |coeffs: Vec<f64>| -> Result<_> {
+            let bsgs = Polynomial::new_with_parity(Basis::Monomial, coeffs, Parity::Full).encode_bsgs_with(
+                host,
+                base2k,
+                meta,
                 SplitStrategy::MinDepth,
-                |baby| {
-                    let mut pt = module.ckks_plaintext_alloc(baby.len().into(), base2k, meta.k);
-                    pt.set_meta(meta.meta);
-                    module.ckks_encode_coeffs_host_into(&mut pt, baby, scratch)?;
-                    Ok(pt)
-                },
-            )
+            )?;
+            Ok(bsgs.map_baby_steps_ref(|pt| {
+                let mut moved: Pt = module.ckks_plaintext_alloc_from_infos(pt);
+                pt.transfer_into(&mut moved);
+                moved
+            }))
         };
         Ok(Self {
             z: ComplexBSGSPolynomial {
@@ -59,8 +60,7 @@ impl Relu {
         T: GGLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_bytes_of_from_infos(a)
-            + module.ckks_all_ops_with_atk_tmp_bytes(a, BSGSPolynomialInfos::<ServerBackend>::baby_step(&self.z.re, 0), tsk, atk)
+        module.glwe_bytes_of_from_infos(a) + module.ckks_all_ops_with_atk_tmp_bytes(a, &self.z.re.baby_step(0)[0], tsk, atk)
     }
 
     /// `res = z(a) + conj(z(a)) + offset`, in real slots. The sum vanishes where `a` is 1, on the slots the mask of the
@@ -86,7 +86,7 @@ impl Relu {
         module.ckks_conjugate_into(&mut conjugate, res, atk, &mut scratch)?;
         module.ckks_add_assign(res, &conjugate, &mut scratch)?;
         res.set_slots(SlotsKind::Real);
-        module.ckks_add_pt_vec_assign(res, offset, &mut scratch)?;
+        module.ckks_add_assign(res, offset, &mut scratch)?;
         Ok(())
     }
 }

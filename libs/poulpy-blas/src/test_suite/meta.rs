@@ -726,17 +726,15 @@ pub fn test_blas_batch_record<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
     let (ctx, mut atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let prec = params.prec();
-    // Every block of `grid` encrypted from a compact plaintext of `lanes d^2` slots, at the degree the backend allocates
-    // it.
-    let encrypt_compact = |grid: &Grid, scratch: &mut ScratchArena<'_, BE>| {
+    // Every block of `grid` encrypted from a plaintext of `lanes d^2` slots, at the degree of those slots.
+    let encrypt_blocks = |grid: &Grid, scratch: &mut ScratchArena<'_, BE>| {
         let count = grid.lanes();
         let encoder = ReferenceEncoder::<E>::new(count * d * d).unwrap();
-        let degree = (2 * count * d * d).max(BE::MIN_DEGREE).min(params.n);
         let blocks = grid
             .blocks(count * d * d)
             .iter()
             .map(|(re, im)| {
-                let mut pt = host_module.ckks_plaintext_alloc(degree.into(), params.base2k.into(), prec.k());
+                let mut pt = host_module.ckks_plaintext_alloc_from_slots(count * d * d, params.base2k.into(), prec.k());
                 pt.set_meta(prec.meta);
                 encoder.encode_reim(&mut pt, &to_f::<F>(re), &to_f::<F>(im)).unwrap();
                 ckks_encrypt_pt(&params, module, &sk, params.k, &pt, scratch)
@@ -745,12 +743,12 @@ pub fn test_blas_batch_record<BE, F, E>(
         BlasCiphertext::from_blocks(blocks, log_d, grid.rows, grid.cols).unwrap()
     };
     for count in [1, 2, lanes / 2] {
-        let ct = encrypt_compact(&Grid::model(log_d, 1, 1, count, count as u64), &mut scratch.borrow());
+        let ct = encrypt_blocks(&Grid::model(log_d, 1, 1, count, count as u64), &mut scratch.borrow());
         assert_eq!(ct.mat_slots(), Some(count), "compact count={count}");
     }
 
     let pair = Grid::model(log_d, 1, 2, 2, 1);
-    let ct_pair = encrypt_compact(&pair, &mut scratch.borrow());
+    let ct_pair = encrypt_blocks(&pair, &mut scratch.borrow());
     for p in sum_galois_elements(module.cyclotomic_order::<Standard>(), &ct_pair) {
         atks.entry(p)
             .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));
@@ -785,7 +783,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     let dense = upload_pt(module, &dense);
     let mut added = ct_pair.clone();
     for block in added.blocks_mut() {
-        module.ckks_add_pt_vec_assign(block, &dense, &mut scratch.borrow()).unwrap();
+        module.ckks_add_assign(block, &dense, &mut scratch.borrow()).unwrap();
     }
     assert_guard::<BE, _, Standard>("dense plaintext added", "blas_sum", InvalidOperand, &mut res, |res| {
         module.blas_sum(res, &added, &keys, &mut op_scratch.borrow())
@@ -804,11 +802,11 @@ pub fn test_blas_batch_record<BE, F, E>(
         &mut scratch.borrow(),
     );
     let half = Grid::model(log_d, 1, 1, 2, 4);
-    let ct_half = encrypt_compact(&half, &mut scratch.borrow());
+    let ct_half = encrypt_blocks(&half, &mut scratch.borrow());
     let spread = Grid::from_fn(log_d, 1, 1, lanes, |s, r, c| half.at(s % 2, r, c));
     // One matrix repeated over the slots: on the right its psi^k are rotations at no scale.
     let one = Grid::model(log_d, 1, 1, 1, 5);
-    let ct_one = encrypt_compact(&one, &mut scratch.borrow());
+    let ct_one = encrypt_blocks(&one, &mut scratch.borrow());
     assert!(replicated::<Standard>(&ct_one), "the fixture holds one matrix");
     let spread_one = Grid::from_fn(log_d, 1, 1, lanes, |_, r, c| one.at(0, r, c));
     for (label, (a, ct_a), (b, ct_b)) in [

@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     api::GLWEBSGSOps,
-    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
+    layouts::{BabyStep, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
 };
 
 /// Backend-provided Baby-Step / Giant-Step polynomial-evaluation phases.
@@ -26,14 +26,13 @@ pub unsafe trait GLWEPolynomialEvaluationImpl<Rg: Ring = Standard>: Backend {
         ops: &Ops,
         res: &mut V,
         parity: Parity,
-        coeffs: &P,
+        coeffs: &[P],
         power_basis: &G,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Ops: GLWEBSGSOps<Self, V, P, A, V, Rg>,
         V: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg>,
-        P: GLWEToBackendRef<Self, Rg> + GLWEInfos,
         A: GLWEToBackendRef<Self, Rg>,
         G: PowerBasisHelper<Self, A, Rg>,
     {
@@ -66,7 +65,6 @@ pub unsafe trait GLWEPolynomialEvaluationImpl<Rg: Ring = Standard>: Backend {
         R: GLWEToBackendMut<Self, Rg>,
         B: BabyStep<Self, Rg, Value = V>,
         V: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg>,
-        P: GLWEToBackendRef<Self, Rg>,
         A: GLWEToBackendRef<Self, Rg>,
         G: PowerBasisHelper<Self, A, Rg>,
         H: GetTensorKey<Self, Rg>,

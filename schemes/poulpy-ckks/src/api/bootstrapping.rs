@@ -30,12 +30,17 @@ use crate::{
 ///   an input holding fewer bits than its scale plus the plan's message ratio, or a plan whose EvalMod scale is below
 ///   that input scale plus the message ratio (the lifts of a C2S-first raise), a LUT on a plan with the EvalRound+
 ///   bypass, a complex message under an [`ExpCmplx`](crate::layouts::eval_mod::EvalModType::ExpCmplx) EvalMod, and an
-///   input of a [replicated](crate::SlotLayout::Replicated) slot layout.
+///   input off the slot layout of the plan
+///   ([`BootstrappingPlan::with_slot_layout`](crate::layouts::BootstrappingPlan::with_slot_layout)).
 /// - [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) and
-///   [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): a key narrower than its
-///   stage ([`key_widths`](crate::layouts::BootstrappingPlan::key_widths)), `source` being the key source's refusal.
+///   [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): a key the source lacks,
+///   `source` being its refusal.
+/// - [`AutomorphismKeyTooNarrow`](crate::CKKSCompositionError::AutomorphismKeyTooNarrow) and
+///   [`RelinearizationKeyTooNarrow`](crate::CKKSCompositionError::RelinearizationKeyTooNarrow): a key narrower than its
+///   stage ([`key_widths`](crate::layouts::BootstrappingPlan::key_widths)), and a tensor key whose layout stops short
+///   of [`tensor_key_max_input_k`](crate::layouts::BootstrappingPlan::tensor_key_max_input_k).
 /// - [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity): an input
-///   without the budget of EvalMod or a LUT.
+///   without the budget of SlotsToCoeffs (S2C first), EvalMod or a LUT.
 /// - `CKKSError::Internal`: an arena under the query of the call, when the keys report their layout.
 pub trait CKKSBootstrappingOps<BE: Backend> {
     /// Scratch upper bound for [`Self::ckks_bootstrap`], whose arguments it takes, `keys_layout` sizing the
@@ -122,8 +127,10 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// [its EvalMod section](crate::layouts::BootstrappingPlan#evalmod).
     ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a plain
-    /// [`EvalMod`](crate::layouts::EvalMod). A run on the [replicated route](crate::layouts::ReplicatedRoute) evaluates
-    /// the parts of its input and lands the result at the leveled scale in `res`, as the route says. Under
+    /// [`EvalMod`](crate::layouts::EvalMod). A run of a plan on a
+    /// [replicated layout](crate::layouts::BootstrappingPlan::with_slot_layout) evaluates the parts of its input and
+    /// rounds the result with shaping to the scale of the message in `res`, and a plain `EvalMod` refuses a replicated
+    /// input. Under
     /// [`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant), the module, of degree `2N`,
     /// also runs EvalMod on the conjugate-invariant ring of degree `N`.
     ///
@@ -198,9 +205,9 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// compiled plan: see [`BootstrappingPlan`](crate::layouts::BootstrappingPlan).
     ///
     /// Under [`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant), the module, of degree
-    /// `2N`, also runs EvalMod on the conjugate-invariant ring of degree `N`. A plan on the
-    /// [replicated route](crate::layouts::ReplicatedRoute) refreshes a replicated input into `ct_out` at its width and
-    /// the leveled scale, the route's steps reading it from the run.
+    /// `2N`, also runs EvalMod on the conjugate-invariant ring of degree `N`. A plan on a
+    /// [replicated layout](crate::layouts::BootstrappingPlan::with_slot_layout) refreshes a replicated input alike, its
+    /// steps reading the layout from the run.
     /// [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k) and
     /// [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k) place the widths.
     ///

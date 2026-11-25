@@ -262,14 +262,14 @@ where
 
     // ── Lines 4–7: blind rotation, trace, partial CoeffToSlot ──────────────
     let mut acc = alloc_ct(&params, &module, params.k);
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&acc, &bsk[0], &beta_pt[0]), |s| {
-        module.ckks_mul_pt_vec_into(&mut acc, &bsk[0], &beta_pt[0], s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&acc, &bsk[0], &beta_pt[0]), |s| {
+        module.ckks_mul_pt_into(&mut acc, &bsk[0], &beta_pt[0], s)
     })
     .unwrap();
     let mut tmp = alloc_ct(&params, &module, params.k);
     for t in 1..4 {
-        with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&tmp, &bsk[t], &beta_pt[t]), |s| {
-            module.ckks_mul_pt_vec_into(&mut tmp, &bsk[t], &beta_pt[t], s)
+        with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&tmp, &bsk[t], &beta_pt[t]), |s| {
+            module.ckks_mul_pt_into(&mut tmp, &bsk[t], &beta_pt[t], s)
         })
         .unwrap();
         with_scratch::<BE, _>(module.ckks_add_tmp_bytes(acc.max_size()), |s| {

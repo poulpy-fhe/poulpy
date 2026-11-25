@@ -2924,7 +2924,7 @@ pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend<Rg> + HalCnvImpl<Rg> 
 
     let mut a_backend = module.vec_znx_alloc(params.n, a_cols, a_size);
     module.vec_znx_fill_uniform_source_all(17, a_size * 17, &mut a_backend, &mut source);
-    let mut b_backend = module.vec_znx_alloc(params.n, 1, b_size);
+    let mut b_backend = module.vec_znx_alloc(1, 2, b_size);
     module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_backend, &mut source);
     let a_ref = vec_znx_backend_ref::<BE, Rg>(&a_backend);
     let b_ref = vec_znx_backend_ref::<BE, Rg>(&b_backend);
@@ -2943,17 +2943,7 @@ pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend<Rg> + HalCnvImpl<Rg> 
     for cnv_offset in [0usize, 1usize] {
         // Identical deterministic initial accumulator content for all three paths.
         for acc in [&mut acc_oracle, &mut acc_derived, &mut acc_module] {
-            module.cnv_by_const_apply(
-                0,
-                &mut acc.to_backend_mut(),
-                0,
-                &a_ref,
-                0,
-                &b_ref,
-                0,
-                0,
-                &mut scratch.borrow(),
-            );
+            module.cnv_by_const_apply(0, &mut acc.to_backend_mut(), 0, &a_ref, 0, &b_ref, 0, &mut scratch.borrow());
         }
 
         module.cnv_by_const_apply(
@@ -2963,7 +2953,6 @@ pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend<Rg> + HalCnvImpl<Rg> 
             &a_ref,
             1,
             &b_ref,
-            0,
             1,
             &mut scratch.borrow(),
         );
@@ -2980,7 +2969,6 @@ pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend<Rg> + HalCnvImpl<Rg> 
             &a_ref,
             1,
             &b_ref,
-            0,
             1,
             &mut derived_scratch.borrow(),
         );
@@ -2994,7 +2982,6 @@ pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend<Rg> + HalCnvImpl<Rg> 
             &a_ref,
             1,
             &b_ref,
-            0,
             1,
             &mut module_scratch.borrow(),
         );

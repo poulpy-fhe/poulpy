@@ -128,12 +128,12 @@ where
     );
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x.log_budget());
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
-        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_into(&mut term1, &x, &pt1, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x, &pt2), |s| {
-        module.ckks_mul_pt_vec_into(&mut term2, &x, &pt2, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term2, &x, &pt2), |s| {
+        module.ckks_mul_pt_into(&mut term2, &x, &pt2, s)
     })
     .unwrap();
 
@@ -204,12 +204,12 @@ where
 
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x2.log_budget());
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
-        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_into(&mut term1, &x, &pt1, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x2, &pt2), |s| {
-        module.ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term2, &x2, &pt2), |s| {
+        module.ckks_mul_pt_into(&mut term2, &x2, &pt2, s)
     })
     .unwrap();
 
@@ -283,12 +283,12 @@ where
 
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x2.log_budget());
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
-        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_into(&mut term1, &x, &pt1, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x2, &pt2), |s| {
-        module.ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term2, &x2, &pt2), |s| {
+        module.ckks_mul_pt_into(&mut term2, &x2, &pt2, s)
     })
     .unwrap();
     let mut poly = alloc_ct(&params, module, term2.k().as_usize());
@@ -296,8 +296,8 @@ where
         module.ckks_add_into(&mut poly, &term1, &term2, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(poly.max_size()), |s| {
-        module.ckks_add_pt_vec_assign(&mut poly, &pt0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(poly.max_size()), |s| {
+        module.ckks_add_assign(&mut poly, &pt0, s)
     })
     .unwrap();
 
@@ -373,12 +373,12 @@ where
 
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x2.log_budget());
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
-        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_into(&mut term1, &x, &pt1, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x2, &pt2), |s| {
-        module.ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&term2, &x2, &pt2), |s| {
+        module.ckks_mul_pt_into(&mut term2, &x2, &pt2, s)
     })
     .unwrap();
     let mut poly = alloc_ct(&params, module, term2.k().as_usize());
@@ -386,8 +386,8 @@ where
         module.ckks_add_into(&mut poly, &term1, &term2, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(poly.max_size()), |s| {
-        module.ckks_add_pt_vec_assign(&mut poly, &pt0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(poly.max_size()), |s| {
+        module.ckks_add_assign(&mut poly, &pt0, s)
     })
     .unwrap();
 

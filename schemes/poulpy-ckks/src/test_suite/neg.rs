@@ -2,7 +2,7 @@
 //!
 //! # Test inventory
 //!
-//! ## Operations-layer negation (`GLWE<_, CKKS>::neg`)
+//! ## Operations-layer negation (`ckks_neg_into`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
@@ -10,7 +10,7 @@
 //! | [`test_neg_smaller_output`] | out-of-place negation into a smaller output buffer |
 //! | [`test_neg_wider_output`] | out-of-place negation into a wider output buffer (`k` propagation on the `offset == 0` fast path) |
 //!
-//! ## Operations-layer negation (`GLWE<_, CKKS>::neg_assign`)
+//! ## Operations-layer negation (`ckks_neg_assign`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
@@ -32,7 +32,7 @@ use poulpy_hal::{
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
-// ─── negation out-of-place (GLWE<_, CKKS>::neg) ────────────────────────────
+// ─── negation out-of-place (ckks_neg_into) ────────────────────────────
 
 /// Negation out-of-place.
 pub fn test_neg_aligned<BE, F, E>(
@@ -193,7 +193,7 @@ where
     Ok(())
 }
 
-// ─── negation in-place (GLWE<_, CKKS>::neg_assign) ────────────────────────
+// ─── negation in-place (ckks_neg_assign) ────────────────────────
 
 /// Negation in-place.
 pub fn test_neg_assign<BE, F, E>(

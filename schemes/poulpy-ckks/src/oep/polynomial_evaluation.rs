@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GetTensorKey};
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
@@ -41,7 +40,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<Rg: Ring = Standard>:
     where
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<Self, Rg>,
-        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<Self, Rg>,
+        B::Coeffs: CKKSCtBounds + GLWEToBackendRef<Self, Rg>,
         A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<Self, A, Rg>,
         H: GetTensorKey<Self, Rg>;
@@ -64,7 +63,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<Rg: Ring = Standard>:
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
         B: BSGSPolynomialInfos<Self, Rg>,
-        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<Self, Rg>,
+        B::Coeffs: CKKSCtBounds + GLWEToBackendRef<Self, Rg>,
         H: GetTensorKey<Self, Rg>,
         CKKSCiphertextOwned<Self, Rg>: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -93,7 +92,7 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend + CKKSPolynomialEv
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<Self>,
+        C: GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + GLWEToBackendRef<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
@@ -116,12 +115,7 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend + CKKSPolynomialEv
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<Self> + CKKSCtBounds,
-        C: GLWEToBackendRef<Self>
-            + GLWEInfos
-            + poulpy_core::layouts::BSGSMeta
-            + CKKSCtBounds
-            + IntPolyInfos
-            + CKKSMaskedConstants<Self>,
+        C: GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + GLWEToBackendRef<Self>,
         H: GetTensorKey<Self>,
         CKKSCiphertextOwned<Self>: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -154,7 +148,7 @@ macro_rules! impl_ckks_polynomial_evaluation_reference_full {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta,
                 B: $crate::api::BSGSPolynomialInfos<Self, $ring>,
-                B::Coeffs: $crate::CKKSCtBounds + $crate::layouts::CKKSMaskedConstants<Self, $ring>,
+                B::Coeffs: $crate::CKKSCtBounds + ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::layouts::BSGSMeta,
@@ -187,12 +181,11 @@ macro_rules! impl_ckks_complex_polynomial_evaluation_reference_full {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta,
-                C: ::poulpy_core::layouts::GLWEToBackendRef<Self>
-                    + ::poulpy_core::layouts::GLWEInfos
+                C: ::poulpy_core::layouts::GLWEInfos
                     + ::poulpy_core::layouts::BSGSMeta
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::layouts::IntPolyInfos
-                    + $crate::layouts::CKKSMaskedConstants<Self>,
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self>,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::layouts::BSGSMeta,

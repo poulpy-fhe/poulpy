@@ -1,6 +1,5 @@
 //! Exponential functions.
 
-use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
@@ -15,11 +14,12 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena}
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
 use crate::approximation::{CKKSApproximationOps, Parity, PolynomialApproximation, degree_for_precision, error_bits};
+use crate::plan::encode_constant;
 
 /// `exp` plan construction options.
 #[derive(Clone, Copy, Debug)]
@@ -228,10 +228,8 @@ impl<Rg: Ring> Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
                 .context("expm1")?;
-        let mut two = module.ckks_plaintext_alloc(1usize.into(), base2k, coeff_meta.k());
-        two.set_meta(coeff_meta.meta());
-        two.encode_host_floats(&[F::from_f64(2.0).unwrap()])
-            .context("expm1: constant encoding failed")?;
+        let two =
+            encode_constant(module, base2k, coeff_meta, F::from_f64(2.0).unwrap()).context("expm1: constant encoding failed")?;
         Ok(Self {
             approximation,
             two,
@@ -407,7 +405,7 @@ pub trait CKKSExpOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_exp2`].
@@ -444,7 +442,7 @@ pub trait CKKSExpOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_exp10`].
@@ -481,7 +479,7 @@ pub trait CKKSExpOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_expm1`].
@@ -518,7 +516,7 @@ pub trait CKKSExpOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>;
 }
 
@@ -547,7 +545,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
@@ -584,7 +582,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
@@ -621,7 +619,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
@@ -658,7 +656,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
@@ -697,7 +695,7 @@ where
     let step = if doubling {
         ct + module
             .ckks_copy_tmp_bytes(input, input)
-            .max(module.ckks_add_pt_const_tmp_bytes(input.size()))
+            .max(module.ckks_add_tmp_bytes(input.size()))
             .max(module.ckks_mul_tmp_bytes(input, input, input, tsk))
     } else {
         module.ckks_square_tmp_bytes(input, input, tsk)
@@ -728,7 +726,7 @@ where
     Module<BE>: CKKSAddOps<BE, Rg> + CKKSApproximationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + CKKSMulOps<BE, Rg>,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
     H: GetTensorKey<BE, Rg>,
 {
     let log_delta = input.log_delta();
@@ -750,7 +748,7 @@ where
                     .scope(|step_scratch| {
                         let (mut plus_two, mut step_scratch) = step_scratch.take_ckks_ciphertext_like_scratch(&acc);
                         module.ckks_copy(&mut plus_two, &acc, &mut step_scratch)?;
-                        module.ckks_add_pt_const_assign(&mut plus_two, 0, two, 0, &mut step_scratch)?;
+                        module.ckks_add_assign(&mut plus_two, two, &mut step_scratch)?;
                         module.ckks_mul_assign(&mut acc, &plus_two, tsk, &mut step_scratch)
                     })
                     .context(op)?,

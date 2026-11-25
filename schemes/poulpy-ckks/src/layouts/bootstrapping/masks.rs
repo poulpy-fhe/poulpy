@@ -11,7 +11,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSLinearTransformationOps,
@@ -26,7 +26,8 @@ use super::{BootstrappingContextPrepared, BootstrappingPipeline};
 
 /// The contexts a mask serves. A bypass adds back the coefficients the mask drops, and a LUT runs no EvalMod it could
 /// clear them in.
-const MASK_CONTEXT: &str = "takes an identity S2C-first context with EvalMod on the standard ring and without EvalRound+";
+const MASK_CONTEXT: &str =
+    "takes an identity S2C-first context on the full layout with EvalMod on the standard ring and without EvalRound+";
 
 /// The last CoeffsToSlots factor times a slot-wise mask, as a prepared matrix of that one factor: its transform keeps the
 /// coefficients the mask selects and zeroes the others, at no level. Built by
@@ -160,7 +161,7 @@ where
     /// # Errors
     ///
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), for a context that is not an identity S2C-first one
-    /// with EvalMod on the standard ring and without EvalRound+, whose bypass would add back what the mask drops, or that
+    /// on the full layout with EvalMod on the standard ring and without EvalRound+, whose bypass would add back what the mask drops, or that
     /// evaluates no CoeffsToSlots factor, a `keep` of another length than the degree `N` of the bootstrap, a `keep`
     /// selecting both coefficients of a slot, or a coefficient off the subring of the plaintexts, all before the arena
     /// check.
@@ -266,7 +267,8 @@ where
     ///
     /// # Errors
     ///
-    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), for a context that is not S2C-first, a kernel count
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), for a context that is not S2C-first on the full
+    /// layout, a kernel count
     /// that does not divide the cosets, a kernel of another length than the degree of the bootstrap, a kernel value that
     /// is not finite, or a kernel off the subring of the plaintexts, all before the arena check, and for a factor entry
     /// above `2^63`, before the encoding.
@@ -285,8 +287,8 @@ where
     {
         const OP: &str = "merged_s2c_factor";
         let refuse = |reason| Err(invalid_operand(OP, reason));
-        if self.pipeline() != BootstrappingPipeline::S2CFirst {
-            return refuse("takes an S2C-first context");
+        if self.pipeline() != BootstrappingPipeline::S2CFirst || self.slots_to_coeffs().plan().slot_layout() != SlotLayout::Full {
+            return refuse("takes an S2C-first context on the full layout");
         }
         let cosets = self.merged_s2c_cosets();
         if kernels.is_empty() || !cosets.is_multiple_of(kernels.len()) {
@@ -324,7 +326,7 @@ where
             scale: Scale::Log(LOG_SCALE),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
-            slot_layout: crate::SlotLayout::Full,
+            slot_layout: SlotLayout::Full,
         });
         let kernel_values = kernels
             .iter()

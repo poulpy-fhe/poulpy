@@ -219,10 +219,6 @@ impl Server {
             ))
             .max(CKKSSubOps::<ServerBackend, Standard>::ckks_sub_tmp_bytes(module, ct.size()))
             .max(CKKSAddOps::<ServerBackend, Standard>::ckks_add_tmp_bytes(module, ct.size()))
-            .max(CKKSSubOps::<ServerBackend, Standard>::ckks_sub_pt_vec_tmp_bytes(
-                module,
-                ct.size(),
-            ))
     }
 
     /// A client ciphertext moved to the server.
@@ -304,7 +300,7 @@ impl Server {
         module.ckks_mul_into(&mut c, &a1, &a2, &self.tensor_key, &mut scratch)?;
         module.ckks_sub_assign(&mut c, &a2, &mut scratch)?;
         module.ckks_add_assign(&mut c, b, &mut scratch)?;
-        module.ckks_sub_pt_vec_assign(&mut c, &self.round_constants[r], &mut scratch)?;
+        module.ckks_sub_assign(&mut c, &self.round_constants[r], &mut scratch)?;
         Ok(c)
     }
 }

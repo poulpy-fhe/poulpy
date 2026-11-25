@@ -316,21 +316,18 @@ where
     let Some(chain) = chain else {
         return Ok(());
     };
-    let consts = chain.consts();
-    let last = chain.steps().get() - 1;
-
     let (mut squared, mut scratch) = scratch.borrow().take_ckks_ciphertext_like_scratch(&*res);
-    for i in 0..last {
+    for step in chain.steps() {
         module.ckks_square_into(&mut squared, &*res, tsk, &mut scratch)?;
-        module.ckks_sub_pt_const_into(res, 0, &squared, consts, i, &mut scratch)?;
+        module.ckks_sub_into(res, &squared, step, &mut scratch)?;
     }
 
     module.ckks_square_into(&mut squared, &*res, tsk, &mut scratch)?;
     if chain.negate() {
-        module.ckks_sub_pt_const_into(res, 0, &squared, consts, last, &mut scratch)?;
+        module.ckks_sub_into(res, &squared, chain.last(), &mut scratch)?;
         module.ckks_neg_assign(res)?;
     } else {
-        module.ckks_add_pt_const_into(res, 0, &squared, consts, last, &mut scratch)?;
+        module.ckks_add_into(res, &squared, chain.last(), &mut scratch)?;
     }
 
     Ok(())

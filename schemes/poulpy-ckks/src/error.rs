@@ -14,9 +14,8 @@ use poulpy_hal::api::ModuleN;
 ///
 /// Every operation refuses a ciphertext or linear-transformation diagonal above its module's degree before any write:
 /// with [`CKKSCompositionError::EncryptionDegreeMismatch`] for encryption and decryption, with
-/// [`CKKSCompositionError::InvalidOperand`] otherwise. A plaintext polynomial is checked to embed into its ciphertext's
-/// degree instead, and a constant plaintext only supplies coefficients. The `# Errors` section of an operation lists its
-/// other refusals.
+/// [`CKKSCompositionError::InvalidOperand`] otherwise. A plaintext, a constant included, is checked to embed into its
+/// ciphertext's degree instead. The `# Errors` section of an operation lists its other refusals.
 ///
 /// Setup-time constructors (plan compilation, key-set assembly) still return
 /// `anyhow::Result`; typed variants they raise internally are recovered by the
@@ -146,8 +145,13 @@ pub enum CKKSCompositionError {
         ct_base2k: usize,
         pt_base2k: usize,
     },
-    /// A full plaintext-vector operation received a plaintext with the wrong degree.
-    PlaintextDegreeMismatch { op: &'static str, ct_n: usize, pt_n: usize },
+    /// A plaintext operation received a plaintext of a degree its `rule` excludes.
+    PlaintextDegreeMismatch {
+        op: &'static str,
+        ct_n: usize,
+        pt_n: usize,
+        rule: &'static str,
+    },
     /// Encryption or decryption received a ciphertext and secret key of different degrees, or above the module's.
     EncryptionDegreeMismatch {
         op: &'static str,
@@ -155,15 +159,8 @@ pub enum CKKSCompositionError {
         ct_n: usize,
         sk_n: usize,
     },
-    /// A plaintext-coefficient operation requested a coefficient outside the source or destination layout.
-    PlaintextCoefficientOutOfRange {
-        op: &'static str,
-        role: &'static str,
-        coeff: usize,
-        n: usize,
-    },
-    /// No usable rotation/conjugation key: the key source has none, or refused
-    /// the one it holds (for instance one too narrow for `k`), as `source` says.
+    /// No rotation/conjugation key: the key source has none, or refused the request, as `source` says. A key the
+    /// source holds but whose layout is too narrow is [`Self::AutomorphismKeyTooNarrow`].
     MissingAutomorphismKey {
         op: &'static str,
         /// The slot rotation of the missing key, that a conjugation composes with (0 alone), or its Galois element
@@ -173,11 +170,29 @@ pub enum CKKSCompositionError {
         k: u32,
         source: poulpy_core::CoreError,
     },
-    /// No usable relinearization key at the precision the operation works at:
-    /// the key source has none, or refused the one it holds, as `source` says.
+    /// A rotation/conjugation key the source holds whose layout does not decompose an input of the precision `k` the
+    /// operation uses it at: its `max_input_k` is below `k`.
+    AutomorphismKeyTooNarrow {
+        op: &'static str,
+        rotation: i64,
+        k: u32,
+        max_input_k: u32,
+        source: poulpy_core::CoreError,
+    },
+    /// No relinearization key at the precision the operation works at: the key source has none, or refused the
+    /// request, as `source` says. A key the source holds but whose layout is too narrow is
+    /// [`Self::RelinearizationKeyTooNarrow`].
     MissingRelinearizationKey {
         op: &'static str,
         k: u32,
+        source: poulpy_core::CoreError,
+    },
+    /// A relinearization key the source holds whose layout does not decompose an input of the precision `k` the
+    /// operation uses it at, or the product it relinearizes: its `max_input_k` is below `k`.
+    RelinearizationKeyTooNarrow {
+        op: &'static str,
+        k: u32,
+        max_input_k: u32,
         source: poulpy_core::CoreError,
     },
     /// A bootstrapping preset, built or re-derived by `op`, does not validate at its security level (see
@@ -259,11 +274,10 @@ impl fmt::Display for CKKSCompositionError {
                 f,
                 "{op} requires matching base2k values, got ciphertext base2k={ct_base2k} and plaintext base2k={pt_base2k}"
             ),
-            Self::PlaintextDegreeMismatch { op, ct_n, pt_n } => {
+            Self::PlaintextDegreeMismatch { op, ct_n, pt_n, rule } => {
                 write!(
                     f,
-                    "{op} cannot read a plaintext of degree {pt_n} against a ciphertext of degree {ct_n}: \
-                     the degree must be the ciphertext's or a power-of-two divisor of it from the backend's minimum degree"
+                    "{op} cannot read a plaintext of degree {pt_n} against a ciphertext of degree {ct_n}: the degree must be {rule}"
                 )
             }
             Self::EncryptionDegreeMismatch {
@@ -275,9 +289,6 @@ impl fmt::Display for CKKSCompositionError {
                 f,
                 "{op} requires equal ciphertext and secret key degrees of at most module degree {module_n}, got ciphertext degree {ct_n} and secret key degree {sk_n}"
             ),
-            Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
-                write!(f, "{op} coefficient index {coeff} is out of range for {role} degree {n}")
-            }
             Self::MissingAutomorphismKey { op, rotation, k, source } => {
                 write!(
                     f,
@@ -290,6 +301,20 @@ impl fmt::Display for CKKSCompositionError {
             Self::SecurityLevelNotMet { op, source } => {
                 write!(f, "{op} does not meet the preset's security level: {source}")
             }
+            Self::AutomorphismKeyTooNarrow {
+                op,
+                rotation,
+                k,
+                max_input_k,
+                ..
+            } => write!(
+                f,
+                "{op} uses the automorphism key for rotation {rotation} at precision k={k}, past its layout's max_input_k={max_input_k}"
+            ),
+            Self::RelinearizationKeyTooNarrow { op, k, max_input_k, .. } => write!(
+                f,
+                "{op} uses the relinearization key at precision k={k}, past its layout's max_input_k={max_input_k}"
+            ),
             Self::PlaintextAlignmentImpossible {
                 op,
                 ct_log_budget,
@@ -337,11 +362,54 @@ impl fmt::Display for CKKSCompositionError {
     }
 }
 
+impl CKKSCompositionError {
+    /// The refusal of `op` for a failed lookup of the rotation key of `rotation` at precision `k`:
+    /// [`Self::AutomorphismKeyTooNarrow`] when the source answered with a key too narrow for `k`,
+    /// [`Self::MissingAutomorphismKey`] otherwise.
+    pub fn automorphism_key_lookup(op: &'static str, rotation: i64, k: u32, source: poulpy_core::CoreError) -> Self {
+        match too_narrow(&source) {
+            Some(max_input_k) => Self::AutomorphismKeyTooNarrow {
+                op,
+                rotation,
+                k,
+                max_input_k,
+                source,
+            },
+            None => Self::MissingAutomorphismKey { op, rotation, k, source },
+        }
+    }
+
+    /// The refusal of `op` for a failed lookup of the relinearization key at precision `k`:
+    /// [`Self::RelinearizationKeyTooNarrow`] when the source answered with a key too narrow for `k`,
+    /// [`Self::MissingRelinearizationKey`] otherwise.
+    pub fn tensor_key_lookup(op: &'static str, k: u32, source: poulpy_core::CoreError) -> Self {
+        match too_narrow(&source) {
+            Some(max_input_k) => Self::RelinearizationKeyTooNarrow {
+                op,
+                k,
+                max_input_k,
+                source,
+            },
+            None => Self::MissingRelinearizationKey { op, k, source },
+        }
+    }
+}
+
+/// The `max_input_k` of a key a lookup found too narrow.
+fn too_narrow(source: &poulpy_core::CoreError) -> Option<u32> {
+    match source {
+        poulpy_core::CoreError::GGLWEKeyTooNarrow { max_input_k, .. } => Some(*max_input_k),
+        _ => None,
+    }
+}
+
 impl Error for CKKSCompositionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::MissingAutomorphismKey { source, .. }
+            | Self::AutomorphismKeyTooNarrow { source, .. }
             | Self::MissingRelinearizationKey { source, .. }
+            | Self::RelinearizationKeyTooNarrow { source, .. }
             | Self::SecurityLevelNotMet { source, .. } => Some(source),
             _ => None,
         }
@@ -410,21 +478,24 @@ pub(crate) fn ensure_operand_degrees<M: ModuleN + ?Sized>(
 }
 
 /// A plaintext operand embeds into the ciphertext ring when its degree is the
-/// ciphertext's, or a power-of-two divisor of it not below the backend's
-/// minimum degree.
-pub(crate) fn ensure_plaintext_degree_embeds(op: &'static str, ct_n: usize, pt_n: usize, floor: usize) -> Result<()> {
-    if pt_n != ct_n && !(pt_n.is_power_of_two() && pt_n >= floor && ct_n.is_multiple_of(pt_n)) {
-        return Err(CKKSCompositionError::PlaintextDegreeMismatch { op, ct_n, pt_n }.into());
+/// ciphertext's, or a power-of-two divisor of it.
+pub(crate) fn ensure_plaintext_degree_embeds(op: &'static str, ct_n: usize, pt_n: usize) -> Result<()> {
+    if pt_n != ct_n && !(pt_n.is_power_of_two() && ct_n.is_multiple_of(pt_n)) {
+        return Err(CKKSCompositionError::PlaintextDegreeMismatch {
+            op,
+            ct_n,
+            pt_n,
+            rule: DIVISOR,
+        }
+        .into());
     }
     Ok(())
 }
 
-pub(crate) fn ensure_plaintext_coeff_in_range(op: &'static str, role: &'static str, coeff: usize, n: usize) -> Result<()> {
-    if coeff >= n {
-        return Err(CKKSCompositionError::PlaintextCoefficientOutOfRange { op, role, coeff, n }.into());
-    }
-    Ok(())
-}
+/// The degree rule of the plaintext operands of the coefficient-domain operations and of the prepared dot products.
+pub(crate) const DIVISOR: &str = "the ciphertext's or a power-of-two divisor of it";
+/// The degree rule of a decryption's plaintext.
+pub(crate) const SPARSE_DIVISOR: &str = "the ciphertext's, or a divisor of it the ciphertext's sparsity allows";
 
 pub(crate) fn ensure_plaintext_alignment(op: &'static str, ct_log_budget: usize, pt_log_delta: usize, pt_k: usize) -> Result<()> {
     let available = ct_log_budget + pt_log_delta;
@@ -440,37 +511,17 @@ pub(crate) fn ensure_plaintext_alignment(op: &'static str, ct_log_budget: usize,
     Ok(())
 }
 
-/// The operand checks of a plaintext-polynomial addition or subtraction into a ciphertext of radix `ct_base2k`,
+/// The operand checks of a plaintext addition or subtraction into a ciphertext of radix `ct_base2k`,
 /// degree `ct_n` and budget `ct_log_budget`, in their order.
-pub(crate) fn ensure_plaintext_vec_operand<P: crate::CKKSInfos>(
+pub(crate) fn ensure_plaintext_operand<P: crate::CKKSInfos>(
     op: &'static str,
     ct_base2k: usize,
     ct_n: usize,
     ct_log_budget: usize,
     pt: &P,
-    floor: usize,
 ) -> Result<()> {
     ensure_base2k_match(op, ct_base2k, pt.base2k().as_usize())?;
-    ensure_plaintext_degree_embeds(op, ct_n, pt.n().as_usize(), floor)?;
-    ensure_plaintext_alignment(op, ct_log_budget, pt.log_delta(), pt.log_delta() + pt.log_budget())
-}
-
-/// The operand checks of a plaintext-coefficient addition or subtraction of coefficient `pt_coeff` of `pt` at
-/// coefficient `ct_coeff` of a ciphertext of radix `ct_base2k`, degree `ct_n` and budget `ct_log_budget`, in their
-/// order.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn ensure_plaintext_const_operand<P: crate::CKKSInfos>(
-    op: &'static str,
-    ct_base2k: usize,
-    ct_n: usize,
-    ct_coeff: usize,
-    ct_log_budget: usize,
-    pt: &P,
-    pt_coeff: usize,
-) -> Result<()> {
-    ensure_base2k_match(op, ct_base2k, pt.base2k().as_usize())?;
-    ensure_plaintext_coeff_in_range(op, "ciphertext", ct_coeff, ct_n)?;
-    ensure_plaintext_coeff_in_range(op, "plaintext", pt_coeff, pt.n().as_usize())?;
+    ensure_plaintext_degree_embeds(op, ct_n, pt.n().as_usize())?;
     ensure_plaintext_alignment(op, ct_log_budget, pt.log_delta(), pt.log_delta() + pt.log_budget())
 }
 

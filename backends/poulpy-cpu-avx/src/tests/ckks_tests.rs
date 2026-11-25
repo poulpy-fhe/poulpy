@@ -1,6 +1,7 @@
-/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
+/// Full logN14 to logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
 /// small S2C-first and C2S-first presets run by default.
 mod bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::test_ckks_bootstrap_replicated_presets_with_client;
     use poulpy_ckks::test_suite::presets::{
         bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
         small_c2s_preset_meets_precision, small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
@@ -110,23 +111,19 @@ mod bootstrapping_presets {
     fn fft64_presets_meet_precision() {
         bootstrapping_presets_meet_precision::<crate::FFT64Avx>();
     }
-}
 
-mod replicated_bootstrapping_presets {
-    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
-    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
-
+    // FFT64 types do not run the replicated presets: no FFT64 radix is measured against them.
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
-    fn ntt4x30_presets_meet_precision() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
+    fn ntt4x30_ckks_bootstrap_replicated_presets() {
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT4x30Avx, crate::NTT4x30Avx>(52);
     }
 
     #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
-    fn ntt4x30_rayon_presets_meet_precision() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30AvxRayon>(52);
+    fn ntt4x30_rayon_ckks_bootstrap_replicated_presets() {
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT4x30AvxRayon, crate::NTT4x30AvxRayon>(52);
     }
 }
 

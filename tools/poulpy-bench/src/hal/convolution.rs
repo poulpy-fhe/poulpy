@@ -303,7 +303,7 @@ where
     let a = upload_host_vec_znx::<BE>(&a);
     let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, c_size);
 
-    let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
+    let b = random_host_vec_znx(1, 1, sweep.size, &mut source);
     let b = upload_host_vec_znx::<BE>(&b);
 
     let mut scratch: ScratchOwned<BE> =
@@ -313,17 +313,7 @@ where
         let mut c_big_backend = c_big.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
         let b_backend = vec_znx_backend_ref::<BE, Standard>(&b);
-        module.cnv_by_const_apply(
-            0,
-            &mut c_big_backend,
-            0,
-            &a_backend,
-            0,
-            &b_backend,
-            0,
-            0,
-            &mut scratch.borrow(),
-        );
+        module.cnv_by_const_apply(0, &mut c_big_backend, 0, &a_backend, 0, &b_backend, 0, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });
@@ -346,7 +336,7 @@ where
     let a = upload_host_vec_znx::<BE>(&a);
     let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, c_size);
 
-    let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
+    let b = random_host_vec_znx(1, 1, sweep.size, &mut source);
     let b = upload_host_vec_znx::<BE>(&b);
 
     let mut scratch: ScratchOwned<BE> =
@@ -356,17 +346,7 @@ where
         let mut c_big_backend = c_big.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
         let b_backend = vec_znx_backend_ref::<BE, Standard>(&b);
-        module.cnv_by_const_apply_add(
-            0,
-            &mut c_big_backend,
-            0,
-            &a_backend,
-            0,
-            &b_backend,
-            0,
-            0,
-            &mut scratch.borrow(),
-        );
+        module.cnv_by_const_apply_add(0, &mut c_big_backend, 0, &a_backend, 0, &b_backend, 0, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });

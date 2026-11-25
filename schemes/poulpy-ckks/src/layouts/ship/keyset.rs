@@ -39,6 +39,7 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSShipScalar},
     encoding::ship::masks::ship_mask_slot_vectors,
     layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned},
+    znx_automorphism_host,
 };
 
 use super::{plan::ShipPlan, secret::ShipSecretSpec};
@@ -176,25 +177,6 @@ pub struct ShipKeysLayout {
     pub conjugation_key: GLWEAutomorphismKeyLayout,
     /// Also generate the `omega_2` masks required by the complex bootstrap.
     pub complex: bool,
-}
-
-/// Applies the coefficient permutation of `X -> X^gal_el` to host secret
-/// coefficients, accumulating into the zeroed `dst`.
-fn znx_automorphism_apply(gal_el: i64, src: &[i64], dst: &mut [i64]) {
-    let n = src.len();
-    let two_n = 2 * n;
-    let g = gal_el.rem_euclid(two_n as i64) as usize;
-    for (i, &c) in src.iter().enumerate() {
-        if c == 0 {
-            continue;
-        }
-        let e = (i * g) % two_n;
-        if e >= n {
-            dst[e - n] = -c;
-        } else {
-            dst[e] = c;
-        }
-    }
 }
 
 impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
@@ -390,8 +372,7 @@ where
     sk_in_host.transfer_into(&mut sk_in);
 
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
-    sk_out_host.data_mut().zero();
-    znx_automorphism_apply(
+    znx_automorphism_host(
         galois_element((rot % m) as i64, 2 * n.as_usize() as i64),
         sk_dense_host.data().at(0, 0),
         sk_out_host.data_mut().at_mut(0, 0),

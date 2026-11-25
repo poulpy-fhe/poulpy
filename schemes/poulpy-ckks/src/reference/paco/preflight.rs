@@ -207,7 +207,7 @@ where
     let relinearization = relinearization_layout_for(keys.tensor_key(), working_precision)?;
     let bsk = canonical;
     let mut required = module
-        .ckks_mul_pt_vec_tmp_bytes(&branch_layout, bsk, &beta_layout)
+        .ckks_mul_pt_tmp_bytes(&branch_layout, bsk, &beta_layout)
         .max(module.ckks_add_tmp_bytes(branch_layout.size()))
         .max(module.ckks_sub_tmp_bytes(branch_layout.size()))
         .max(module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout))

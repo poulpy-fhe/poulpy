@@ -528,6 +528,7 @@ pub fn test_unfold_rejects_invalid_operands<BE, F, E>(
     enum Refusal {
         Operand(String),
         MissingKey(i64),
+        NarrowKey(i64),
     }
     let (n, b, log_delta) = (module.n(), params.base2k, 12);
     let (k_refreshed, k_out) = (4 * b, 6 * b);
@@ -689,7 +690,7 @@ pub fn test_unfold_rejects_invalid_operands<BE, F, E>(
             refreshed(2),
             Some(&short),
             None,
-            Refusal::MissingKey(-1),
+            Refusal::NarrowKey(-1),
         ),
         (
             "sparse outputs without their split key",
@@ -722,6 +723,13 @@ pub fn test_unfold_rejects_invalid_operands<BE, F, E>(
                 matches!(
                     err.composition(),
                     Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_unfold", rotation, .. }) if *rotation == element
+                ),
+                "{label}: unexpected error: {err}"
+            ),
+            Refusal::NarrowKey(element) => assert!(
+                matches!(
+                    err.composition(),
+                    Some(CKKSCompositionError::AutomorphismKeyTooNarrow { op: "ckks_unfold", rotation, .. }) if *rotation == element
                 ),
                 "{label}: unexpected error: {err}"
             ),

@@ -5,8 +5,6 @@
 //! cosine approximation with its output map folded in and avoids EvalMod.
 //! Both forms plug into an S2C-first bootstrapping recipe.
 
-use std::num::NonZeroUsize;
-
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst};
 use poulpy_core::api::TransferInto;
@@ -15,9 +13,9 @@ use poulpy_core::layouts::{GLWEPlaintextAlloc, ModuleCoreAlloc};
 use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
 
 use crate::{
-    CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CoeffsMeta,
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSPlaintext, CKKSPlaintextOwned, CKKSScalar, masked::encode_host_constants},
     polynomial::{BSGSPolynomial, CKKSPolynomialEncode, ComplexBSGSPolynomial, Polynomial, SplitStrategy},
 };
 
@@ -42,33 +40,48 @@ pub(crate) enum EncodedLutKind<P> {
     },
 }
 
-/// The double-angle steps of a binary LUT, at least one.
+/// The double-angle steps of a binary LUT, at least one: the last apart, so the chain is never empty.
 pub(crate) struct DoubleAngleChain<P> {
-    /// One constant per step: subtracted from the square in every step but
-    /// the last, then `f1`.
-    consts: P,
-    steps: NonZeroUsize,
+    /// The constant each step but the last subtracts from its square.
+    steps: Vec<P>,
+    /// `f1`, to which the last square is added, or from which it is subtracted.
+    last: P,
     /// Whether the last square is subtracted from `f1` instead of added to it.
     negate: bool,
 }
 
 impl<P> DoubleAngleChain<P> {
-    pub(crate) fn consts(&self) -> &P {
-        &self.consts
+    /// The chain of the constants `consts` in step order, `None` when there is none.
+    fn new(mut consts: Vec<P>, negate: bool) -> Option<Self> {
+        let last = consts.pop()?;
+        Some(Self {
+            steps: consts,
+            last,
+            negate,
+        })
     }
 
-    pub(crate) fn steps(&self) -> NonZeroUsize {
-        self.steps
+    pub(crate) fn steps(&self) -> &[P] {
+        &self.steps
+    }
+
+    pub(crate) fn last(&self) -> &P {
+        &self.last
+    }
+
+    /// The number of steps, each one squaring.
+    pub(crate) fn len(&self) -> usize {
+        self.steps.len() + 1
     }
 
     pub(crate) fn negate(&self) -> bool {
         self.negate
     }
 
-    fn map<Q>(&self, f: impl FnOnce(&P) -> Q) -> DoubleAngleChain<Q> {
+    fn map<Q>(&self, mut f: impl FnMut(&P) -> Q) -> DoubleAngleChain<Q> {
         DoubleAngleChain {
-            consts: f(&self.consts),
-            steps: self.steps,
+            steps: self.steps.iter().map(&mut f).collect(),
+            last: f(&self.last),
             negate: self.negate,
         }
     }
@@ -125,23 +138,9 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         let binary = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
         let cos =
             <Polynomial<F> as CKKSPolynomialEncode>::encode_bsgs_with(&binary.poly, host_module, base2k, coeffs_meta, strategy)?;
-        let chain = match NonZeroUsize::new(binary.consts.len()) {
-            None => None,
-            Some(steps) => {
-                let mut consts = host_module.ckks_plaintext_alloc(steps.get().into(), base2k, coeffs_meta.k);
-                let mut meta = coeffs_meta.meta;
-                meta.slots = SlotsKind::Real;
-                consts.set_meta(meta);
-                consts
-                    .encode_host_floats(&binary.consts)
-                    .map_err(|e| anyhow!("double-angle constants: {e}"))?;
-                Some(DoubleAngleChain {
-                    consts,
-                    steps,
-                    negate: binary.negate,
-                })
-            }
-        };
+        let consts = encode_host_constants("EncodedLut::binary", host_module, base2k, coeffs_meta, &binary.consts)
+            .map_err(|e| anyhow!("double-angle constants: {e}"))?;
+        let chain = DoubleAngleChain::new(consts, binary.negate);
         Ok(Self {
             kind: EncodedLutKind::Binary { cos, chain },
             log_msg_ratio: 1,
@@ -206,7 +205,7 @@ impl<P> EncodedLut<P> {
         match &self.kind {
             EncodedLutKind::General(series) => series.re.consumed_bits(log_delta, coeff_log_delta),
             EncodedLutKind::Binary { cos, chain } => {
-                cos.consumed_bits(log_delta, coeff_log_delta) + chain.as_ref().map_or(0, |chain| chain.steps().get()) * log_delta
+                cos.consumed_bits(log_delta, coeff_log_delta) + chain.as_ref().map_or(0, DoubleAngleChain::len) * log_delta
             }
         }
     }
@@ -217,8 +216,8 @@ impl<P> EncodedLut<P> {
 
     pub(crate) fn coeffs(&self) -> &P {
         match &self.kind {
-            EncodedLutKind::General(series) => &series.re.baby_steps()[0],
-            EncodedLutKind::Binary { cos, .. } => &cos.baby_steps()[0],
+            EncodedLutKind::General(series) => &series.re.baby_step(0)[0],
+            EncodedLutKind::Binary { cos, .. } => &cos.baby_step(0)[0],
         }
     }
 

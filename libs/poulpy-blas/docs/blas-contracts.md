@@ -190,11 +190,7 @@ its operand.
 
 Encryption labels a block from its plaintext's degree, so a batch of `count`
 matrices comes from plaintexts of `count d^2` slots, of degree `2 count d^2`
-on the standard ring and `count d^2` on the conjugate-invariant one. A
-plaintext's degree is at least the backend's `MIN_DEGREE`, which some backends
-set above the default of 8, and a degree raised to it records a larger batch.
-Such a batch therefore records `count` on every backend only when its degree
-reaches every target's `MIN_DEGREE`; otherwise encrypt it at the ring degree.
+on the standard ring and `count d^2` on the conjugate-invariant one.
 
 ## Keys
 
@@ -225,7 +221,7 @@ sigma (tau) once, then by one map per block, two scales. `JklsStored` and
 `JklsGalois` put JKLS's masks on the ciphertext: that first map, then the
 context's masks of its results, phi^k on the right and the column halves of
 psi^k on the left, then one sum of products by prepared public plaintexts
-(poulpy-ckks's `ckks_dot_product_prepared_pt_vec`), three scales; `JklsStored`
+(poulpy-ckks's `ckks_dot_product_prepared_pt`), three scales; `JklsStored`
 stores `d` plaintexts per block on the right and `2d - 1` on the left,
 `JklsGalois` one, read through the Galois elements of their rotations. On the
 right these two take one public matrix. Each path is its own circuit. The
@@ -345,8 +341,8 @@ crate's rules and fail in this order:
    radix is rejected for the length of a lazy sum, which normalizes instead
    ([Lazy sums](#lazy-sums)).
 2. Key by key, the rotation keys first, each at the width the operation
-   looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
-   `MissingRelinearizationKey` for the tensor key, when the store lacks it,
+   looks it up at ([Keys](#keys)): `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or
+   `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow` for the tensor key, when the store lacks it or holds it too narrow,
    and `InvalidOperand` when it is of another rank than the blocks it
    switches, on which poulpy-core's key switch would panic. A preparation's
    input has no `res` to match, so this is where its rank is checked.
@@ -370,7 +366,7 @@ validator gap or a device failure, and `res` is then unspecified. It stamps the
 batch record only after `Ok`, with the batch the validator computed. Since keys
 are checked first, an input that poulpy-ckks rejects for its budget may ask for
 a key that poulpy-ckks would not look up for it: a store holding exactly the
-keys in use then reports `MissingAutomorphismKey` instead of the budget error.
+keys in use then reports `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` instead of the budget error.
 
 ## Lazy sums
 

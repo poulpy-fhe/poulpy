@@ -288,7 +288,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
@@ -300,7 +299,6 @@ where
             a_col,
             b,
             b_col,
-            b_coeff,
             &mut [],
         );
     }
@@ -325,7 +323,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
@@ -337,7 +334,6 @@ where
             a_col,
             b,
             b_col,
-            b_coeff,
             &mut [],
         );
     }
@@ -1230,7 +1226,6 @@ mod ifma_impl {
             a_col: usize,
             b: &VecZnxBackendRef<'_, Self, Rg>,
             b_col: usize,
-            b_coeff: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
@@ -1239,7 +1234,7 @@ mod ifma_impl {
                 Self,
                 poulpy_hal::execution::SerialTaskExecutor,
                 Rg,
-            >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
+            >(cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
         }
 
         fn cnv_by_const_apply_add_tmp_bytes(
@@ -1262,7 +1257,6 @@ mod ifma_impl {
             a_col: usize,
             b: &VecZnxBackendRef<'_, Self, Rg>,
             b_col: usize,
-            b_coeff: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
@@ -1271,7 +1265,7 @@ mod ifma_impl {
                 Self,
                 poulpy_hal::execution::SerialTaskExecutor,
                 Rg,
-            >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
+            >(cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
         }
 
         #[allow(clippy::too_many_arguments)]

@@ -38,7 +38,7 @@ use crate::{
 ///
 /// The result is produced at the destination's **requested `dst.k()`** (value-preserving
 /// rounding when narrower than the natural width), not the buffer's allocation — the
-/// same contract as the `pt_vec` variant below.
+/// same contract as the plaintext product below.
 ///
 /// For the common case of equal-precision operands (`a.log_delta == b.log_delta == Δ`):
 ///
@@ -52,7 +52,7 @@ use crate::{
 /// Errors with `MultiplicationPrecisionUnderflow` if `natural_budget < 0`
 /// (i.e. `min(log_budget) < max(log_delta)`).
 ///
-/// ## Ciphertext–plaintext-vector multiplication (`ckks_mul_pt_vec_*`)
+/// ## Ciphertext–plaintext multiplication (`ckks_mul_pt_*`)
 ///
 /// ```text
 /// natural_budget = a.log_budget − pt.log_delta
@@ -81,15 +81,24 @@ use crate::{
 /// Allocate `pt` at exactly the precision you want folded in;
 /// a reduced `pt.k()` / `log_budget` does not narrow it.
 ///
-/// ## Ciphertext–plaintext-constant multiplication (`ckks_mul_pt_const_*`)
+/// A constant is a plaintext of its natural degree: a real constant of degree
+/// 1, a complex one `[re, im]` of degree 2 (`i = X^(N/2)`), or `c·π_S` of
+/// degree `2R` on a replicated layout. A degree-1 plaintext multiplies as an
+/// integer, without the transform.
 ///
-/// Identical metadata rule to the `pt_vec` variant above, using
-/// `pt.log_delta` as the plaintext precision.
+/// # Metadata of a plaintext product
+///
+/// ```text
+/// slots        = a.slots.join(pt.slots)         (an Integer ciphertext times a constant labelled Real is Real)
+/// log_sparsity = min(a.log_sparsity, log2(a.n / pt.n))
+/// slot_layout  = a's, a plaintext of degree 1 on the full layout taking any, every other route a's and pt's shared one
+/// ```
 ///
 /// # Slot layouts
 ///
-/// Ciphertext operands, and a plaintext vector operand, must share one slot
-/// layout, which the product carries; a constant multiplies any layout. A
+/// Ciphertext operands, and a plaintext operand, must share one slot
+/// layout, which the product carries; a plaintext of degree 1 on the full
+/// layout is a scalar and multiplies any layout. A
 /// [`SlotLayout::Replicated`](crate::SlotLayout::Replicated) product is
 /// computed `λ = ShapingProfile::shaping_depth(log_delta)` bits under the
 /// scale and rounded to the result width with
@@ -98,7 +107,7 @@ use crate::{
 /// ciphertext operands and the plaintext's for plaintext operands.
 ///
 /// A ciphertext product looks its tensor key up, and refuses with
-/// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey)
+/// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) or [`RelinearizationKeyTooNarrow`](crate::CKKSCompositionError::RelinearizationKeyTooNarrow)
 /// before any write, at the width its relinearization decomposes: the
 /// operands' `max(a.k, b.k)` when it takes the one-pass product (rank 1, one
 /// radix across the operands, the destination and the key, and a convolution
@@ -141,13 +150,10 @@ pub trait CKKSMulOps<BE: Backend, Rg: Ring = Standard> {
         A: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos;
-
-    fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    /// Scratch bytes for [`Self::ckks_mul_pt_into`] / [`Self::ckks_mul_pt_assign`] with result `res`, ciphertext `a`
+    /// (pass `dst` twice for `_assign`) and `b` the plaintext of the call, or a layout of its degree and `k`: the
+    /// product's scratch follows the degree of `b`, so a smaller degree under-reports.
+    fn ckks_mul_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
@@ -203,48 +209,30 @@ pub trait CKKSMulOps<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE, Rg>;
 
-    /// Computes `dst = a * pt` where `pt` is a full plaintext polynomial.
+    /// Computes `dst = a * pt` where `pt` is a plaintext of a degree dividing the ciphertext's, a constant included.
     ///
     /// See the trait-level documentation for the exact metadata rule including
     /// the capacity offset.
-    fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    ///
+    /// # Errors
+    ///
+    /// In this order, before any write to `dst`: `InvalidOperand` when `a` and `pt` do not share one slot layout, a
+    /// degree-1 `pt` on the full layout taking any; `PlaintextBase2KMismatch` for a `pt` of another radix than `a`; `PlaintextDegreeMismatch` for a `pt` whose
+    /// degree is not `a`'s or a power-of-two divisor of it; `MultiplicationPrecisionUnderflow` when `a.log_budget` is
+    /// below `pt.log_delta`; `InsufficientHomomorphicCapacity` when `dst.k()` is below `a.log_delta`; then `Internal`
+    /// for a `scratch` below [`Self::ckks_mul_pt_tmp_bytes`]. `dst` is untouched on refusal.
+    fn ckks_mul_pt_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst *= pt` in-place.
-    fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst = a * pt[pt_coeff]`, multiplying by a single
-    /// quantized constant from coefficient `pt_coeff` of `pt`.
     ///
-    /// See the trait-level documentation for the exact metadata rule including
-    /// the capacity offset.
-    fn ckks_mul_pt_const_into<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst *= pt[pt_coeff]` in-place.
-    fn ckks_mul_pt_const_assign<Dst, P>(
-        &self,
-        dst: &mut Dst,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    /// # Errors
+    ///
+    /// Those of [`Self::ckks_mul_pt_into`] with `dst` as `a`, in its order. `dst` is untouched on refusal.
+    fn ckks_mul_pt_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
@@ -259,14 +247,15 @@ where
     /// representation `hint` selects, as
     /// [`CKKSRightOperandPreparedFactory::ckks_right_operand_prepare_alloc`] describes it, which
     /// [`Self::ckks_left_operand_prepare`] fills. Its contents are unspecified until then, and its infos report `infos`
-    /// and no metadata.
+    /// and no metadata. Below the backend's minimum degree it is held at that degree, at which preparation embeds a
+    /// plaintext right operand only, refusing any other source below it.
     fn ckks_left_operand_prepared_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSLeftOperandPrepared<BE, Rg>
     where
         A: GLWEInfos,
     {
-        let size = infos.size();
+        let (n, size) = (infos.n().as_usize().max(BE::MIN_DEGREE), infos.size());
         CKKSLeftOperandPrepared {
-            prep: self.cnv_pvec_left_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
+            prep: self.cnv_pvec_left_alloc(n, infos.rank().as_usize() + 1, size, hint),
             size,
             layout: infos.glwe_layout(),
             meta: None,
@@ -278,7 +267,12 @@ where
     where
         A: GLWEInfos,
     {
-        self.cnv_pvec_left_bytes_of(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
+        self.cnv_pvec_left_bytes_of(
+            infos.n().as_usize().max(BE::MIN_DEGREE),
+            infos.rank().as_usize() + 1,
+            infos.size(),
+            hint,
+        )
     }
 
     /// Scratch bytes of [`Self::ckks_left_operand_prepare`] and [`Self::ckks_left_operand_prepare_alloc`] for an
@@ -294,8 +288,8 @@ where
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` for an `a` of another degree, radix, width `k` or rank than `res` was allocated for, before
-    /// any write to `res`.
+    /// `InvalidOperand` for an `a` below the backend's minimum degree, or of another degree, radix, `k` or rank than
+    /// `res` was allocated for, before any write to `res`.
     fn ckks_left_operand_prepare<A>(
         &self,
         res: &mut CKKSLeftOperandPrepared<BE, Rg>,
@@ -329,9 +323,9 @@ where
     where
         A: GLWEInfos,
     {
-        let size = infos.size();
+        let (n, size) = (infos.n().as_usize().max(BE::MIN_DEGREE), infos.size());
         CKKSRightOperandPrepared {
-            prep: self.cnv_pvec_right_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
+            prep: self.cnv_pvec_right_alloc(n, infos.rank().as_usize() + 1, size, hint),
             size,
             layout: infos.glwe_layout(),
             meta: None,
@@ -344,7 +338,12 @@ where
     where
         A: GLWEInfos,
     {
-        self.cnv_pvec_right_bytes_of(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
+        self.cnv_pvec_right_bytes_of(
+            infos.n().as_usize().max(BE::MIN_DEGREE),
+            infos.rank().as_usize() + 1,
+            infos.size(),
+            hint,
+        )
     }
 
     /// As [`CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare_tmp_bytes`], for
@@ -359,7 +358,8 @@ where
     ///
     /// # Errors
     ///
-    /// As [`CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare`].
+    /// As [`CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare`], except for a plaintext below the backend's
+    /// minimum degree, which preparation embeds at it.
     fn ckks_right_operand_prepare<A>(
         &self,
         res: &mut CKKSRightOperandPrepared<BE, Rg>,

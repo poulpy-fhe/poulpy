@@ -17,7 +17,7 @@ use crate::shaping::MAX_COEFFS;
 use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, layouts::CKKSPlaintextAlloc};
 use crate::{SlotLayout, numerics::CKKSFloat, scalar::Quad, shaping::conjugate_invariant};
 use num_traits::{Float, FromPrimitive};
-use poulpy_core::layouts::{Base2K, GLWEPlaintextLayout, GLWEToBackendMut, IntPolyInfos, TorusPrecision};
+use poulpy_core::layouts::{Base2K, GLWEToBackendMut, IntPolyInfos, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Ring, ScratchArena, encode_i128_by_limb, galois_element};
 
 /// The one of `slot_layout` that add-one and sub-one add, allocated: the plaintext their default bodies carve from
@@ -37,7 +37,7 @@ where
     M: CKKSPlaintextAlloc<BE> + ?Sized,
     CKKSPlaintextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + IntPolyInfos,
 {
-    let mut one = one_coeffs::<BE, Rg>("ckks_plaintext_one", slot_layout, log_delta)?;
+    let mut one = one_coeffs::<Rg>("ckks_plaintext_one", slot_layout, log_delta)?;
     let mut pt = module.ckks_plaintext_alloc(one.n.into(), base2k, one.k.into());
     pt.set_meta(one.meta);
     write_one::<BE, _, Rg>(&mut pt, base2k, &mut one.data[..one.n]);
@@ -91,12 +91,7 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a, Rg: Ring>(
     mut one: OneCoeffs,
     scratch: ScratchArena<'a, BE>,
 ) -> (CKKSPlaintextViewMut<'a, BE, Rg>, ScratchArena<'a, BE>) {
-    let layout = GLWEPlaintextLayout {
-        n: one.n.into(),
-        base2k,
-        k: TorusPrecision(one.k as u32),
-    };
-    let (mut pt, scratch) = scratch.take_ckks_plaintext_scratch::<_, Rg>(&layout, one.meta);
+    let (mut pt, scratch) = scratch.take_ckks_plaintext_scratch::<_, Rg>(&one.layout(base2k), one.meta);
     write_one::<BE, _, Rg>(&mut pt, base2k, &mut one.data[..one.n]);
     (pt, scratch)
 }
@@ -109,16 +104,27 @@ pub(crate) struct OneCoeffs {
     data: [i128; MAX_COEFFS],
 }
 
+impl OneCoeffs {
+    /// The layout of the plaintext [`take_one_pt`] carves at `base2k`.
+    pub(crate) fn layout(&self, base2k: Base2K) -> crate::CKKSLayout {
+        crate::CKKSLayout {
+            glwe_layout: poulpy_core::layouts::GLWELayout {
+                n: self.n.into(),
+                base2k,
+                k: TorusPrecision(self.k as u32),
+                rank: 0usize.into(),
+            },
+            meta: self.meta,
+        }
+    }
+}
+
 /// The coefficients of the one of `slot_layout`. On a full layout it is the monomial `2` at scale `2`, added as a
 /// constant. On a replicated layout it is the masked one `π_S` at scale `2^log_delta`: one on the data slots and zero
 /// on the guards, a plaintext of degree `2R` in `Y = X^(N/(2R))` with coefficients `cos(π·j/(2R))/R`, quantized with
 /// shaped rounding. It is invariant, and the conjugate-invariant ring holds it as a plaintext of degree `R`, its first
 /// `R` coefficients. Refusals carry `op`.
-pub(crate) fn one_coeffs<BE: Backend, Rg: Ring>(
-    op: &'static str,
-    slot_layout: SlotLayout,
-    log_delta: usize,
-) -> Result<OneCoeffs> {
+pub(crate) fn one_coeffs<Rg: Ring>(op: &'static str, slot_layout: SlotLayout, log_delta: usize) -> Result<OneCoeffs> {
     let mut data = [0i128; MAX_COEFFS];
     match slot_layout {
         SlotLayout::Full => {
@@ -151,22 +157,6 @@ pub(crate) fn one_coeffs<BE: Backend, Rg: Ring>(
                 &mut h[..m],
                 &mut gh[..m],
             )?;
-            // Embedded at the backend's smallest plaintext degree when `m` is below it.
-            let n = m.max(BE::MIN_DEGREE);
-            if n > MAX_COEFFS {
-                return Err(crate::CKKSCompositionError::InvalidOperand {
-                    op,
-                    reason: format!("the masked one needs a plaintext of degree {n} > {MAX_COEFFS}"),
-                }
-                .into());
-            }
-            let stride = n / m;
-            if stride > 1 {
-                for j in (1..m).rev() {
-                    data[j * stride] = data[j];
-                    data[j] = 0;
-                }
-            }
             let meta = GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Real,
@@ -174,7 +164,7 @@ pub(crate) fn one_coeffs<BE: Backend, Rg: Ring>(
                 slot_layout,
             };
             Ok(OneCoeffs {
-                n,
+                n: m,
                 k: log_delta + 1,
                 meta,
                 data,

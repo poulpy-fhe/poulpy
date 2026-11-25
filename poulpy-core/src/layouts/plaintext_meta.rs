@@ -76,8 +76,9 @@ impl ReplicatedLayout {
     pub const MAX_LOG_R: usize = 5;
 
     /// Checks `1 <= log_r <= MAX_LOG_R`, that `shaping` holds the `2R`
-    /// coefficients of `U`, and that `U(1)` is odd, which makes `U` invertible
-    /// modulo every power of two.
+    /// coefficients of `U`, none of them `i16::MIN`, so that every automorphism
+    /// of `U` keeps its coefficients in `i16`, and that `U(1)` is odd, which
+    /// makes `U` invertible modulo every power of two.
     pub fn new(log_k: u8, log_r: u8, shaping: &[i16]) -> crate::Result<Self> {
         let invalid = |detail| Err(crate::CoreError::InvalidReplicatedLayout { detail });
         if log_r == 0 || log_r as usize > Self::MAX_LOG_R {
@@ -88,6 +89,9 @@ impl ReplicatedLayout {
         }
         if shaping.len() != 2 << log_r {
             return invalid("the shaping polynomial must have 2R coefficients");
+        }
+        if shaping.contains(&i16::MIN) {
+            return invalid("the shaping polynomial must have no coefficient i16::MIN");
         }
         if shaping.iter().map(|&c| c as i64).sum::<i64>() & 1 == 0 {
             return invalid("the shaping polynomial must be invertible modulo 2");
@@ -348,6 +352,13 @@ mod tests {
         assert!(ReplicatedLayout::new(2, ReplicatedLayout::MAX_LOG_R as u8 + 1, &[1; 128]).is_err());
         assert!(ReplicatedLayout::new(2, 1, &[1, 0, 0]).is_err());
         assert!(ReplicatedLayout::new(2, 1, &[1, 1, 0, 0]).is_err());
+        // Even like the zero it replaces: `U(1)` stays odd.
+        assert!(matches!(
+            ReplicatedLayout::new(2, 1, &[1, -1, i16::MIN, 1]),
+            Err(crate::CoreError::InvalidReplicatedLayout {
+                detail: "the shaping polynomial must have no coefficient i16::MIN"
+            })
+        ));
         assert!(ReplicatedLayout::new((usize::BITS - 2) as u8, 1, &[1, -1, 0, 1]).is_err());
         assert!(ReplicatedLayout::new((usize::BITS - 3) as u8, 1, &[1, -1, 0, 1]).is_ok());
     }

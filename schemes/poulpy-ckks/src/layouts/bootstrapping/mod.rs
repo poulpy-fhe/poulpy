@@ -13,7 +13,6 @@ mod eval_mod_ci;
 mod key_widths;
 mod masks;
 mod plan;
-pub(crate) mod replicated;
 mod run;
 
 #[allow(deprecated)]
@@ -24,7 +23,6 @@ pub use eval_mod_ci::{CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRin
 pub use key_widths::BootstrappingKeyWidths;
 pub use masks::{CoeffsMaskPrepared, MaskedFactors, MergedS2CFactorPrepared};
 pub use plan::{BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus, SparseSecretEncapsulation};
-pub use replicated::{ReplicatedRoute, ReplicatedStage, ReplicatedTransforms};
 pub use run::BootstrappingRun;
 
 /// The working ciphertext of a bootstrap into `ct_out` and its input, at the radix of the input.

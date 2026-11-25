@@ -134,9 +134,9 @@ impl<D: Data, BE: Backend, Rg: Ring> LtDiagonalMeta for PreparedDiagonal<D, BE, 
         self.plaintext_meta().slots
     }
 
-    /// Its degree's sparsity, or the sparsity its ciphertexts claimed.
+    /// Its slot's degree's sparsity plus the stashed one: a plaintext's embedding at the floor, or its ciphertexts' label.
     fn lt_log_sparsity(&self, log_n: usize) -> usize {
-        log_n.saturating_sub(self.log_n()).max(self.plaintext_meta().log_sparsity)
+        log_n.saturating_sub(self.log_n()) + self.plaintext_meta().log_sparsity
     }
 
     fn lt_ciphertext_k(&self) -> Option<TorusPrecision> {
@@ -269,22 +269,23 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: M
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
         ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.max_k().as_usize(), pt.slots()))?;
         let first_pt = lt.first_diagonal_plaintext();
-        if let Some(first_pt) = first_pt {
+        let diagonals = || lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).map(|d| &d.plaintext);
+        if let Some(narrowest) = diagonals().min_by_key(|pt| pt.n()) {
             ckks_ensure!(
-                scratch.available() >= self.ckks_linear_transformation_rhs_prepare_tmp_bytes_reference(first_pt),
+                scratch.available() >= self.ckks_linear_transformation_rhs_prepare_tmp_bytes_reference(narrowest),
                 "{OP}: scratch below its query"
             );
         }
         self.glwe_linear_transformation_rhs_prepare(prepared, lt, scratch);
         // The first diagonal's scale and slot kind are stashed for all, so eval needs no `lt` for its `cnv_offset` and
-        // slot kind. A plaintext is sparse by its degree; ciphertexts by their label, the products sparse where all are.
+        // slot kind. A plaintext is sparse by its degree, a slot at the floor holding its embedding at its sparsity;
+        // ciphertexts by their label, the products sparse where all are.
         if let Some(first_pt) = first_pt {
-            let log_sparsity = lt
-                .giant_steps
-                .iter()
-                .flat_map(|gs| &gs.diagonals)
-                .filter(|d| d.plaintext.rank().as_usize() > 0)
-                .map(|d| d.plaintext.log_sparsity())
+            let log_sparsity = diagonals()
+                .map(|pt| match pt.rank().as_usize() {
+                    0 => (BE::MIN_DEGREE.ilog2() as usize).saturating_sub(pt.log_n()),
+                    _ => pt.log_sparsity(),
+                })
                 .min()
                 .unwrap_or(0);
             prepared.set_plaintext_meta(GLWEPlaintextMeta {
@@ -319,12 +320,12 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: M
         for galois in babies.rotations().baby_key_galois(babies.baby_galois()) {
             let p = galois_at(galois, cyclotomic_order);
             if let Err(source) = keys.get_automorphism_key(p, src_k) {
-                return Err(CKKSCompositionError::MissingAutomorphismKey {
-                    op: "ckks_linear_transformation_baby_steps_prepare",
-                    rotation: p,
-                    k: src_k.into(),
+                return Err(CKKSCompositionError::automorphism_key_lookup(
+                    "ckks_linear_transformation_baby_steps_prepare",
+                    p,
+                    src_k.into(),
                     source,
-                }
+                )
                 .into());
             }
         }
@@ -459,8 +460,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: M
         // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
         let slots = srcs.iter().fold(first.lt_slots(), |slots, src_t| slots.join(src_t.slots()));
         let log_sparsity = srcs.iter().zip(lts).fold(usize::MAX, |s, (src_t, lt_t)| {
-            let diagonal_t = lt_t.first_diagonal_plaintext().expect("checked non-empty");
-            s.min(src_t.log_sparsity()).min(diagonal_t.lt_log_sparsity(src.log_n()))
+            let diagonals = lt_t.giant_steps.iter().flat_map(|gs| &gs.diagonals);
+            let diagonals = diagonals.map(|d| d.plaintext.lt_log_sparsity(src.log_n()));
+            diagonals.fold(s.min(src_t.log_sparsity()), usize::min)
         });
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -576,12 +578,7 @@ where
     for galois in elements {
         let p = galois_at(galois, cyclotomic_order);
         keys.get_automorphism_key(p, giant_k)
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op,
-                rotation: p,
-                k: giant_k.into(),
-                source,
-            })?;
+            .map_err(|source| CKKSCompositionError::automorphism_key_lookup(op, p, giant_k.into(), source))?;
     }
     Ok(())
 }

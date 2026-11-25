@@ -962,7 +962,7 @@ pub fn ntt4x30_cnv_by_const_apply_tmp_bytes_portable(_res_size: usize, _a_size: 
     0
 }
 
-/// Coefficient-domain convolution by a constant: `res[k] = Σ_j a[k_abs − j] · b[j][b_coeff]`.
+/// Coefficient-domain convolution by a constant: `res[k] = Σ_j a[k_abs − j] · b[j]`.
 ///
 /// Shared by every backend with `BigWord = i128`: each output limb is an
 /// `i128` accumulation over the `a` limbs, taken one slice at a time (no
@@ -978,14 +978,13 @@ pub fn ntt4x30_cnv_by_const_apply_portable<BE, E: TaskExecutor, Rg: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
     _tmp: &mut [u8],
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
     for<'x> BE::BufRef<'x>: HostDataRef,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
-    ntt4x30_cnv_by_const_apply_impl::<BE, E, false, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
+    ntt4x30_cnv_by_const_apply_impl::<BE, E, false, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -997,14 +996,13 @@ pub fn ntt4x30_cnv_by_const_apply_add_portable<BE, E: TaskExecutor, Rg: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
     _tmp: &mut [u8],
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
     for<'x> BE::BufRef<'x>: HostDataRef,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
-    ntt4x30_cnv_by_const_apply_impl::<BE, E, true, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
+    ntt4x30_cnv_by_const_apply_impl::<BE, E, true, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1016,7 +1014,6 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool, Rg: Rin
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
     for<'x> BE::BufRef<'x>: HostDataRef,
@@ -1033,11 +1030,7 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool, Rg: Rin
         "ntt4x30_cnv_by_const_apply_impl: res_col {res_col} >= cols {res_cols}"
     );
     assert!(a.n() == n, "ntt4x30_cnv_by_const_apply_impl: a.n() {} != res.n() {n}", a.n());
-    debug_assert!(
-        b_coeff < b.n(),
-        "ntt4x30_cnv_by_const_apply_impl: b_coeff {b_coeff} >= b.n() {}",
-        b.n()
-    );
+    assert!(b.n() == 1, "ntt4x30_cnv_by_const_apply_impl: b is not a constant");
     let res_ptr = crate::kernels::SendPtr::new(res.raw_mut().as_mut_ptr());
     let res_limb = |k: usize| unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * res_cols + res_col)), n) };
 
@@ -1068,7 +1061,7 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool, Rg: Rin
         let j_max = (k_abs + 1).min(b_size);
         for j in j_min..j_max {
             let a_limb: &[i64] = a.at(a_col, k_abs - j);
-            let b_j = b.at(b_col, j)[b_coeff] as i128;
+            let b_j = b.at(b_col, j)[0] as i128;
             if !ADD && j == j_min {
                 for (r, &x) in out.iter_mut().zip(a_limb) {
                     *r = x as i128 * b_j;

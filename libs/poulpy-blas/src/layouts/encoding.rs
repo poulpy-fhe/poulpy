@@ -79,16 +79,13 @@ impl MapLayout {
     }
 
     /// The layout of every diagonal on `module`: at the degree of the map's period.
-    pub(crate) fn plaintext<BE, M, Rg: Ring>(&self, module: &M, base2k: Base2K) -> CKKSLayout
+    pub(crate) fn plaintext<M, Rg: Ring>(&self, module: &M, base2k: Base2K) -> CKKSLayout
     where
-        BE: Backend,
         M: CKKSModuleInfos + GetDegree,
     {
         CKKSLayout {
             glwe_layout: GLWELayout {
-                n: (self.period * module.ring_degree().as_usize() / module.ckks_max_slots::<Rg>())
-                    .max(BE::MIN_DEGREE)
-                    .into(),
+                n: (self.period * module.ring_degree().as_usize() / module.ckks_max_slots::<Rg>()).into(),
                 base2k,
                 k: self.meta.k,
                 rank: Rank(0),
@@ -118,7 +115,7 @@ impl MapLayout {
         BE: Backend,
         M: CKKSLinearTransformationAlloc<BE> + GetDegree,
     {
-        module.ckks_linear_transformation_alloc_from_infos(&self.lt, &self.plaintext::<BE, M, Rg>(module, base2k))
+        module.ckks_linear_transformation_alloc_from_infos(&self.lt, &self.plaintext::<M, Rg>(module, base2k))
     }
 
     /// The prepared map's allocation on `module`, as poulpy-ckks prepares an encoding of this shape into.
@@ -130,7 +127,7 @@ impl MapLayout {
         LinearTransformationPrepared::<BE, Rg>::alloc_prepared_from_index(
             module,
             &self.prepared_index(),
-            &self.plaintext::<BE, M, Rg>(module, base2k),
+            &self.plaintext::<M, Rg>(module, base2k),
         )
     }
 
@@ -140,7 +137,7 @@ impl MapLayout {
         BE: Backend,
         M: CKKSLinearTransformationOps<BE, Rg> + CKKSModuleInfos + GetDegree,
     {
-        module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&self.plaintext::<BE, M, Rg>(module, base2k))
+        module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&self.plaintext::<M, Rg>(module, base2k))
     }
 }
 
@@ -274,8 +271,7 @@ pub(crate) fn prepare_maps_into<'a, BE, M, Rg: Ring>(
 }
 
 /// `block` after `lt` evaluated into a ciphertext of width `dst_k`, at `block`'s label: a map never repeats with a longer
-/// period than the blocks it reads, so blas keeps their label, where poulpy-ckks reads one off the diagonals' degree,
-/// which a backend's minimum degree may raise.
+/// period than the blocks it reads, so blas keeps their label, where poulpy-ckks reads one off the diagonals' degree.
 pub(crate) fn mapped_block_into<P: LtDiagonalMeta>(
     block: CKKSLayout,
     lt: &LinearTransformation<P>,

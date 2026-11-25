@@ -59,7 +59,6 @@ macro_rules! hal_impl_cnv {
             a_col: usize,
             b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, $ring>,
             b_col: usize,
-            b_coeff: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
@@ -72,7 +71,6 @@ macro_rules! hal_impl_cnv {
                 a_col,
                 b,
                 b_col,
-                b_coeff,
                 &mut scratch,
             );
         }
@@ -97,7 +95,6 @@ macro_rules! hal_impl_cnv {
             a_col: usize,
             b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, $ring>,
             b_col: usize,
-            b_coeff: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
@@ -110,7 +107,6 @@ macro_rules! hal_impl_cnv {
                 a_col,
                 b,
                 b_col,
-                b_coeff,
                 &mut scratch,
             );
         }

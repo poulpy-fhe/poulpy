@@ -1,20 +1,20 @@
 //! Shaped operations of a replicated slot layout: rounding, encoding, products,
-//! automorphisms and polynomial evaluation with masked constants. The shaped
-//! encryption runs in [`test_encryption_parity`](super::test_encryption_parity).
+//! automorphisms and polynomial evaluation with masked constants, the conversions
+//! and the ring maps. The shaped encryption runs in [`test_encryption_parity`](super::test_encryption_parity).
 use super::{
     arithmetic::layout,
     helpers::{Snapshot, assert_untagged, fixture_ciphertext, fixture_operand, fixture_plaintext, snapshot, with_scratch},
     keys::{key_layout, key_layout_bits, prepared_automorphism_key, prepared_tensor_key},
 };
 use crate::{
-    CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSMulOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCIRingMapOps, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSMulOps,
         CKKSPolynomialEvaluationOps, CKKSReplicatedOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSPlaintextAlloc, ReplicatedConversion, ReplicatedTransform, encode_bsgs_replicated,
-        replicated::ReplicatedTransformModule,
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, ReplicatedConversionPrepared, eval_mod::encode_bsgs_with,
+        masked::encode_masked_constants, replicated::ReplicatedConversionModule,
     },
     oep::{
         CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSMulImpl, CKKSPlaintextVecImpl,
@@ -23,15 +23,18 @@ use crate::{
     polynomial::{Basis, Polynomial, SplitStrategy},
     reference::encoding::CKKSSlotEmbedding,
     shaping::{ShapingProfile, ShapingUnit, conjugate_invariant},
-    test_suite::CKKSTestParams,
+    test_suite::{CKKSTestParams, replicated::round_trip_conversion},
 };
 use poulpy_core::{
     GLWEAdd, GLWEAutomorphismKeyPreparedFactory, GLWEFill, GLWETensorKeyPreparedFactory,
-    layouts::{GLWEAutomorphismKeyPrepared, GLWELayout, LWEInfos},
+    api::GLWECIKeyPreparedFactory,
+    layouts::{GGLWELayout, GLWEAutomorphismKeyPrepared, GLWELayout, GLWESwitchingKeyAlloc, LWEInfos},
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
-    api::CnvPVecAlloc,
-    layouts::{Backend, Module, Ring, ScratchArena, Standard},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, ScratchOwned, Standard},
+    source::Source,
 };
 use std::collections::HashMap;
 
@@ -64,89 +67,188 @@ impl<B, Rg: Ring> ReplicatedRingImpl<Rg> for B where
 {
 }
 
-/// `ckks_to_replicated` and back of a full-layout fixture of `k = 4` values onto `U8_40` (`R = 4`), into wide and
-/// narrower destinations, with the maps dense and with two placement factors, each within its queried arena, the keys fixtures at the suite's rank.
-fn conversions<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+/// The CKKS, replicated and diagonal scales of the conversions of [`run_replicated_conversions`].
+const CONVERSION_SCALES: (usize, usize, usize) = (40, 20, 30);
+
+/// A conversion of [`run_replicated_conversions`] with what running it takes: its automorphism key layout at the
+/// suite's rank, fixture keys of its Galois elements and the `k` of its round trip.
+struct ConversionSetup<B: Backend, Rg: Ring> {
+    conv: ReplicatedConversionPrepared<B, Rg>,
+    atk_layout: GGLWELayout,
+    keys: HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B, Rg>>,
+    k: usize,
+}
+
+/// The conversion of `k = 4` values onto `U8_40` (`R = 4`) at [`CONVERSION_SCALES`], dense or factored into
+/// `placement_factors`.
+fn conversion_setup<B, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    placement_factors: Option<usize>,
+) -> ConversionSetup<B, Rg>
+where
+    B: Backend<ZnxWord = i64>,
+    F: CKKSEncodingScalar,
+    Module<B>: ReplicatedConversionModule<B, F, Rg> + GLWEAutomorphismKeyPreparedFactory<B, Rg> + GLWEFill<B, Rg>,
+{
+    let b = params.base2k;
+    let unit = ShapingUnit::U8_40.layout(2).unwrap();
+    let (conv, (.., extra_bits), k) =
+        round_trip_conversion::<B, F, Rg>(module, (params.n, unit, b.into()), CONVERSION_SCALES, placement_factors).unwrap();
+    let (_, atk_layout) = rank_keys(params, k + extra_bits + conv.trace_levels + b);
+    let key = |p: i64| prepared_automorphism_key::<B, Rg>(module, &atk_layout, p, (p as u8).wrapping_add(31));
+    let keys = conv.galois_elements().into_iter().map(|p| (p, key(p))).collect();
+    ConversionSetup {
+        conv,
+        atk_layout,
+        keys,
+        k,
+    }
+}
+
+/// `ckks_to_replicated` and back of full-layout fixtures of `k = 4` values onto `U8_40` (`R = 4`), complex, complex with
+/// the canonical flag clear and real, dense and with two placement factors, into wide and narrower destinations within
+/// their queried arenas, keys at the suite's rank, each source left unchanged.
+pub fn run_replicated_conversions<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar,
     Module<B>: CKKSReplicatedOps<B, Rg>
-        + ReplicatedTransformModule<B, F, Rg>
-        + CnvPVecAlloc<B>
+        + ReplicatedConversionModule<B, F, Rg>
         + GLWEAutomorphismKeyPreparedFactory<B, Rg>
-        + GLWEFill<B, Rg>,
+        + GLWEFill<B, Rg>
+        + GLWEAdd<B, Rg>,
 {
-    let b = params.base2k;
-    let (log_k, log_delta_ckks, log_delta, log_delta_diag) = (2u8, 40, 20, 30);
-    let layout = ShapingUnit::U8_40.layout(log_k).unwrap();
-    let extra_bits =
-        log_delta_ckks - log_delta - (module.ckks_slots_of_degree::<Rg>(params.n) >> log_k).trailing_zeros() as usize;
-    let inner_log_delta_diag = log_delta + extra_bits + 4;
-    let bytes =
-        ReplicatedConversion::<B, Rg>::new_tmp_bytes::<F>(module, &layout, b.into(), log_delta_diag.max(inner_log_delta_diag))
-            .unwrap();
+    let (log_delta_ckks, log_delta, _) = CONVERSION_SCALES;
+    let full = |k| layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex);
     let mut results = Vec::new();
     for (label, placement_factors) in [("dense", None), ("factored", Some(2))] {
-        let conv = with_scratch::<B, _>(bytes, |s| {
-            crate::test_suite::replicated::conversion::<B, F, Rg>(
-                module,
-                (params.n, layout, b.into()),
-                (log_delta, log_delta_diag, inner_log_delta_diag, extra_bits),
-                placement_factors,
-                s,
+        let ConversionSetup {
+            conv,
+            atk_layout,
+            keys,
+            k,
+        } = conversion_setup::<B, F, Rg>(params, module, placement_factors);
+        let convert = |res: &mut CKKSCiphertextOwned<B, Rg>, a: &CKKSCiphertextOwned<B, Rg>, to: bool| {
+            let before = snapshot::<B, _, Rg>(a);
+            with_scratch::<B, _>(
+                module.ckks_replicated_conversion_tmp_bytes(&*res, a, &conv, &atk_layout),
+                |s| {
+                    if to {
+                        module.ckks_to_replicated(res, a, &conv, &keys, s)
+                    } else {
+                        module.ckks_from_replicated(res, a, &conv, &keys, s)
+                    }
+                },
             )
-        })
-        .unwrap();
-        let from_bits = conv.from.as_ref().map_or(0, ReplicatedTransform::consumed_bits);
-        let k = log_delta_ckks + conv.to.consumed_bits() + from_bits + log_delta_diag;
-        let (_, atk_layout) = rank_keys(params, k + extra_bits + conv.trace.len() + b);
-        let order = crate::operand_cyclotomic_order::<_, Rg>("parity", module, params.n).unwrap();
-        let keys: HashMap<i64, _> = conv
-            .galois()
-            .into_iter()
-            .map(|galois| {
-                let p = poulpy_core::layouts::galois_at(galois, order);
-                (
-                    p,
-                    prepared_automorphism_key::<B, Rg>(module, &atk_layout, p, (p as u8).wrapping_add(31)),
-                )
-            })
-            .collect();
-        let a = fixture_ciphertext::<B, Rg>(
-            module,
-            &super::arithmetic::layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex),
-            81,
-        );
+            .unwrap();
+            assert_eq!(snapshot::<B, _, Rg>(a), before, "a conversion changed its source");
+            (label, snapshot::<B, _, Rg>(&*res))
+        };
         // The results land wide, and narrower off the limb grid through a modulus drop.
-        let to_k = k - log_delta_ckks - conv.to.consumed_bits() + log_delta;
-        let mut replicated = None;
-        for res_k in [k, to_k - 7] {
-            let res_layout = ct_layout(params, res_k, log_delta, SlotLayout::Replicated(layout));
-            let mut res = fixture_ciphertext::<B, Rg>(module, &res_layout, 83);
-            let mut workspace = conv.alloc_to_workspace(module, &a);
-            with_scratch::<B, _>(
-                module.ckks_replicated_conversion_tmp_bytes(&res, &a, &atk_layout, &conv),
-                |s| module.ckks_to_replicated(&mut res, &a, &conv, &mut workspace, &keys, s),
-            )
-            .unwrap();
-            results.push((label, snapshot::<B, _, Rg>(&res)));
-            replicated.get_or_insert(res);
-        }
-        let replicated = replicated.unwrap();
-        let from_log_delta = log_delta + extra_bits + conv.trace.len();
-        for res_k in [k, from_log_delta + 7] {
-            let back_layout = super::arithmetic::layout(params, params.rank, res_k, log_delta_ckks, 0, SlotsKind::Complex);
-            let mut back = fixture_ciphertext::<B, Rg>(module, &back_layout, 85);
-            let mut workspace = conv.alloc_from_workspace(module, &replicated).unwrap();
-            with_scratch::<B, _>(
-                module.ckks_replicated_conversion_tmp_bytes(&back, &replicated, &atk_layout, &conv),
-                |s| module.ckks_from_replicated(&mut back, &replicated, &conv, &mut workspace, &keys, s),
-            )
-            .unwrap();
-            results.push((label, snapshot::<B, _, Rg>(&back)));
+        let to_k = k - log_delta_ckks - conv.to.consumed + log_delta;
+        let from_log_delta = log_delta + conv.extra_bits + conv.trace_levels;
+        for (slots, lazy) in [
+            (SlotsKind::Complex, false),
+            (SlotsKind::Complex, true),
+            (SlotsKind::Real, false),
+        ] {
+            let mut source = full(k);
+            source.meta.slots = slots;
+            let a = fixture_operand::<B, Rg>(module, &source, 81, lazy);
+            let mut onto = None;
+            for res_k in [k, to_k - 7] {
+                let res_layout = ct_layout(params, res_k, log_delta, SlotLayout::Replicated(conv.layout));
+                let mut res = fixture_ciphertext::<B, Rg>(module, &res_layout, 83);
+                results.push(convert(&mut res, &a, true));
+                onto.get_or_insert(res);
+            }
+            let onto = onto.unwrap();
+            for res_k in [k, from_log_delta + 7] {
+                let mut back = fixture_ciphertext::<B, Rg>(module, &full(res_k), 85);
+                results.push(convert(&mut back, &onto, false));
+            }
         }
     }
     results
+}
+
+/// A recordable run of both conversions on `B`, as [`run_replicated_conversions`] builds them: the dense conversion of
+/// `k = 4` values onto `U8_40` (`R = 4`), fixture keys and a full-layout fixture source. Each call converts the source
+/// onto the replicated layout and back on one arena allocated once, without waiting for the backend.
+pub fn replicated_conversions_run<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> impl FnMut() + '_
+where
+    B: Backend<ZnxWord = i64>,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSReplicatedOps<B, Rg>
+        + ReplicatedConversionModule<B, F, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<B, Rg>
+        + GLWEFill<B, Rg>
+        + GLWEAdd<B, Rg>,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let (log_delta_ckks, log_delta, _) = CONVERSION_SCALES;
+    let ConversionSetup {
+        conv,
+        atk_layout,
+        keys,
+        k,
+    } = conversion_setup::<B, F, Rg>(params, module, None);
+    let full = layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex);
+    let source = fixture_operand::<B, Rg>(module, &full, 81, false);
+    let onto_layout = ct_layout(params, k, log_delta, SlotLayout::Replicated(conv.layout));
+    let mut onto = fixture_ciphertext::<B, Rg>(module, &onto_layout, 83);
+    let mut back = fixture_ciphertext::<B, Rg>(module, &full, 85);
+    let bytes = module
+        .ckks_replicated_conversion_tmp_bytes(&onto, &source, &conv, &atk_layout)
+        .max(module.ckks_replicated_conversion_tmp_bytes(&back, &onto, &conv, &atk_layout));
+    let mut scratch = ScratchOwned::<B>::alloc(bytes);
+    move || {
+        module
+            .ckks_to_replicated(&mut onto, &source, &conv, &keys, &mut scratch.borrow())
+            .unwrap();
+        module
+            .ckks_from_replicated(&mut back, &onto, &conv, &keys, &mut scratch.borrow())
+            .unwrap();
+    }
+}
+
+/// The refusals of `ckks_to_replicated` and `ckks_from_replicated` of the dense conversion of
+/// [`run_replicated_conversions`] into a destination of another rank, each destination untouched.
+pub fn run_refused_replicated_conversions<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> [crate::CKKSError; 2]
+where
+    B: Backend<ZnxWord = i64>,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSReplicatedOps<B, Rg>
+        + ReplicatedConversionModule<B, F, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<B, Rg>
+        + GLWEFill<B, Rg>,
+{
+    let (log_delta_ckks, log_delta, _) = CONVERSION_SCALES;
+    let ConversionSetup { conv, keys, k, .. } = conversion_setup::<B, F, Rg>(params, module, None);
+    let full = layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex);
+    let replicated = ct_layout(params, k, log_delta, SlotLayout::Replicated(conv.layout));
+    [true, false].map(|to| {
+        let (src, mut dst) = if to { (full, replicated) } else { (replicated, full) };
+        dst.glwe_layout.rank = (params.rank + 1).into();
+        let a = fixture_ciphertext::<B, Rg>(module, &src, 81);
+        let mut res = fixture_ciphertext::<B, Rg>(module, &dst, 83);
+        let before = snapshot::<B, _, Rg>(&res);
+        let error = with_scratch::<B, _>(0, |s| {
+            if to {
+                module.ckks_to_replicated(&mut res, &a, &conv, &keys, s)
+            } else {
+                module.ckks_from_replicated(&mut res, &a, &conv, &keys, s)
+            }
+        })
+        .expect_err("a conversion into another rank was accepted");
+        assert_eq!(
+            snapshot::<B, _, Rg>(&res),
+            before,
+            "a refused conversion wrote its destination"
+        );
+        error
+    })
 }
 
 /// The replicated layout of the suite: period 8 holding 2 values, on `2kR = 32` slots.
@@ -154,7 +256,7 @@ fn replicated() -> SlotLayout {
     SlotLayout::Replicated(ShapingUnit::U16_20.layout(1).unwrap())
 }
 
-/// A ciphertext layout of the suite's rank at width `k` and scale `2^delta`, in `slot_layout`.
+/// A ciphertext layout of the suite's rank at `k` and scale `2^delta`, in `slot_layout`.
 fn ct_layout(params: CKKSTestParams, k: usize, delta: usize, slot_layout: SlotLayout) -> CKKSLayout {
     let mut out = layout(
         params,
@@ -184,12 +286,12 @@ where
     snapshot::<B, _, Rg>(&out)
 }
 
-/// A ciphertext layout of the suite's rank at width `k`, in the replicated layout.
+/// A ciphertext layout of the suite's rank at `k`, in the replicated layout.
 fn replicated_at(params: CKKSTestParams, k: usize) -> CKKSLayout {
     ct_layout(params, k, params.base2k - 1, replicated())
 }
 
-/// Tensor and automorphism key layouts of the suite's rank at width `k`.
+/// Tensor and automorphism key layouts of the suite's rank at `k`.
 fn rank_keys(params: CKKSTestParams, k: usize) -> (poulpy_core::layouts::GGLWELayout, poulpy_core::layouts::GGLWELayout) {
     let (b, r) = (params.base2k, params.rank);
     (
@@ -301,11 +403,32 @@ where
     lp.meta.log_sparsity = 0;
     let pt = fixture_plaintext::<B, Rg>(module, &lp, 54);
     let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
-    with_scratch::<B, _>(CKKSMulOps::<B, Rg>::ckks_mul_pt_vec_tmp_bytes(module, &out, &a, &pt), |s| {
-        module.ckks_mul_pt_vec_into(&mut out, &a, &pt, s)
+    with_scratch::<B, _>(CKKSMulOps::<B, Rg>::ckks_mul_pt_tmp_bytes(module, &out, &a, &pt), |s| {
+        module.ckks_mul_pt_into(&mut out, &a, &pt, s)
     })
     .unwrap();
-    results.push(("mul_pt_vec_into", snapshot::<B, _, Rg>(&out)));
+    results.push(("mul_pt_into", snapshot::<B, _, Rg>(&out)));
+    // A scalar of degree 1 on the full layout, and a masked constant of degree `2R` (`R` on the conjugate-invariant
+    // ring) on the replicated one.
+    let crate::SlotLayout::Replicated(layout) = lp.meta.slot_layout else {
+        unreachable!("a replicated plaintext layout")
+    };
+    let period = (1usize << layout.log_r()) * if crate::shaping::conjugate_invariant::<Rg>() { 1 } else { 2 };
+    for (label, n, slot_layout) in [
+        ("mul_pt_into scalar", 1, crate::SlotLayout::Full),
+        ("mul_pt_into masked constant", period, lp.meta.slot_layout),
+    ] {
+        let mut cl = lp;
+        cl.glwe_layout.n = n.into();
+        cl.meta.slot_layout = slot_layout;
+        let pt = fixture_plaintext::<B, Rg>(module, &cl, 55);
+        let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
+        with_scratch::<B, _>(CKKSMulOps::<B, Rg>::ckks_mul_pt_tmp_bytes(module, &out, &a, &pt), |s| {
+            module.ckks_mul_pt_into(&mut out, &a, &pt, s)
+        })
+        .unwrap();
+        results.push((label, snapshot::<B, _, Rg>(&out)));
+    }
 
     let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
     with_scratch::<B, _>(CKKSRotateOps::<B, Rg>::ckks_rotate_tmp_bytes(module, &a, &atk_layout), |s| {
@@ -354,8 +477,17 @@ where
             unreachable!()
         };
         let encoding = <Module<B> as CKKSEncodingHostOps<B, F, Rg>>::ckks_encoding_host_tmp_bytes(module, module.n());
+        let masked_meta = CoeffsMeta {
+            meta: GLWEPlaintextMeta {
+                slot_layout: SlotLayout::Replicated(rl),
+                ..coeff_meta.meta
+            },
+            ..coeff_meta
+        };
         let bsgs = with_scratch::<B, _>(encoding, |s| {
-            encode_bsgs_replicated::<B, F, Rg>(&polynomial, module, b.into(), coeff_meta, SplitStrategy::MinDepth, rl, s)
+            encode_bsgs_with(&polynomial, SplitStrategy::MinDepth, false, &mut |values: &[F]| {
+                encode_masked_constants::<B, F, Rg>(module, b.into(), masked_meta, values, s)
+            })
         })
         .unwrap();
         let pt_layout = CKKSLayout {
@@ -423,7 +555,7 @@ fn narrow_automorphisms<B, Rg: Ring>(
                 let err = result.unwrap_err();
                 let required = 110 + crate::shaping::ShapingProfile::new(&shaped_layout).shaping_depth(40);
                 assert!(
-                    matches!(err.composition(), Some(crate::CKKSCompositionError::MissingAutomorphismKey { op, k, .. }) if *op == label && *k as usize == required),
+                    matches!(err.composition(), Some(crate::CKKSCompositionError::AutomorphismKeyTooNarrow { op, k, max_input_k: 110, .. }) if *op == label && *k as usize == required),
                     "{err:?}"
                 );
                 assert_eq!(snapshot::<B, _, Rg>(&destination), before);
@@ -464,12 +596,98 @@ where
     results
 }
 
+/// `ckks_ci_embed` of a replicated conjugate-invariant fixture of half the degree and `ckks_ci_trace` of a replicated
+/// standard one, each at the shaping depth within its queried arena, on fixture keys covering that depth, from a
+/// canonical and a flag-clear source and into a destination at the result's `k` and a limb wider, each source left
+/// unchanged.
+fn ring_maps<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+where
+    B: Backend<ZnxWord = i64>,
+    Module<B>: CKKSCIRingMapOps<B>
+        + GLWECIKeyPreparedFactory<B>
+        + GLWEFill<B>
+        + GLWEFill<B, ConjugateInvariant>
+        + GLWEAdd<B>
+        + GLWEAdd<B, ConjugateInvariant>,
+{
+    let b = params.base2k;
+    let mut ci_layout = replicated_at(
+        CKKSTestParams {
+            n: params.n / 2,
+            ..params
+        },
+        4 * b + 3,
+    );
+    ci_layout.meta.slots = SlotsKind::Real;
+    let SlotLayout::Replicated(unit) = replicated() else {
+        unreachable!()
+    };
+    let k = ci_layout.k().as_usize();
+    let depth = ShapingProfile::new(&unit).shaping_depth(ci_layout.log_delta());
+    let key_infos = key_layout(params.n, b, k + depth, 1, params.rank, params.rank);
+    let switching = |seed: u8| {
+        let mut key = module.glwe_switching_key_alloc_from_infos(&key_infos);
+        fill_by_digit(module, &mut key, 1, &mut Source::new([seed; 32]));
+        key
+    };
+    let mut embed = module.glwe_ci_embed_key_prepared_alloc_from_infos(&key_infos);
+    let mut trace = module.glwe_ci_trace_key_prepared_alloc_from_infos(&key_infos);
+    with_scratch::<B, _>(module.glwe_ci_key_prepare_tmp_bytes(&key_infos), |s| {
+        module.glwe_ci_key_prepare(&mut embed, &switching(101), s);
+        module.glwe_ci_key_prepare(&mut trace, &switching(103), s);
+    });
+    let mut standard_layout = replicated_at(params, k);
+    standard_layout.meta.slots = SlotsKind::Real;
+    let wider = |layout: &CKKSLayout, extra: usize| CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: (layout.k().as_usize() + extra).into(),
+            ..layout.glwe_layout
+        },
+        ..*layout
+    };
+    let mut results = Vec::new();
+    for (labels, lazy, extra) in [
+        (["ckks_ci_embed", "ckks_ci_trace"], false, 0),
+        (["ckks_ci_embed, lazy", "ckks_ci_trace, lazy"], true, 0),
+        (["ckks_ci_embed, wider", "ckks_ci_trace, wider"], false, b),
+    ] {
+        let src = fixture_operand::<B, ConjugateInvariant>(module, &ci_layout, 71, lazy);
+        let src_before = snapshot::<B, _, ConjugateInvariant>(&src);
+        let mut embedded = fixture_ciphertext::<B, Standard>(module, &wider(&replicated_at(params, k), extra), 83);
+        with_scratch::<B, _>(module.ckks_ci_embed_tmp_bytes(&embedded, &src, &key_infos), |s| {
+            module.ckks_ci_embed(&mut embedded, &src, &embed, s)
+        })
+        .unwrap();
+        assert_eq!(
+            snapshot::<B, _, ConjugateInvariant>(&src),
+            src_before,
+            "ckks_ci_embed changed its source"
+        );
+        let standard = fixture_operand::<B, Standard>(module, &standard_layout, 87, lazy);
+        let standard_before = snapshot::<B, _, Standard>(&standard);
+        let mut back = fixture_ciphertext::<B, ConjugateInvariant>(module, &wider(&ci_layout, extra), 85);
+        with_scratch::<B, _>(module.ckks_ci_trace_tmp_bytes(&back, &standard, &key_infos), |s| {
+            module.ckks_ci_trace(&mut back, &standard, &trace, s)
+        })
+        .unwrap();
+        assert_eq!(
+            snapshot::<B, _, Standard>(&standard),
+            standard_before,
+            "ckks_ci_trace changed its source"
+        );
+        results.push((labels[0], snapshot::<B, _, Standard>(&embedded)));
+        results.push((labels[1], snapshot::<B, _, ConjugateInvariant>(&back)));
+    }
+    results
+}
+
 /// Shaped operations of a replicated layout give the same digits and metadata
 /// on both backends, on the ring `Rg` and at the suite's rank, each within its
 /// queried arena: rounding of replicated and full layouts, of a source with its
 /// canonical flag clear, to another radix and past the largest shaping pass;
 /// the shaped encoding; products, rotations, the masked one and polynomial
-/// evaluation; and, on the standard ring, the conjugations.
+/// evaluation; the conversions; and, on the standard ring, the conjugations, on
+/// the conjugate-invariant ring, the ring maps of a replicated source.
 pub fn test_replicated_parity<BR, BT, F, Rg>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64>
@@ -491,9 +709,13 @@ where
         + GLWEFill<BR, Rg>
         + GLWEFill<BR>
         + GLWEAdd<BR, Rg>
+        + GLWEAdd<BR, Standard>
+        + GLWEAdd<BR, ConjugateInvariant>
         + CKKSReplicatedOps<BR, Rg>
-        + ReplicatedTransformModule<BR, F, Rg>
-        + CnvPVecAlloc<BR>,
+        + ReplicatedConversionModule<BR, F, Rg>
+        + CKKSCIRingMapOps<BR>
+        + GLWECIKeyPreparedFactory<BR>
+        + GLWEFill<BR, ConjugateInvariant>,
     Module<BT>: CKKSAllOpsTmpBytes<BT>
         + GLWETensorKeyPreparedFactory<BT, Rg>
         + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
@@ -501,33 +723,32 @@ where
         + GLWEFill<BT, Rg>
         + GLWEFill<BT>
         + GLWEAdd<BT, Rg>
+        + GLWEAdd<BT, Standard>
+        + GLWEAdd<BT, ConjugateInvariant>
         + CKKSReplicatedOps<BT, Rg>
-        + ReplicatedTransformModule<BT, F, Rg>
-        + CnvPVecAlloc<BT>,
+        + ReplicatedConversionModule<BT, F, Rg>
+        + CKKSCIRingMapOps<BT>
+        + GLWECIKeyPreparedFactory<BT>
+        + GLWEFill<BT, ConjugateInvariant>,
 {
     assert_eq!(reference.n(), tested.n());
     let standard = !conjugate_invariant::<Rg>();
-    let run =
-        |rounding: Vec<_>, shaped: Vec<_>, converted: Vec<_>, conjugations: Option<Vec<_>>| -> Vec<(&'static str, Snapshot)> {
-            rounding
-                .into_iter()
-                .chain(shaped)
-                .chain(converted)
-                .chain(conjugations.into_iter().flatten())
-                .collect()
-        };
-    let want = run(
-        rounding_ops::<BR, F, Rg>(params, reference),
-        shaped_ops::<BR, F, Rg>(params, reference),
-        conversions::<BR, F, Rg>(params, reference),
-        standard.then(|| conjugations::<BR>(params, reference)),
-    );
+    let mut want = rounding_ops::<BR, F, Rg>(params, reference);
+    want.extend(shaped_ops::<BR, F, Rg>(params, reference));
+    want.extend(run_replicated_conversions::<BR, F, Rg>(params, reference));
+    want.extend(if standard {
+        conjugations::<BR>(params, reference)
+    } else {
+        ring_maps::<BR>(params, reference)
+    });
     assert_untagged("replicated", want.iter().map(|(_, output)| output));
-    let got = run(
-        rounding_ops::<BT, F, Rg>(params, tested),
-        shaped_ops::<BT, F, Rg>(params, tested),
-        conversions::<BT, F, Rg>(params, tested),
-        standard.then(|| conjugations::<BT>(params, tested)),
-    );
+    let mut got = rounding_ops::<BT, F, Rg>(params, tested);
+    got.extend(shaped_ops::<BT, F, Rg>(params, tested));
+    got.extend(run_replicated_conversions::<BT, F, Rg>(params, tested));
+    got.extend(if standard {
+        conjugations::<BT>(params, tested)
+    } else {
+        ring_maps::<BT>(params, tested)
+    });
     assert_eq!(want, got, "replicated parity differs");
 }

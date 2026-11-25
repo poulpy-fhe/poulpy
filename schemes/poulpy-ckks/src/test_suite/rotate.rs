@@ -2,13 +2,13 @@
 //!
 //! # Test inventory
 //!
-//! ## Operations-layer rotation (`GLWE<_, CKKS>::rotate`)
+//! ## Operations-layer rotation (`ckks_rotate_into`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_rotate_aligned`] | out-of-place rotation for each requested shift |
 //!
-//! ## Operations-layer rotation (`GLWE<_, CKKS>::rotate_assign`)
+//! ## Operations-layer rotation (`ckks_rotate_assign`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|

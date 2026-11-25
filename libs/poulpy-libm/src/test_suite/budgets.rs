@@ -8,7 +8,7 @@
 use anyhow::Result;
 use poulpy_core::{
     GLWEFill,
-    layouts::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared, LWEInfos},
+    layouts::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -17,12 +17,9 @@ use poulpy_hal::{
 };
 
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, SetCKKSInfos,
+    CKKSInfos, CKKSLayout,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps},
-    layouts::{
-        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned,
-        CKKSPlaintextVecHostCodec,
-    },
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, ckks_spec, gen_atk, gen_sk_with_raw, gen_tsk, upload_pt},
@@ -53,7 +50,7 @@ pub(super) struct Setup<BE: TestContextBackend> {
     pub(super) tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     pub(super) keys: std::collections::HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     pub(super) composite: SignComposite<f64, Pt<BE>>,
-    pub(super) bounds: Pt<BE>,
+    pub(super) bounds: [Pt<BE>; 2],
     pub(super) coeff_meta: CKKSLayout,
 }
 
@@ -78,9 +75,12 @@ where
         )
         .expect("SignComposite::from_coeffs");
         let params = params_for(&base, consumed + composite.consumed_bits(log_delta));
-        let mut bounds = host_module.ckks_plaintext_alloc(2usize.into(), base.base2k.into(), coeff_meta.k());
-        bounds.set_meta(coeff_meta.meta());
-        bounds.encode_host_floats(&[-0.5f64, 0.5]).expect("bounds");
+        let bounds = [-0.5f64, 0.5].map(|v| {
+            upload_pt(
+                module,
+                &crate::plan::encode_constant(host_module, base.base2k.into(), coeff_meta, v).expect("bounds"),
+            )
+        });
         let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0x5Bu8; 32]);
         let key_bytes = module.ckks_all_ops_tmp_bytes(&params.prec(), &coeff_meta, &params.tsk_layout());
         let mut scratch = ScratchOwned::<BE>::alloc(key_bytes);
@@ -106,7 +106,7 @@ where
             tsk,
             keys,
             composite: composite.map_plaintexts(|pt| upload_pt(module, pt)),
-            bounds: upload_pt(module, &bounds),
+            bounds,
             coeff_meta,
         }
     }
@@ -384,15 +384,17 @@ where
         check_exact(&l("ckks_fmin"), module, &layout, cmp_q, |r, s| {
             module.ckks_fmin(r, &a, &b, comp, tsk, keys, s)
         });
-        let cst_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_const_tmp_bytes(r, &a, &cm, &tl, &al);
-        check_exact(&l("ckks_fmax_const"), module, &layout, cst_q, |r, s| {
-            module.ckks_fmax_const(r, &a, bounds, 0, comp, tsk, keys, s)
+        let max_pt_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_tmp_bytes(r, &a, &bounds[0], &cm, &tl, &al);
+        check_exact(&l("ckks_fmax by a plaintext"), module, &layout, max_pt_q, |r, s| {
+            module.ckks_fmax(r, &a, &bounds[0], comp, tsk, keys, s)
         });
-        check_exact(&l("ckks_fmin_const"), module, &layout, cst_q, |r, s| {
-            module.ckks_fmin_const(r, &a, bounds, 1, comp, tsk, keys, s)
+        let min_pt_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_tmp_bytes(r, &a, &bounds[1], &cm, &tl, &al);
+        check_exact(&l("ckks_fmin by a plaintext"), module, &layout, min_pt_q, |r, s| {
+            module.ckks_fmin(r, &a, &bounds[1], comp, tsk, keys, s)
         });
-        check_exact(&l("ckks_clamp"), module, &layout, cst_q, |r, s| {
-            module.ckks_clamp(r, &a, bounds, 0, 1, comp, tsk, keys, s)
+        let clamp_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_clamp_tmp_bytes(r, &a, &cm, &tl, &al);
+        check_exact(&l("ckks_clamp"), module, &layout, clamp_q, |r, s| {
+            module.ckks_clamp(r, &a, &bounds[0], &bounds[1], comp, tsk, keys, s)
         });
         let pred_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_predicate_tmp_bytes(r, &a, &b, &cm, &tl, &al);
         check_exact(&l("ckks_fabs"), module, &layout, pred_q, |r, s| {
@@ -408,10 +410,10 @@ where
             module.ckks_lt(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_indicator"), module, &layout, pred_q, |r, s| {
-            module.ckks_indicator(r, &a, bounds, 0, 1, comp, tsk, keys, s)
+            module.ckks_indicator(r, &a, &bounds[0], &bounds[1], comp, tsk, keys, s)
         });
         check_exact(&l("ckks_eq"), module, &layout, pred_q, |r, s| {
-            module.ckks_eq(r, &a, &b, bounds, 1, comp, tsk, keys, s)
+            module.ckks_eq(r, &a, &b, &bounds[1], comp, tsk, keys, s)
         });
         check_exact(&l("ckks_fdim"), module, &layout, pred_q, |r, s| {
             module.ckks_fdim(r, &a, &b, comp, tsk, keys, s)

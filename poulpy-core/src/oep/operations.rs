@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef,
-    CnvPVecRToBackendRef, Module, Ring, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
+    CnvPVecRToBackendRef, Module, Ring, ScratchArena, Standard, VecZnxBackendRef, VecZnxDftBackendMut,
 };
 
 use crate::GLWELeftOperandRef;
@@ -11,93 +11,6 @@ use crate::layouts::{
     Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
     GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
-
-/// Backend-provided GLWE constant-multiplication operations.
-///
-/// # Safety
-/// Implementations reproduce the bodies their methods document bit for bit, report for each
-/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
-/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEMulConstImpl<Rg: Ring = Standard>: Backend {
-    /// Scratch bound of [`Self::glwe_mul_const`] and [`Self::glwe_mul_const_assign`]; may report less than the
-    /// reference, never less than the body takes.
-    fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos;
-
-    /// Reproduces
-    /// [`glwe_mul_const_reference`](crate::reference::operations::GLWEMulConstReference::glwe_mul_const_reference)
-    /// bit for bit, within [`Self::glwe_mul_const_tmp_bytes`]; free in kernels and scratch use.
-    fn glwe_mul_const<R, A, B>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
-        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<Self, Rg> + GLWEInfos;
-
-    /// Reproduces
-    /// [`glwe_mul_const_assign_reference`](crate::reference::operations::GLWEMulConstReference::glwe_mul_const_assign_reference)
-    /// bit for bit, within [`Self::glwe_mul_const_tmp_bytes`]; free in kernels and scratch use.
-    fn glwe_mul_const_assign<R, B>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<Self, Rg> + GLWEInfos;
-
-    /// Scratch bytes of [`Self::glwe_const_combination`] for an accumulator of `acc_size` limbs,
-    /// terms of at most `a_size` limbs and constants of at most `b_size` limbs.
-    fn glwe_const_combination_tmp_bytes(module: &Module<Self>, acc_size: usize, a_size: usize, b_size: usize) -> usize;
-
-    /// A combination of vectors by constants, normalized once:
-    ///
-    /// `res[col] = normalize(sum_t terms[t].a[col] * (terms[t].b[b_col][b_coeff] >> terms[t].shift))`
-    /// for every column of `res`,
-    ///
-    /// each constant with a non-zero `shift < base2k` being shifted right by that many bits over
-    /// one more limb than `b` (`vec_znx_rsh`), each product being `cnv_by_const_apply` at its
-    /// `cnv_offset`, the sum being accumulated over `acc_size` limbs and normalized to `res_k`
-    /// bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty.
-    ///
-    /// An internal hook of the CKKS baby-step combination, which records the metadata of `res`.
-    /// The reference, [`glwe_const_combination_reference`](crate::reference::operations::GLWEMulConstReference::glwe_const_combination_reference),
-    /// shifts each constant, accumulates with `cnv_by_const_apply` and `cnv_by_const_apply_add`,
-    /// then calls `vec_znx_big_normalize`, column by column. Overrides must reproduce it bit for
-    /// bit within [`Self::glwe_const_combination_tmp_bytes`].
-    fn glwe_const_combination(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self, Rg>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[ConstTerm<'_, Self, Rg>],
-        scratch: &mut ScratchArena<'_, Self>,
-    );
-}
-
-/// One term of [`GLWEMulConstImpl::glwe_const_combination`]: every column of `a` times
-/// coefficient `b_coeff` of column `b_col` of `b`, shifted right by `shift` bits, at
-/// convolution offset `cnv_offset`.
-pub struct ConstTerm<'a, BE: Backend + 'a, Rg: Ring = Standard> {
-    pub a: VecZnxBackendRef<'a, BE, Rg>,
-    pub b: VecZnxBackendRef<'a, BE, Rg>,
-    pub b_col: usize,
-    pub b_coeff: usize,
-    pub shift: usize,
-    pub cnv_offset: usize,
-}
 
 /// Backend-provided GLWE-by-plaintext multiplication operations.
 ///
@@ -166,51 +79,6 @@ pub unsafe trait GLWEMulPlainImpl<Rg: Ring = Standard>: Backend {
         R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
         A: GLWELeftOperandRef<Self, Rg>,
         B: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
-
-    /// Scratch bytes of [`Self::glwe_plain_combination`] for a `res` of `cols` columns and `res_size` limbs, an
-    /// accumulator of `acc_size` limbs, prepared terms of at most `a_size` limbs and plaintexts of at most `b_size` limbs.
-    fn glwe_plain_combination_tmp_bytes(
-        module: &Module<Self>,
-        cols: usize,
-        res_size: usize,
-        acc_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-
-    /// A combination of prepared vectors by plaintexts, normalized once:
-    ///
-    /// `res[col] = normalize(sum_t terms[t].a[col] * (terms[t].b >> terms[t].shift))` for every column of `res`,
-    ///
-    /// each plaintext with a non-zero `shift < base2k` being shifted right by that many bits over one more limb than
-    /// `b` (`vec_znx_rsh`), each plaintext being prepared once as a right operand at its own degree, each product being
-    /// `cnv_apply_dft` at its `cnv_offset`, the sum being accumulated in the transform domain over `acc_size` limbs and
-    /// normalized to `res_k` bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty, and
-    /// every `a` holds the columns of `res`.
-    ///
-    /// The plaintext-vector twin of [`GLWEMulConstImpl::glwe_const_combination`], an internal hook of the CKKS baby-step
-    /// combination on a replicated layout, which records the metadata of `res` and prepares each left operand once.
-    /// The reference, [`glwe_plain_combination_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_plain_combination_reference),
-    /// accumulates the terms in order, then calls `vec_znx_idft_normalize`, column by column.
-    /// Overrides must reproduce it bit for bit within [`Self::glwe_plain_combination_tmp_bytes`].
-    fn glwe_plain_combination(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self, Rg>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[PlainTerm<'_, Self, Rg>],
-        scratch: &mut ScratchArena<'_, Self>,
-    );
-}
-
-/// One term of [`GLWEMulPlainImpl::glwe_plain_combination`]: every column of the prepared left operand `a` times the
-/// plaintext `b`, shifted right by `shift` bits, at convolution offset `cnv_offset`.
-pub struct PlainTerm<'a, BE: Backend + 'a, Rg: Ring = Standard> {
-    pub a: CnvPVecLBackendRef<'a, BE, Rg>,
-    pub b: VecZnxBackendRef<'a, BE, Rg>,
-    pub shift: usize,
-    pub cnv_offset: usize,
 }
 
 /// Backend-provided sums of products of prepared GLWE ciphertexts by prepared plaintexts read through Galois elements.
@@ -1700,7 +1568,6 @@ macro_rules! impl_operations_reference_full {
         $crate::impl_operations_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
     };
     ($be:ty, $ring:ty) => {
-        $crate::impl_glwe_mul_const_reference_full!($be, $ring);
         $crate::impl_glwe_mul_plain_reference_full!($be, $ring);
         $crate::impl_glwe_mul_prepared_plain_sum_reference_full!($be, $ring);
         $crate::impl_glwe_add_reference_full!($be, $ring);

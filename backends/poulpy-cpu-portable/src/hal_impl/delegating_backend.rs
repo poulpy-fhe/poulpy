@@ -290,7 +290,10 @@ unsafe impl HalVecZnxMonomialImpl for DifferentSamplingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
 #[cfg(test)]
-poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable);
+poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable, ConjugateInvariant);
+// With CKKS, `tests::ckks_overrides::counted_trace` registers this ring around its counting trace.
+#[cfg(all(test, not(feature = "enable-ckks")))]
+poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable, Standard);
 #[cfg(test)]
 poulpy_core::impl_conversion_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]

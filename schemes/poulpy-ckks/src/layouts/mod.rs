@@ -126,7 +126,8 @@ pub(crate) mod dft_matrices;
 mod encoding_buffer;
 pub mod eval_mod;
 pub mod functional_bootstrapping;
-pub mod masked;
+pub(crate) mod masked;
+pub use masked::ckks_encode_host_constants;
 pub mod mod_raise;
 pub mod mul;
 pub mod paco;
@@ -143,8 +144,7 @@ pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline, BootstrappingPlan,
     BootstrappingRun, BootstrappingTechniques, CIConversion, CIPrePrepared, CoeffsMaskPrepared, EvalModCIPrepared, EvalModRing,
-    EvalRoundPlus, MaskedFactors, MergedS2CFactorPrepared, ReplicatedRoute, ReplicatedStage, ReplicatedTransforms,
-    SparseSecretEncapsulation,
+    EvalRoundPlus, MaskedFactors, MergedS2CFactorPrepared, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
@@ -170,13 +170,9 @@ pub(crate) use encoding_buffer::{
     copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
     copy_reim_host_into_encoding_buffer, download_from_encoding_buffer, slot_coeff_count, upload_into_encoding_buffer,
 };
-pub use eval_mod::{
-    CKKSEvalModInfos, EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile,
-    ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
-};
+pub use eval_mod::{CKKSEvalModInfos, EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile};
 pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
-pub use masked::{CKKSMaskedConstants, MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated};
 pub use mod_raise::{CKKSModRaiseInfos, ModRaisePlan, ModRaisePrepared};
 #[allow(deprecated)]
 pub use mul::CKKSPreparedRight;
@@ -186,7 +182,7 @@ pub use paco::{
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
-pub use replicated::{ReplicatedConversion, ReplicatedTransform, ReplicatedTransformWorkspace};
+pub use replicated::ReplicatedConversionPrepared;
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,
