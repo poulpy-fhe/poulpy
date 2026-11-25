@@ -883,7 +883,11 @@ pub fn cnv_pvec_self_prepare_derived<BE, Rg: Ring>(
 ) where
     BE: HalCnvImpl<Rg>,
 {
-    assert_eq!(right.size(), left.size());
+    // The right prepare alone embeds a smaller `a`, so the shared degree is checked here.
+    assert!(
+        right.n() == left.n() && right.cols() == left.cols() && right.size() == left.size(),
+        "cnv_pvec_self_prepare: right and left differ in degree, columns or size"
+    );
     BE::cnv_pvec_left_prepare(module, left, a, scratch);
     BE::cnv_pvec_right_prepare(module, right, a, scratch);
 }

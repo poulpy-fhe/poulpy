@@ -1517,6 +1517,17 @@ where
     }))
     .is_err();
     assert!(panicked, "cnv_pvec_self_prepare accepted right.n() != left.n()");
+    let mut half_left_self: CnvPVecLOwned<BE, Rg> = CnvPVecL::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_pvec_self_prepare(
+            &mut half_left_self.to_backend_mut(),
+            &mut full_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE, Rg>(&half_be),
+            &mut prepare_self_arena().arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_pvec_self_prepare accepted right.n() == 2 * left.n()");
 
     // The left operand of an apply takes the module degree: the entry assert fires
     // before the kernel reads the zeroed half-degree operand.
