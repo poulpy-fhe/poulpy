@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use poulpy_hal::layouts::galois_elements_from_rotations;
+use poulpy_hal::layouts::{MAX_RING_DEGREE, galois_elements_from_rotations};
 
 // ===================================================================
 // Unprepared transform
@@ -541,4 +541,256 @@ where
 
 fn gcd_i64(a: i64, b: i64) -> i64 {
     if b == 0 { a } else { gcd_i64(b, a % b) }
+}
+
+// ===================================================================
+// Hypercube schedule of the automorphisms (-1)^i 5^j
+// ===================================================================
+
+/// The coordinate `(i, j)` of the automorphism `X -> X^((-1)^i 5^j)`, `i` modulo 2 and `j`
+/// modulo the order of a [`hypercube_bsgs_schedule`].
+pub type HypercubeCoordinate = (i64, i64);
+
+/// A schedule of [`hypercube_bsgs_schedule`]: per giant automorphism, the automorphisms it covers,
+/// each with its baby automorphism, as `(baby, covered)` coordinates; `covered` is the sum of the
+/// two coordinates.
+pub type HypercubeSchedule = BTreeMap<HypercubeCoordinate, Vec<(HypercubeCoordinate, HypercubeCoordinate)>>;
+
+/// The rotation of the automorphism at `(i, j)`, in the convention of
+/// [`galois_element`](poulpy_hal::layouts::galois_element), `X -> X^(sign(r) 5^|r|)`: `j` or
+/// `-j`, and `-MAX_RING_DEGREE / 2` for `X -> X^-1`, which is `X -> X^-1` at every degree `N` a
+/// module serves, as `5^(N / 2) = 1` modulo `2N` and `N / 2` divides `MAX_RING_DEGREE / 2`.
+pub fn hypercube_rotation((i, j): HypercubeCoordinate) -> i64 {
+    match (i, j) {
+        (0, j) => j,
+        (_, 0) => -((MAX_RING_DEGREE / 2) as i64),
+        (_, j) => -j,
+    }
+}
+
+/// The BSGS schedule of the automorphisms at `coordinates`, `j` modulo `order` (a power of two),
+/// on the hypercube of the generators `5^(2^k)` and `X -> X^-1`. The dimensions the
+/// automorphisms need, adjacent ones that step both ways merged, are each split into a baby and
+/// a giant part, cheapest first, so the baby count stays at the square root of the product of
+/// their costs; a dimension that steps both ways steps back by giants. When those dimensions do
+/// not cover every automorphism, the whole group is split: one dimension of the powers of 5 and
+/// `X -> X^-1` when needed. Each automorphism goes to the first baby, then giant, in increasing
+/// order of their coordinates, that covers it.
+pub fn hypercube_bsgs_schedule(coordinates: &BTreeSet<HypercubeCoordinate>, order: i64) -> HypercubeSchedule {
+    assert!(
+        order > 0 && (order as u64).is_power_of_two(),
+        "hypercube schedule: the order must be a power of two"
+    );
+    if let Some(schedule) = hypercube_assign(
+        coordinates,
+        &hypercube_split(&hypercube_dimensions(coordinates, order), order),
+        order,
+    ) {
+        return schedule;
+    }
+    let mut dims: Vec<HypercubeDimension> = Vec::new();
+    if order > 1 {
+        dims.push(HypercubeDimension::good(1, order));
+    }
+    if coordinates.iter().any(|c| c.0 == 1) {
+        dims.push(HypercubeDimension::good(-1, 2));
+    }
+    hypercube_assign(coordinates, &hypercube_split(&dims, order), order)
+        .expect("the split of the whole group covers every automorphism")
+}
+
+/// The baby and the giant automorphisms of a split.
+type HypercubeSplit = (BTreeSet<HypercubeCoordinate>, BTreeSet<HypercubeCoordinate>);
+
+/// The schedule of `coordinates` on the split `(babies, giants)`, if it covers them all.
+fn hypercube_assign(
+    coordinates: &BTreeSet<HypercubeCoordinate>,
+    (babies, giants): &HypercubeSplit,
+    order: i64,
+) -> Option<HypercubeSchedule> {
+    let mut schedule: HypercubeSchedule = BTreeMap::new();
+    let mut uncovered: BTreeSet<HypercubeCoordinate> = coordinates.clone();
+    for &baby in babies {
+        for &giant in giants {
+            let e: HypercubeCoordinate = ((baby.0 + giant.0) % 2, (baby.1 + giant.1) % order);
+            if uncovered.remove(&e) {
+                schedule.entry(giant).or_default().push((baby, e));
+            }
+        }
+    }
+    uncovered.is_empty().then_some(schedule)
+}
+
+/// A dimension of the hypercube of automorphisms: the powers of its generator, `5^exp` or,
+/// for `exp = -1`, `X -> X^-1`, of which `size` are needed, forward (`5^(k exp)`), backward
+/// (`5^(-k exp)`) or both, a bad dimension.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HypercubeDimension {
+    exp: i64,
+    size: i64,
+    forward: bool,
+    backward: bool,
+}
+
+impl HypercubeDimension {
+    fn good(exp: i64, size: i64) -> Self {
+        Self {
+            exp,
+            size,
+            forward: true,
+            backward: false,
+        }
+    }
+
+    fn is_bad(&self) -> bool {
+        self.forward && self.backward
+    }
+
+    fn cost(&self) -> i64 {
+        if self.is_bad() { 2 * self.size } else { self.size }
+    }
+}
+
+/// The dimensions the automorphisms at `coordinates`, `j` modulo
+/// `order`, need: for every power of two `2^k < order`, whether `5^(2^k)` and `5^(-2^k)` are
+/// among them, adjacent bad dimensions merged, the last two merged into a good one when they
+/// fill the group, and `X -> X^-1` when it is among them.
+fn hypercube_dimensions(coordinates: &BTreeSet<HypercubeCoordinate>, order: i64) -> Vec<HypercubeDimension> {
+    let exps: BTreeSet<i64> = coordinates.iter().filter(|c| c.0 == 0).map(|c| c.1).collect();
+    let exps_five: Vec<i64> = (0..order.max(1).ilog2()).map(|k| 1i64 << k).collect();
+    let last: usize = exps_five.len().saturating_sub(1);
+    let mut dims: Vec<HypercubeDimension> = Vec::new();
+    for (index, &exp) in exps_five.iter().enumerate() {
+        let forward: bool = exps.contains(&exp);
+        let backward: bool = index < last && exps.contains(&(-exp).rem_euclid(order));
+        match dims.last_mut() {
+            _ if !(forward || backward) => continue,
+            Some(prev) if forward && backward && prev.is_bad() && prev.exp * prev.size == exp => prev.size *= 2,
+            _ => dims.push(HypercubeDimension {
+                exp,
+                size: 2,
+                forward,
+                backward,
+            }),
+        }
+    }
+    if let [.., second, last] = dims[..]
+        && 2 * last.exp == order
+        && 2 * second.exp * second.size == order
+    {
+        dims.pop();
+        *dims.last_mut().unwrap() = HypercubeDimension::good(second.exp, 2 * second.size);
+    }
+    if coordinates.contains(&(1, 0)) {
+        dims.push(HypercubeDimension::good(-1, 2));
+    }
+    dims
+}
+
+/// The baby and giant automorphisms of the dimensions `dims`, every one
+/// split into a baby and a giant part, cheapest first, so the babies stay at the square root of
+/// the product of their costs; a bad dimension also steps back, by giants.
+fn hypercube_split(dims: &[HypercubeDimension], order: i64) -> HypercubeSplit {
+    let target: f64 = (dims.iter().map(HypercubeDimension::cost).product::<i64>() as f64).sqrt();
+    let mut sorted: Vec<&HypercubeDimension> = dims.iter().collect();
+    sorted.sort_by_key(|d| d.cost());
+    let mut babies: BTreeSet<HypercubeCoordinate> = BTreeSet::from([(0, 0)]);
+    let mut giants: BTreeSet<HypercubeCoordinate> = BTreeSet::from([(0, 0)]);
+    for dim in sorted {
+        let mut baby_size: i64 = dim.size;
+        while baby_size > 1 && (babies.len() as i64 * baby_size) as f64 > target {
+            baby_size /= 2;
+        }
+        let start_giant: i64 = if dim.is_bad() { -(dim.size / baby_size) } else { 0 };
+        let direction: i64 = if dim.backward && !dim.forward { -1 } else { 1 };
+        let step: HypercubeCoordinate = if dim.exp == -1 { (1, 0) } else { (0, dim.exp) };
+        let add = |c: &HypercubeCoordinate, power: i64| -> HypercubeCoordinate {
+            (
+                (c.0 + power * step.0).rem_euclid(2),
+                (c.1 + direction * power * step.1).rem_euclid(order),
+            )
+        };
+        babies = babies
+            .iter()
+            .flat_map(|c| (0..baby_size).map(move |power| add(c, power)))
+            .collect();
+        giants = giants
+            .iter()
+            .flat_map(|c| (start_giant..dim.size / baby_size).map(move |power| add(c, baby_size * power)))
+            .collect();
+    }
+    (babies, giants)
+}
+
+#[cfg(test)]
+mod hypercube_tests {
+    use std::collections::BTreeSet;
+
+    use poulpy_hal::layouts::galois_element;
+
+    use super::{HypercubeCoordinate, HypercubeSchedule, hypercube_bsgs_schedule, hypercube_rotation};
+
+    /// Every coordinate is covered once, by a baby and a giant that add up to it.
+    fn assert_covers(coordinates: &BTreeSet<HypercubeCoordinate>, schedule: &HypercubeSchedule, order: i64) {
+        let mut covered: BTreeSet<HypercubeCoordinate> = BTreeSet::new();
+        for (giant, steps) in schedule {
+            for &(baby, e) in steps {
+                assert_eq!(e, ((baby.0 + giant.0) % 2, (baby.1 + giant.1) % order));
+                assert!(covered.insert(e), "{e:?} covered twice");
+            }
+        }
+        assert_eq!(&covered, coordinates);
+    }
+
+    /// The key switches of a schedule: its non-identity babies and giants.
+    fn key_switches(schedule: &HypercubeSchedule) -> usize {
+        let babies: BTreeSet<HypercubeCoordinate> = schedule.values().flatten().map(|&(b, _)| b).collect();
+        babies.len() + schedule.len() - usize::from(babies.contains(&(0, 0))) - usize::from(schedule.contains_key(&(0, 0)))
+    }
+
+    #[test]
+    fn hypercube_rotation_follows_the_galois_convention() {
+        for n in [8usize, 512, 1 << 17] {
+            let two_n: i64 = 2 * n as i64;
+            let galois = |c: HypercubeCoordinate| galois_element(hypercube_rotation(c), two_n).rem_euclid(two_n);
+            assert_eq!(galois((0, 0)), 1);
+            assert_eq!(galois((0, 3)), 125 % two_n);
+            assert_eq!(galois((1, 0)), two_n - 1, "X -> X^-1 at degree {n}");
+            assert_eq!(galois((1, 2)), two_n - 25 % two_n);
+        }
+    }
+
+    #[test]
+    fn hypercube_schedule_covers_every_automorphism() {
+        for order in [1i64, 2, 8, 16] {
+            let all: BTreeSet<HypercubeCoordinate> = (0..2).flat_map(|i| (0..order).map(move |j| (i, j))).collect();
+            let sets: [BTreeSet<HypercubeCoordinate>; 4] = [
+                all.clone(),
+                all.iter().copied().filter(|c| c.0 == 0).collect(),
+                all.iter().copied().filter(|c| c.0 == 1).collect(),
+                all.iter().copied().filter(|c| (c.1 * 7 + c.0) % 3 == 0).collect(),
+            ];
+            for coordinates in sets {
+                assert_covers(&coordinates, &hypercube_bsgs_schedule(&coordinates, order), order);
+            }
+        }
+    }
+
+    #[test]
+    fn hypercube_schedule_of_a_butterfly_takes_two_key_switches() {
+        // The diagonals `0, s, -s` of one FFT factor: a dimension stepping both ways.
+        for (order, s) in [(8i64, 1i64), (8, 2), (16, 4)] {
+            let coordinates: BTreeSet<HypercubeCoordinate> = [(0, 0), (0, s), (0, order - s)].into_iter().collect();
+            let schedule: HypercubeSchedule = hypercube_bsgs_schedule(&coordinates, order);
+            assert_covers(&coordinates, &schedule, order);
+            assert_eq!(key_switches(&schedule), 2, "order={order}, s={s}");
+        }
+    }
+
+    #[test]
+    fn hypercube_schedule_of_the_whole_group_is_balanced() {
+        // 2 x 16 automorphisms: 4 x 8 or 8 x 4, so 10 key switches.
+        let all: BTreeSet<HypercubeCoordinate> = (0..2).flat_map(|i| (0..16).map(move |j| (i, j))).collect();
+        assert_eq!(key_switches(&hypercube_bsgs_schedule(&all, 16)), 10);
+    }
 }
