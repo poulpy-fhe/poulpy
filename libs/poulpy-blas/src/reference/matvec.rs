@@ -5,7 +5,9 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps,
-    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
+    layouts::{
+        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, galois_parts,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
@@ -16,7 +18,7 @@ use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::layouts::{
     BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine,
     BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorLayout, BlasVectorMut, BlasVectorRef,
-    diagonal_ciphertext::{self, AppendAxis, append_rotations, step_rotation},
+    diagonal_ciphertext::{self, AppendAxis, append_rotations},
     matvec_operand::output_label,
     validate::{
         KeyLayouts, append_uses, assert_scratch, ensure_rotation, ensure_tensor_key, matvec_diagonal_tensor,
@@ -620,9 +622,9 @@ where
             module.ckks_left_operand_prepare(&mut left, &rotated, &mut s)?;
         }
         for gs in &mut m.diagonals.giant_steps {
-            let giant = step_rotation(gs.galois);
+            let giant = galois_parts(gs.galois).1;
             for d in &mut gs.diagonals {
-                let baby = step_rotation(d.baby_galois);
+                let baby = galois_parts(d.baby_galois).1;
                 let shift = match axis {
                     AppendAxis::Row if baby == r => -(at + giant),
                     AppendAxis::Col if -giant == r => baby - at,

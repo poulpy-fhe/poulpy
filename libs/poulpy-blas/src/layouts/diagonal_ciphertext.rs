@@ -178,19 +178,11 @@ pub(crate) fn append_rotations<P>(axis: AppendAxis, lt: &LinearTransformation<P>
     let steps = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty());
     let rotations: BTreeSet<i64> = match axis {
         AppendAxis::Row => steps
-            .flat_map(|gs| gs.diagonals.iter().map(|d| step_rotation(d.baby_galois)))
+            .flat_map(|gs| gs.diagonals.iter().map(|d| galois_parts(d.baby_galois).1))
             .collect(),
-        AppendAxis::Col => steps.map(|gs| -step_rotation(gs.galois)).collect(),
+        AppendAxis::Col => steps.map(|gs| -galois_parts(gs.galois).1).collect(),
     };
     rotations.into_iter().collect()
-}
-
-/// The slot rotation of a step of a blas schedule, whose steps do not conjugate: its value in `[0, slots)`, as the
-/// schedule's plan normalizes it.
-pub(crate) fn step_rotation(galois: i64) -> i64 {
-    let (conjugate, rotation) = galois_parts(galois);
-    assert!(!conjugate, "a blas schedule step does not conjugate");
-    rotation
 }
 
 /// Panics unless `layout` fits `module`: its slots the module's, at least one diagonal, each in `0..slots`, diagonal

@@ -14,7 +14,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::layouts::{
     Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, Rank,
-    TorusPrecision,
+    TorusPrecision, galois_parts,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
@@ -26,7 +26,7 @@ use super::{
     BlasVectorShape, Left, Right,
     ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
-    diagonal_ciphertext::{AppendAxis, append_rotations, step_rotation},
+    diagonal_ciphertext::{AppendAxis, append_rotations},
     grid_batch,
     matmul_operand::{
         left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout, same_shape,
@@ -392,7 +392,7 @@ fn bsgs_uses<P>(
         .chain(giants.into_iter().map(|galois| (galois, giant_k)))
         .try_for_each(|(galois, k)| {
             f(RotationUse {
-                rotation: step_rotation(galois),
+                rotation: galois_parts(galois).1,
                 k,
                 rank,
             })
