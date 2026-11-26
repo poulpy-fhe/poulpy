@@ -12,8 +12,9 @@ use crate::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedSeedMut,
         GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut,
         GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos,
-        GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement, TorusPrecision,
+        GLWEPublicKeyToBackendMut, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        TorusPrecision,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -464,6 +465,63 @@ pub unsafe trait EncryptionImpl<Rg: Ring = Standard>:
         R: GGLWEToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
         S1: GLWESecretToBackendRef<Self, Rg> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self, Rg> + GetDistribution + GLWEInfos;
+
+    /// Default body: `glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes_derived`, the larger of
+    /// [`Self::glwe_switching_key_encrypt_sk_tmp_bytes`] of each key and the secret of the subring of the gap.
+    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A, B>(
+        module: &Module<Self>,
+        dense_to_sparse_infos: &A,
+        sparse_to_dense_infos: Option<&B>,
+        log_gap: usize,
+    ) -> usize
+    where
+        A: GGLWEInfos,
+        B: GGLWEInfos,
+    {
+        super::derived::encryption::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes_derived(
+            module,
+            dense_to_sparse_infos,
+            sparse_to_dense_infos,
+            log_gap,
+        )
+    }
+
+    /// Default body: `glwe_switching_key_encrypt_sk_encapsulation_derived`, the sparse secret by
+    /// [`SecretImpl::glwe_secret_fill_ternary_hw`](crate::oep::SecretImpl::glwe_secret_fill_ternary_hw), embedded
+    /// from the subring of the gap by `vec_znx_switch_ring`, then [`Self::glwe_switching_key_encrypt_sk`] of each
+    /// key, within [`Self::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes`].
+    fn glwe_switching_key_encrypt_sk_encapsulation<R1, R2, S1, S2>(
+        module: &Module<Self>,
+        dense_to_sparse: &mut R1,
+        sparse_to_dense: Option<&mut R2>,
+        sk_sparse: &mut S2,
+        sk_dense: &S1,
+        log_gap: usize,
+        hamming_weight: usize,
+        source_xs: &mut Source,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R1: GGLWEToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        R2: GGLWEToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<Self, Rg> + GetDistribution + GLWEInfos,
+        S2: GLWESecretToBackendMut<Self, Rg> + GetDistribution + GetDistributionMut + GLWEInfos,
+    {
+        super::derived::encryption::glwe_switching_key_encrypt_sk_encapsulation_derived(
+            module,
+            dense_to_sparse,
+            sparse_to_dense,
+            sk_sparse,
+            sk_dense,
+            log_gap,
+            hamming_weight,
+            source_xs,
+            source_xe,
+            source_xa,
+            scratch,
+        )
+    }
 
     /// Default body: `glwe_tensor_key_encrypt_sk_tmp_bytes_derived`, the prepared secret and its tensor plus the
     /// larger of the tensor preparation and [`Self::gglwe_encrypt_sk_tmp_bytes`].
