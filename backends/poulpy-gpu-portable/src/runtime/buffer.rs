@@ -144,14 +144,19 @@ pub(crate) mod parked {
     }
 
     /// Parks `handle` when this thread records; `false` otherwise.
+    ///
+    /// Parks nothing once this thread's locals are destroyed: a buffer dropped by another local's
+    /// destructor, such as a cache of the caller's, is outside every recording.
     pub(super) fn park(reserved: usize, handle: &Handle) -> bool {
-        PARKED.with_borrow_mut(|parked| match parked {
-            Some(parked) => {
-                parked.push((reserved, handle.clone()));
-                true
-            }
-            None => false,
-        })
+        PARKED
+            .try_with(|parked| match &mut *parked.borrow_mut() {
+                Some(parked) => {
+                    parked.push((reserved, handle.clone()));
+                    true
+                }
+                None => false,
+            })
+            .unwrap_or(false)
     }
 }
 
