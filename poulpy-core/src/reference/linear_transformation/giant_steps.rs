@@ -45,7 +45,7 @@ use crate::{
 };
 
 use super::LinearTransformationBabySteps;
-use crate::layouts::{GiantTreeLevel, operand_galois_element};
+use crate::layouts::{GiantTreeLevel, galois_is_identity, operand_galois};
 
 impl<BE: Backend, Rg: Ring> GLWEDiagonalProd<BE, Rg> for PreparedDiagonal<BE::OwnedBuf, BE, Rg> {
     fn operand(&self) -> DiagonalOperand<'_, BE, Rg> {
@@ -295,7 +295,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
     let prod_size = products.size();
     let cnv_offset_lo = products.cnv_offset_lo();
 
-    if let Some((leaves, levels)) = schedule.rotations.giant_tree(schedule.giant_steps.iter().map(|gs| gs.rot)) {
+    if let Some((leaves, levels)) = schedule.rotations.giant_tree(schedule.giant_steps.iter().map(|gs| gs.galois)) {
         let tree = GiantTree {
             leaves: &leaves,
             levels: &levels,
@@ -303,7 +303,11 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
         return glwe_eval_giant_tree(module, &tree, res, prod_base2k, products, keys, scratch);
     }
 
-    let nonzero_giant_rotations = schedule.giant_steps.iter().filter(|gs| gs.rot != 0).count();
+    let nonzero_giant_rotations = schedule
+        .giant_steps
+        .iter()
+        .filter(|gs| !galois_is_identity(gs.galois))
+        .count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
     // Giant rotations rotate the post-product destination, so their keys are
     // the ones the destination's precision asks for. Every rotating step's key
@@ -316,9 +320,9 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
         .giant_steps
         .iter()
         .map(|gs| {
-            (gs.rot != 0).then(|| {
-                keys.get_automorphism_key(operand_galois_element::<Rg>(res.n().as_usize(), gs.rot), res.k())
-                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
+            (!galois_is_identity(gs.galois)).then(|| {
+                keys.get_automorphism_key(operand_galois::<Rg>(res.n().as_usize(), gs.galois), res.k())
+                    .unwrap_or_else(|e| panic!("giant step of Galois element {}: {e}", gs.galois))
             })
         })
         .collect();
@@ -374,8 +378,8 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
                 products.products(module, &mut prods[..steps.len()], steps, &mut scratch_phase);
             }
             let prod_dft = &mut prods[g % batch];
-            let rot = schedule.giant_steps[g].rot;
-            if rot == 0 {
+            let galois = schedule.giant_steps[g].galois;
+            if galois_is_identity(galois) {
                 let prod_dft_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(prod_dft);
                 let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
                 if res_initialized {
@@ -396,7 +400,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
                         &key.key,
                         key_output_size,
                         nonzero_giant_rotations,
-                        operand_galois_element::<Rg>(res.n().as_usize(), rot),
+                        operand_galois::<Rg>(res.n().as_usize(), galois),
                         res_initialized,
                         &mut scratch_phase,
                     );
@@ -553,8 +557,8 @@ fn glwe_eval_giant_tree<BE, R, H, Rg: Ring>(
         .iter()
         .map(|level| {
             (!level.pairs.is_empty()).then(|| {
-                keys.get_automorphism_key(operand_galois_element::<Rg>(n, level.rot), res.k())
-                    .unwrap_or_else(|e| panic!("giant-tree rotation {}: {e}", level.rot))
+                keys.get_automorphism_key(operand_galois::<Rg>(n, level.galois), res.k())
+                    .unwrap_or_else(|e| panic!("giant tree of Galois element {}: {e}", level.galois))
             })
         })
         .collect();
@@ -763,7 +767,7 @@ fn glwe_eval_giant_tree<BE, R, H, Rg: Ring>(
         }
         BE::gglwe_products_from_dft(
             module,
-            operand_galois_element::<Rg>(n, level.rot),
+            operand_galois::<Rg>(n, level.galois),
             switches,
             &mut dsts,
             key_output_size.min(key.size()),
@@ -952,11 +956,11 @@ where
     R: GLWEInfos,
     K: GGLWEInfos,
 {
-    let Some((_, levels)) = plan.rotations.giant_tree(plan.giant_steps.iter().copied()) else {
+    let Some((_, levels)) = plan.rotations.giant_tree(plan.giant_galois.iter().copied()) else {
         return 0;
     };
     let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
-    let steps = plan.giant_steps.len();
+    let steps = plan.giant_galois.len();
     let switches: usize = levels.iter().map(|level| level.pairs.len()).sum();
     let shape = GiantTreeShape {
         prod_size,

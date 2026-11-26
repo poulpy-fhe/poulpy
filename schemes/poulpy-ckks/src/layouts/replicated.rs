@@ -4,8 +4,8 @@
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
     Base2K, Degree, Diagonals, GLWEInfos, GLWELayout, GetDegree, LinearTransformation, LinearTransformationBabySteps,
-    LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, Rank, TorusPrecision,
-    optimal_bsgs_giant_step,
+    LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, Rank, TorusPrecision, galois_cmp,
+    galois_is_identity, galois_of_rotation, galois_rotation, optimal_bsgs_giant_step,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -223,14 +223,14 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         Ok(from.alloc_workspace(module, &working_layout(a, self.extra_bits, 0)))
     }
 
-    /// Slot rotations the conversions use, for their automorphism keys.
-    pub fn rotations(&self) -> Vec<i64> {
-        let mut rotations = self.to.rotations();
-        rotations.extend(self.from.iter().flat_map(ReplicatedTransform::rotations));
-        rotations.extend(&self.trace);
-        rotations.sort_unstable();
-        rotations.dedup();
-        rotations
+    /// Galois elements of the automorphisms the conversions use, for their keys, by increasing rotation.
+    pub fn galois(&self) -> Vec<i64> {
+        let mut galois = self.to.galois();
+        galois.extend(self.from.iter().flat_map(ReplicatedTransform::galois));
+        galois.extend(self.trace.iter().map(|&rotation| galois_of_rotation(rotation)));
+        galois.sort_by(galois_cmp);
+        galois.dedup();
+        galois
     }
 }
 
@@ -280,7 +280,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
             .factor_inputs(&input.glwe_layout())
             .into_iter()
             .zip(&self.factors)
-            .map(|(layout, (lt, _))| LinearTransformationBabySteps::alloc(module, lt.baby_steps(), &layout))
+            .map(|(layout, (lt, _))| LinearTransformationBabySteps::alloc(module, lt.baby_galois(), &layout))
             .collect();
         ReplicatedTransformWorkspace {
             input: input.glwe_layout(),
@@ -422,15 +422,20 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
             .max(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&diagonal)))
     }
 
-    /// Slot rotations of the transform, for their automorphism keys.
-    pub fn rotations(&self) -> Vec<i64> {
+    /// Galois elements of the non-identity steps of the transform, for their automorphism keys, by increasing
+    /// rotation.
+    pub fn galois(&self) -> Vec<i64> {
         let lts = || self.factors.iter().map(|(lt, _)| lt);
-        let babies = lts().flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| gs.diagonals.iter().map(|d| d.baby)));
-        let giants = lts().flat_map(|lt| lt.giant_steps.iter().map(|gs| gs.rot));
-        let mut rotations: Vec<i64> = babies.chain(giants).filter(|&o| o != 0).collect();
-        rotations.sort_unstable();
-        rotations.dedup();
-        rotations
+        let babies = lts().flat_map(|lt| {
+            lt.giant_steps
+                .iter()
+                .flat_map(|gs| gs.diagonals.iter().map(|d| d.baby_galois))
+        });
+        let giants = lts().flat_map(|lt| lt.giant_steps.iter().map(|gs| gs.galois));
+        let mut galois: Vec<i64> = babies.chain(giants).filter(|&p| !galois_is_identity(p)).collect();
+        galois.sort_by(galois_cmp);
+        galois.dedup();
+        galois
     }
 
     /// Encodes and prepares `factors`, in evaluation order.
@@ -500,13 +505,13 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         ensure!(
             !conjugate_invariant::<Rg>()
                 || diagonals
-                    .indexes()
+                    .galois()
                     .into_iter()
                     .all(|o| diagonals.im.get(o).is_none_or(|im| im.iter().all(|v| v.is_zero()))),
             "the real slots of the conjugate-invariant ring take real diagonals"
         );
         let largest = diagonals
-            .indexes()
+            .galois()
             .into_iter()
             .flat_map(values)
             .map(|v| v.abs())
@@ -514,12 +519,12 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         // Bits above the scale for the largest weight, plus a sign and a carry.
         let headroom = (usize::BITS - (largest.to_f64().unwrap_or(1.0).ceil() as usize).max(1).leading_zeros()) as usize + 2;
         debug_assert!(headroom <= MAX_DIAGONAL_HEADROOM);
-        let count = diagonals.indexes().len();
+        let count = diagonals.galois().len();
         let strategy = if count <= 2 {
             LinearTransformationStrategy::Direct
         } else if fitted_giant_step {
             LinearTransformationStrategy::Bsgs {
-                giant_step: optimal_bsgs_giant_step(diagonals.indexes(), n),
+                giant_step: optimal_bsgs_giant_step(diagonals.galois(), n),
             }
         } else {
             let mut giant_step = 1;
@@ -544,14 +549,14 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
             meta,
         };
         let lt_layout = LinearTransformationLayout {
-            indexes: diagonals.indexes(),
+            galois: diagonals.galois(),
             slots: n,
             strategy,
         };
         let mut lt = module.ckks_linear_transformation_alloc_from_infos::<_, Rg>(&lt_layout, &infos);
         let pt_slots = module.ckks_slots_of_degree::<Rg>(infos.glwe_layout.n.as_usize());
         let mut targets = lt.giant_steps.iter_mut().flat_map(|gs| {
-            let rot = gs.rot;
+            let rot = galois_rotation(gs.galois, n);
             gs.diagonals.iter_mut().map(move |d| (rot, &mut d.plaintext))
         });
         let mut result = Ok(());
@@ -743,7 +748,7 @@ fn diagonals_from_weights<F: CKKSEncodingScalar>(n: usize, weights: Vec<(usize, 
     let mut diagonals = ComplexDiagonals::new(Diagonals::new(n), Diagonals::new(n));
     for (o, w) in weights {
         let (re, im): (Vec<F>, Vec<F>) = w.into_iter().unzip();
-        set_complex(&mut diagonals, o as i64, (re, im));
+        set_complex(&mut diagonals, galois_of_rotation(o as i64), (re, im));
     }
     diagonals
 }
@@ -776,9 +781,10 @@ fn mask_diagonal<F: CKKSEncodingScalar>(n: usize, on: impl IntoIterator<Item = u
     (re, vec![F::zero()])
 }
 
-pub(crate) fn set_complex<F>(diagonals: &mut ComplexDiagonals<F>, index: i64, (re, im): (Vec<F>, Vec<F>)) {
-    diagonals.re.set(index, re);
-    diagonals.im.set(index, im);
+/// Sets both parts of the diagonal of the Galois element `galois`.
+pub(crate) fn set_complex<F>(diagonals: &mut ComplexDiagonals<F>, galois: i64, (re, im): (Vec<F>, Vec<F>)) {
+    diagonals.re.set(galois, re);
+    diagonals.im.set(galois, im);
 }
 
 /// The placement of `m` values from slots of period `k` onto the data slots of
@@ -802,7 +808,11 @@ pub(crate) fn placement_spread<F: CKKSEncodingScalar>(m: usize, r: usize, factor
             let on = (0..m)
                 .filter(|&t| group_bits(t, &group) == v)
                 .map(|t| placement_position(t, &next, r));
-            set_complex(&mut factor, -(((r - 1) * v) as i64), mask_diagonal(n, on, F::one()));
+            set_complex(
+                &mut factor,
+                galois_of_rotation(-(((r - 1) * v) as i64)),
+                mask_diagonal(n, on, F::one()),
+            );
         }
         out.push(factor);
         moved = next;
@@ -835,7 +845,11 @@ pub(crate) fn placement_compress<F: CKKSEncodingScalar>(
             let on = (0..k)
                 .filter(|&t| group_bits(t, group) == v)
                 .map(|t| placement_position(t, &moved, r));
-            set_complex(&mut factor, ((r - 1) * v) as i64, mask_diagonal(n, on, value));
+            set_complex(
+                &mut factor,
+                galois_of_rotation(((r - 1) * v) as i64),
+                mask_diagonal(n, on, value),
+            );
         }
         out.push(factor);
     }
@@ -884,7 +898,7 @@ mod tests {
             let input: Vec<f64> = (0..m * r).map(|s| x[s % k]).collect();
             let log_group = (m.trailing_zeros() as usize).div_ceil(factors);
             let factors = placement_spread::<f64>(m, r, factors);
-            assert!(factors.iter().all(|f| f.indexes().len() <= 1 << log_group));
+            assert!(factors.iter().all(|f| f.galois().len() <= 1 << log_group));
             let want: Vec<f64> = (0..m * r).map(|s| if s % r == 0 { x[(s / r) % k] } else { 0.0 }).collect();
             assert_eq!(apply(&factors, &input), want, "k = {k}, m = {m}, R = {r}");
         }

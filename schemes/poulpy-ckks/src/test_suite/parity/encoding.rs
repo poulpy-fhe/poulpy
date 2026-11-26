@@ -329,7 +329,7 @@ where
 {
     let slots = module.ckks_max_slots::<Rg>();
     let mut re = Diagonals::new(slots);
-    re.set(0, vec![F::from_f64(0.5).unwrap()]);
+    re.set(poulpy_core::layouts::galois_of_rotation(0), vec![F::from_f64(0.5).unwrap()]);
     let map = ComplexDiagonals::new(re, Diagonals::new(slots));
     let bytes = ckks_linear_transformation_encode_tmp_bytes::<BE, _, F, Rg>(module, map.period());
     let lt = with_scratch::<BE, _>(bytes, |scratch| {

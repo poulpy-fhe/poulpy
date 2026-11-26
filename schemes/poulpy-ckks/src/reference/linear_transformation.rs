@@ -7,7 +7,9 @@
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use crate::{GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind};
-use poulpy_core::layouts::{BabyStepOperand, GLWEPlaintextInfos, LinearTransformationPlan};
+use poulpy_core::layouts::{
+    BabyStepOperand, GLWEPlaintextInfos, LinearTransformationPlan, galois_at, galois_is_identity, galois_rotation,
+};
 use poulpy_core::{
     CoreError, GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
@@ -18,7 +20,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, Standard, ZnxWord, galois_element},
+    layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, Standard, ZnxWord},
 };
 
 use crate::{
@@ -316,11 +318,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: M
         let cyclotomic_order =
             operand_cyclotomic_order::<_, Rg>("ckks_linear_transformation_baby_steps_prepare", self, src.n().as_usize())?;
         let src_k = src.k();
-        for rotation in babies.rotations().baby_key_rotations(babies.baby_steps()) {
-            if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
+        for galois in babies.rotations().baby_key_galois(babies.baby_galois()) {
+            if let Err(source) = keys.get_automorphism_key(galois_at(galois, cyclotomic_order), src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "ckks_linear_transformation_baby_steps_prepare",
-                    rotation,
+                    rotation: galois_rotation(galois, (cyclotomic_order / 4) as usize),
                     k: src_k.into(),
                     source,
                 }
@@ -425,8 +427,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: M
             if !lt_t
                 .giant_steps
                 .iter()
-                .map(|gs| gs.rot)
-                .eq(lt.giant_steps.iter().map(|gs| gs.rot))
+                .map(|gs| gs.galois)
+                .eq(lt.giant_steps.iter().map(|gs| gs.galois))
             {
                 return mismatch("giant schedule");
             }
@@ -533,23 +535,23 @@ fn invalid_sum(reason: String) -> CKKSError {
     .into()
 }
 
-/// `InvalidOperand` for `op` unless `babies` covers every baby rotation `lt` needs.
+/// `InvalidOperand` for `op` unless `babies` covers every baby step `lt` needs.
 fn check_babies<BE: Backend, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     op: &'static str,
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE, Rg, L>,
 ) -> Result<()> {
-    for rotation in lt.baby_steps().iter().copied() {
+    for galois in lt.baby_galois().iter().copied() {
         ckks_ensure_operand!(
             op,
-            babies.contains_baby_step(rotation),
-            "missing prepared baby-step rotation {rotation}"
+            babies.contains_baby_galois(galois),
+            "missing prepared baby step of Galois element {galois}"
         );
     }
     Ok(())
 }
 
-/// Verifies that `babies` covers every baby rotation `lt` needs and that all
+/// Verifies that `babies` covers every baby step `lt` needs and that all
 /// automorphism keys required by `lt` are present (keyed by Galois element).
 fn check_required_keys<BE: Backend, P, H, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     op: &'static str,
@@ -563,17 +565,20 @@ where
     H: GetAutomorphismKey<BE, Rg>,
 {
     check_babies(op, lt, babies)?;
-    let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-    let rotations: Vec<i64> = match lt.rotations {
-        BsgsRotations::PerRotation => giants.filter(|&r| r != 0).collect(),
-        rotations => rotations.giant_key_rotations(giants),
+    let giants = lt
+        .giant_steps
+        .iter()
+        .filter(|gs| !gs.diagonals.is_empty())
+        .map(|gs| gs.galois);
+    let elements: Vec<i64> = match lt.rotations {
+        BsgsRotations::PerRotation => giants.filter(|&p| !galois_is_identity(p)).collect(),
+        rotations => rotations.giant_key_galois(giants),
     };
-    for rotation in rotations {
-        let gal_el = galois_element(rotation, cyclotomic_order);
-        keys.get_automorphism_key(gal_el, giant_k)
+    for galois in elements {
+        keys.get_automorphism_key(galois_at(galois, cyclotomic_order), giant_k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op,
-                rotation,
+                rotation: galois_rotation(galois, (cyclotomic_order / 4) as usize),
                 k: giant_k.into(),
                 source,
             })?;

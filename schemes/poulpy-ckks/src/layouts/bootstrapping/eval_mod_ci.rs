@@ -230,8 +230,8 @@ impl<BE: Backend, F: CKKSEncodingScalar> EvalModCI<BE, F> {
                 let one_half = F::from_f64(0.5).unwrap();
                 let slot_scales = |re: Vec<F>, im: Vec<F>| {
                     let mut scales = ComplexDiagonals::new(Diagonals::new(half), Diagonals::new(half));
-                    scales.re.set(0, re);
-                    scales.im.set(0, im);
+                    scales.re.set(poulpy_core::layouts::galois_of_rotation(0), re);
+                    scales.im.set(poulpy_core::layouts::galois_of_rotation(0), im);
                     scales
                 };
                 let (mut odd_re, mut odd_im) = (Vec::with_capacity(half), Vec::with_capacity(half));

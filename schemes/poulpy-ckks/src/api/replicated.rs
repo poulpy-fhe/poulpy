@@ -30,7 +30,7 @@ use crate::{
 ///
 /// Both land at `res.k()` when it is narrower, through a modulus drop.
 ///
-/// `keys` holds the automorphism keys of [`ReplicatedConversion::rotations`], each covering the width the run looks
+/// `keys` holds the automorphism keys of [`ReplicatedConversion::galois`], each at the operand's order, covering the width the run looks
 /// it up at. Allocate the reusable workspace with [`ReplicatedConversion::alloc_to_workspace`] or
 /// [`ReplicatedConversion::alloc_from_workspace`] for the source layout.
 ///

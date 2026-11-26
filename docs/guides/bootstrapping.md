@@ -367,7 +367,7 @@ Four key roles are used:
 | `rotation_keys` | Automorphism keys for the DFT rotations, read off the compiled matrices, and the Galois `−1` automorphism of the split real/imaginary transform |
 | `tensor_key` | Relinearization key for the EvalMod range-extension squarings |
 | `encapsulation_keys` | Optional `denseToSparse` / `sparseToDense` pair for sparse-secret encapsulation, with no `sparseToDense` key when the first CoeffsToSlots factor is on the raise |
-| `first_factor_keys` | With the first CoeffsToSlots factor on the raise, one switching key per diagonal of that factor, from the rotated raise secret to the dense one |
+| `first_factor_keys` | With the first CoeffsToSlots factor on the raise, one switching key per diagonal of that factor, keyed by its Galois element, from the rotated raise secret to the dense one |
 
 Keys shaped by use cover the widths of the bootstrap they were laid out for. `ckks_bootstrap` runs at the width of `ct_out` and checks every rotation key and the tensor key at the widths that width sets before it starts, so a wider output fails up front, with the key source's refusal as the error's source.
 

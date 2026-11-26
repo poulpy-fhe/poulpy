@@ -5,7 +5,7 @@
 //! passes only base2k alignment integers (`a_k`, `cnv_offset`). The
 //! files under `linear_transformation/` follow the phases in `docs/guides/linear_transformation.md`:
 //! schedule construction, setup/preparation, baby hoisting, giant-step products
-//! and rotations, and final normalization.
+//! and their automorphisms, and final normalization.
 
 mod baby_steps;
 mod ciphertext_diagonals;

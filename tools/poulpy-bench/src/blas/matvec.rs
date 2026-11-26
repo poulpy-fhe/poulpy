@@ -23,7 +23,7 @@ use poulpy_ckks::{
 use poulpy_core::{
     Result as CoreResult,
     layouts::{
-        GetAutomorphismKey, GetTensorKey, TorusPrecision,
+        GetAutomorphismKey, GetTensorKey, TorusPrecision, galois_of_rotation, galois_rotation,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef,
@@ -190,10 +190,10 @@ fn diagonal_ciphertext_layout(bp: &BlasBenchParams) -> BlasDiagonalCiphertextLay
     BlasDiagonalCiphertextLayout::new(
         ct,
         LinearTransformationLayout {
-            indexes: (0..d).collect(),
+            galois: (0..d).map(galois_of_rotation).collect(),
             slots,
             strategy: LinearTransformationStrategy::Bsgs {
-                giant_step: optimal_bsgs_giant_step(0..d, slots),
+                giant_step: optimal_bsgs_giant_step((0..d).map(galois_of_rotation), slots),
             },
         },
     )
@@ -387,11 +387,12 @@ where
     let slots = bp.slots() as i64;
     let mut max_err = 0.0f64;
     for gs in &m.diagonals().giant_steps {
+        let giant = galois_rotation(gs.galois, slots as usize);
         for diagonal in &gs.diagonals {
-            let t = diagonal.baby + gs.rot;
+            let t = galois_rotation(diagonal.baby_galois, slots as usize) + giant;
             let (re, im) = client.decrypt_slots(bp, &diagonal.plaintext);
             for (i, (have, imag)) in re.iter().zip(&im).enumerate() {
-                let j = (i as i64 - gs.rot).rem_euclid(slots);
+                let j = (i as i64 - giant).rem_euclid(slots);
                 let want = rows
                     .get(j as usize)
                     .map_or(0.0, |row| row[(j + t).rem_euclid(slots) as usize]);

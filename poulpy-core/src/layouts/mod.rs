@@ -49,6 +49,7 @@ mod macros;
 
 mod diagonal_operand;
 mod diagonals;
+mod galois;
 mod gglwe;
 mod gglwe_to_ggsw_key;
 mod ggsw;
@@ -94,6 +95,7 @@ pub use self::compressed::{
 };
 pub use diagonal_operand::*;
 pub use diagonals::*;
+pub use galois::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
@@ -110,9 +112,9 @@ pub use glwe_tensor::*;
 pub use glwe_tensor_key::*;
 pub use glwe_to_lwe_key::*;
 pub use key_helpers::*;
-pub use linear_transformation::*;
 #[cfg(test)]
-pub(crate) use linear_transformation::{linear_transformation_plan, normalize_linear_transform_diagonal};
+pub(crate) use linear_transformation::linear_transformation_plan;
+pub use linear_transformation::*;
 pub use lwe::*;
 pub use lwe_matrix::*;
 pub use lwe_plaintext::*;
@@ -193,6 +195,11 @@ pub(crate) fn operand_degree(module_n: usize, degrees: &[Degree]) -> usize {
 /// Galois element of `generator` in the ring of an operand of degree `n`.
 pub(crate) fn operand_galois_element<Rg: Ring>(n: usize, generator: i64) -> i64 {
     poulpy_hal::layouts::galois_element(generator, Rg::CYCLOTOMIC_ORDER_FACTOR * n as i64)
+}
+
+/// The Galois element `p` (see [`galois_at`]) on a degree-`n` operand of ring `Rg`.
+pub(crate) fn operand_galois<Rg: Ring>(n: usize, p: i64) -> i64 {
+    galois_at(p, Rg::CYCLOTOMIC_ORDER_FACTOR * n as i64)
 }
 
 /// The owned buffer and coefficient word of the core layouts a [`Module`] allocates.

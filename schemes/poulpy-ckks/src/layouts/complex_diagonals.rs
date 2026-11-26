@@ -5,8 +5,9 @@
 //! vector as a pair `(re, im)` of real slices. To represent a complex matrix
 //! `M = M_re + i·M_im` we keep two scheme-agnostic real diagonal maps
 //! [`Diagonals<T>`](poulpy_core::layouts::Diagonals): one for the real parts
-//! of the diagonals and one for the imaginary parts. A diagonal index is
-//! "present" if either side carries it; the missing side is treated as zero.
+//! of the diagonals and one for the imaginary parts, both keyed by the Galois element of the
+//! diagonal's rotation. A diagonal is "present" if either side carries it; the missing side is
+//! treated as zero.
 //!
 //! [`ComplexDiagonals`] implements [`Evaluate`] for the complex slot domain
 //! `(re_in, im_in) -> (re_out, im_out)` using the standard
@@ -27,7 +28,8 @@ use std::collections::BTreeSet;
 
 use poulpy_core::layouts::{
     DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-    LinearTransformationLayout, LinearTransformationStrategy, period_lcm, rotate_slots_into,
+    LinearTransformationLayout, LinearTransformationStrategy, galois_compose, galois_inverse, galois_of_rotation,
+    galois_rotation, period_lcm, rotate_slots_into,
 };
 
 /// A complex slot-matrix linear map for CKKS.
@@ -53,20 +55,26 @@ impl<T> ComplexDiagonals<T> {
         self.re.slots()
     }
 
-    /// Union of the real and imaginary non-zero diagonal indexes (sorted,
-    /// normalized to `[0, slots)`).
-    pub fn indexes(&self) -> Vec<i64> {
-        let mut set: BTreeSet<i64> = self.re.indexes().into_iter().collect();
-        set.extend(self.im.indexes());
-        set.into_iter().collect()
+    /// Galois elements of the union of the real and imaginary non-zero diagonals, by increasing
+    /// rotation in `[0, slots)`.
+    pub fn galois(&self) -> Vec<i64> {
+        let slots = self.slots();
+        let rotations: BTreeSet<i64> = self
+            .re
+            .galois()
+            .into_iter()
+            .chain(self.im.galois())
+            .map(|galois| galois_rotation(galois, slots))
+            .collect();
+        rotations.into_iter().map(galois_of_rotation).collect()
     }
 
-    /// The slot count after which the complex diagonal at `index` repeats: the
+    /// The slot count after which the complex diagonal of `galois` repeats: the
     /// least common multiple of its two stored periods
     /// ([`Diagonals::period`]), an absent part counting as constant; `None`
-    /// when neither part carries the index.
-    pub fn diagonal_period(&self, index: i64) -> Option<usize> {
-        match (self.re.period(index), self.im.period(index)) {
+    /// when neither part carries the diagonal.
+    pub fn diagonal_period(&self, galois: i64) -> Option<usize> {
+        match (self.re.period(galois), self.im.period(galois)) {
             (None, None) => None,
             (re, im) => Some(period_lcm(re.unwrap_or(1), im.unwrap_or(1))),
         }
@@ -77,9 +85,9 @@ impl<T> ComplexDiagonals<T> {
     /// empty map. This is the slot count [`Self::build_transform`] encodes on.
     pub fn period(&self) -> usize {
         let periods: Vec<usize> = self
-            .indexes()
+            .galois()
             .into_iter()
-            .filter_map(|index| self.diagonal_period(index))
+            .filter_map(|galois| self.diagonal_period(galois))
             .collect();
         if periods.is_empty() {
             return self.slots();
@@ -139,7 +147,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// imaginary diagonals in place). Satisfies
     /// `conj(M·v) = conj(M)·conj(v)`.
     pub fn conjugate(&mut self) {
-        for i in self.im.indexes() {
+        for i in self.im.galois() {
             let mut v = self.im.get(i).cloned().expect("indexed diagonal present");
             for x in v.iter_mut() {
                 let mut neg = T::zero();
@@ -153,7 +161,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// Multiplies every stored value by `s`.
     pub fn scale(&mut self, s: &T) {
         for part in [&mut self.re, &mut self.im] {
-            for i in part.indexes() {
+            for i in part.galois() {
                 let scaled: Vec<T> = part
                     .get(i)
                     .expect("indexed diagonal present")
@@ -171,7 +179,8 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// Both maps are read with the tiled convention (`out[j] = Σ_i
     /// diag_i[j mod slots] · v[j+i]`), so the two slot counts may differ as
     /// long as one divides the other; the result's slot count is the larger
-    /// tile. Diagonal indexes add (`diag_{a+b}[j] += A_a[j] · B_b[j+a]`, all
+    /// tile. Diagonal rotations add, their Galois elements compose
+    /// (`diag_{a+b}[j] += A_a[j] · B_b[j+a]`, all
     /// complex), so the output carries at most `|A|·|B|` diagonals, fewer when
     /// index sums collide. Each stored period is read modulo its length; a
     /// term repeats over the least common multiple of its operands' periods
@@ -189,19 +198,20 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
             d.get(idx)
                 .map_or_else(T::zero, |v| v[j.rem_euclid(v.len() as i64) as usize].clone())
         };
-        for ia in self.indexes() {
+        for ia in self.galois() {
             let period_a = self.diagonal_period(ia).expect("indexed diagonal present");
-            for ib in rhs.indexes() {
+            let shift_a = galois_rotation(ia, ta as usize);
+            for ib in rhs.galois() {
                 let period_b = rhs.diagonal_period(ib).expect("indexed diagonal present");
-                let idx = (ia + ib).rem_euclid(t);
+                let idx = galois_compose(ia, ib, t as usize);
                 let len = period_lcm(period_lcm(out.diagonal_period(idx).unwrap_or(1), period_a), period_b) as i64;
                 let mut re: Vec<T> = (0..len).map(|j| read(&out.re, idx, j)).collect();
                 let mut im: Vec<T> = (0..len).map(|j| read(&out.im, idx, j)).collect();
                 for j in 0..len {
                     let ar = read(&self.re, ia, j);
                     let ai = read(&self.im, ia, j);
-                    let br = read(&rhs.re, ib, j + ia);
-                    let bi = read(&rhs.im, ib, j + ia);
+                    let br = read(&rhs.re, ib, j + shift_a);
+                    let bi = read(&rhs.im, ib, j + shift_a);
                     // (ar + i·ai)(br + i·bi)
                     let mut re_term = ar.mul(&br);
                     re_term.sub_assign(&ai.mul(&bi));
@@ -219,7 +229,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
 
     /// Builds the unprepared [`LinearTransformation`] for this complex map.
     ///
-    /// Performs the BSGS pre-rotation `ũ_{j,k} = rot(diag_{n1·j+k}, −n1·j)` and
+    /// Performs the BSGS pre-rotation `ũ_{g,b} = sigma_g^-1(diag_{g b})` and
     /// the giant-step bucketing; `encode` only turns a pre-rotated `(re, im)`
     /// diagonal, each [`Self::period`] long (the whole `slots` for a dense
     /// map), into the scheme's encoded plaintext `P` (e.g. via `encode_reim`):
@@ -234,7 +244,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     ) -> LinearTransformation<P> {
         let slots = self.slots();
         let index = LinearTransformationLayout {
-            indexes: self.indexes(),
+            galois: self.galois(),
             slots,
             strategy,
         }
@@ -247,26 +257,30 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
         let mut pre_im = vec![T::zero(); period];
         let zero_block = [T::zero()];
 
-        let mut giant_steps = Vec::with_capacity(index.giant_steps.len());
-        for (g, &giant_rot) in index.giant_steps.iter().enumerate() {
+        let mut giant_steps = Vec::with_capacity(index.giant_galois.len());
+        for (g, &giant) in index.giant_galois.iter().enumerate() {
+            let inverse = galois_inverse(giant, slots);
             let mut diagonals = Vec::with_capacity(index.index[g].len());
             for &baby in &index.index[g] {
-                let d = giant_rot + baby;
+                let d = galois_compose(giant, baby, slots);
                 let dre = self.re.get(d).map_or(&zero_block[..], |v| v.as_slice());
                 let dim = self.im.get(d).map_or(&zero_block[..], |v| v.as_slice());
-                rotate_slots_into(dre, -giant_rot, &mut pre_re);
-                rotate_slots_into(dim, -giant_rot, &mut pre_im);
+                rotate_slots_into(dre, inverse, &mut pre_re);
+                rotate_slots_into(dim, inverse, &mut pre_im);
                 let plaintext = encode(&pre_re, &pre_im);
-                diagonals.push(LinearTransformationDiagonal { baby, plaintext });
+                diagonals.push(LinearTransformationDiagonal {
+                    baby_galois: baby,
+                    plaintext,
+                });
             }
             giant_steps.push(LinearTransformationGiantStep {
-                rot: giant_rot,
+                galois: giant,
                 diagonals,
             });
         }
 
         LinearTransformation {
-            baby_steps: index.baby_steps,
+            baby_galois: index.baby_galois,
             giant_steps,
             rotations: index.rotations,
         }
@@ -283,38 +297,10 @@ mod tests {
         for i in 0..s {
             let col: Vec<f64> = (0..s).map(|j| m[j][(j + i) % s]).collect();
             if col.iter().any(|&x| x != 0.0) {
-                d.set(i as i64, col);
+                d.set(galois_of_rotation(i as i64), col);
             }
         }
         d
-    }
-
-    /// Periods combine by least common multiple, not by maximum: on six slots a
-    /// period-2 and a period-3 diagonal compose to period 6.
-    #[test]
-    fn periods_combine_by_lcm_on_non_power_of_two_slot_counts() {
-        let mut a = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
-        a.re.set(0, vec![1.0, 2.0]);
-        let mut b = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
-        b.re.set(0, vec![10.0, 20.0, 30.0]);
-        let c = a.compose(&b);
-        assert_eq!(c.diagonal_period(0), Some(6));
-        assert_eq!(c.re.get(0), Some(&vec![10.0, 40.0, 30.0, 20.0, 20.0, 60.0]));
-
-        let mut mixed = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
-        mixed.re.set(1, vec![1.0, 2.0]);
-        mixed.im.set(1, vec![5.0, 6.0, 7.0]);
-        assert_eq!(mixed.diagonal_period(1), Some(6));
-        mixed.re.set(2, vec![4.0, 5.0]);
-        mixed.im.set(3, vec![8.0, 9.0, 1.0]);
-        assert_eq!(mixed.period(), 6);
-        assert_eq!(mixed.slots() % mixed.period(), 0, "the map period divides the slot count");
-        let lt = mixed.build_transform(LinearTransformationStrategy::Direct, |re, im| (re.len(), im.len()));
-        assert!(
-            lt.giant_steps
-                .iter()
-                .all(|g| g.diagonals.iter().all(|d| d.plaintext == (6, 6)))
-        );
     }
 
     #[test]
@@ -404,11 +390,12 @@ mod tests {
         // produce the tile-4 map matching the manual tiled evaluation
         // out[j] = Σ_i d_i[j mod tile] · v[(j + i) mod 4].
         let mut a = ComplexDiagonals::new(Diagonals::new(2), Diagonals::new(2));
-        a.re.set(0, vec![2.0, 3.0]);
-        a.im.set(1, vec![1.0, -1.0]);
+        let rot = galois_of_rotation;
+        a.re.set(rot(0), vec![2.0, 3.0]);
+        a.im.set(rot(1), vec![1.0, -1.0]);
         let mut b = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        b.re.set(0, vec![1.0, 0.0, -1.0, 0.5]);
-        b.re.set(2, vec![0.0, 1.0, 2.0, 0.0]);
+        b.re.set(rot(0), vec![1.0, 0.0, -1.0, 0.5]);
+        b.re.set(rot(2), vec![0.0, 1.0, 2.0, 0.0]);
 
         let v: Vec<(f64, f64)> = vec![(1.0, 0.5), (-1.0, 2.0), (2.0, -1.0), (0.5, 1.0)];
         let tiled = |cd: &ComplexDiagonals<f64>, v: &[(f64, f64)]| -> Vec<(f64, f64)> {
@@ -416,10 +403,10 @@ mod tests {
             (0..v.len())
                 .map(|j| {
                     let mut acc = (0.0, 0.0);
-                    for i in cd.indexes() {
+                    for i in cd.galois() {
                         let dr = cd.re.get(i).map_or(0.0, |d| d[j % t]);
                         let di = cd.im.get(i).map_or(0.0, |d| d[j % t]);
-                        let (xr, xi) = v[(j + i as usize) % v.len()];
+                        let (xr, xi) = v[(j + galois_rotation(i, t) as usize) % v.len()];
                         acc.0 += dr * xr - di * xi;
                         acc.1 += dr * xi + di * xr;
                     }

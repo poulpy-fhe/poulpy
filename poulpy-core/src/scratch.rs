@@ -48,8 +48,8 @@ pub trait ScratchArenaTakeGLWELinearTransformationBabySteps<'a, B: Backend>: Scr
         let (cols, size) = (a.rank().as_usize() + 1, a.size());
         let mut values = BTreeMap::new();
         let mut scratch = self;
-        for &rot in &plan.baby_steps {
-            if let Entry::Vacant(entry) = values.entry(rot) {
+        for &galois in &plan.baby_galois {
+            if let Entry::Vacant(entry) = values.entry(galois) {
                 let (operand, rest) = scratch.take_cnv_pvec_left_scratch(n, cols, size, PrepareHint::Reuse);
                 entry.insert(operand);
                 scratch = rest;

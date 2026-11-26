@@ -10,7 +10,8 @@ use poulpy_core::{
     LinearTransformationPrepared,
     layouts::{
         Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendRef, GetAutomorphismKey,
-        GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation, TorusPrecision, galois_at, galois_is_identity,
+        galois_rotation, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, Ring};
@@ -63,8 +64,8 @@ pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: GLWEInfos, R
     if prepared_layouts.chain(source_layouts).any(|diagonal| diagonal != layout) {
         return Err(invalid("a diagonal's layout differs from the prepared transformation's"));
     }
-    if lt.baby_steps.first().is_some_and(|&baby| baby != 0) {
-        return Err(invalid("the baby steps do not start with the identity rotation"));
+    if lt.baby_galois.first().is_some_and(|&baby| !galois_is_identity(baby)) {
+        return Err(invalid("the baby steps do not start with the identity"));
     }
     Ok(())
 }
@@ -91,8 +92,8 @@ pub(crate) fn ensure_uniform_diagonals<P>(
                 return Err(CKKSCompositionError::InvalidOperand {
                     op,
                     reason: format!(
-                        "linear transformation diagonals are not uniform: diagonal (giant rot {}, baby {}) has (log_scale {diag_log_scale}, max_k {diag_max_k}, {diag_slots:?}) but the first diagonal has ({log_scale}, {max_k}, {slots:?})",
-                        gs.rot, diag.baby,
+                        "linear transformation diagonals are not uniform: diagonal (giant Galois element {}, baby {}) has (log_scale {diag_log_scale}, max_k {diag_max_k}, {diag_slots:?}) but the first diagonal has ({log_scale}, {max_k}, {slots:?})",
+                        gs.galois, diag.baby_galois,
                     ),
                 }
                 .into());
@@ -413,7 +414,7 @@ pub(crate) fn ensure_transform_workspace<BE: Backend, Rg: Ring>(
             .babies
             .iter()
             .zip(&transform.factors)
-            .all(|(babies, (lt, _))| babies.baby_steps().eq(lt.baby_steps().iter().copied()));
+            .all(|(babies, (lt, _))| babies.baby_galois().eq(lt.baby_galois().iter().copied()));
     ckks_ensure_operand!(
         op,
         workspace.input == *input && babies_match,
@@ -422,10 +423,10 @@ pub(crate) fn ensure_transform_workspace<BE: Backend, Rg: Ring>(
     Ok(())
 }
 
-/// The automorphism keys a chain of BSGS factors switches with on an input of `input_k` bits, as `(rotation, k)`:
-/// each factor's baby key rotations at its input's width and the keys of its giant steps at its output's, as the
-/// evaluation looks them up. Each factor gives its baby key rotations, its rotation schedule, its giant steps and the
-/// bits it consumes.
+/// The automorphism keys a chain of BSGS factors switches with on an input of `input_k` bits, as
+/// `(Galois element, k)`: each factor's baby keys at its input's width and the keys of its giant steps at its output's,
+/// as the evaluation looks them up. Each factor gives the Galois elements of its baby keys, its rotation schedule, its
+/// giant steps and the bits it consumes.
 fn bsgs_key_lookups(
     factors: impl IntoIterator<Item = (Vec<i64>, BsgsRotations, Vec<i64>, usize)>,
     input_k: usize,
@@ -434,12 +435,12 @@ fn bsgs_key_lookups(
     let mut k = input_k;
     for (babies, rotations, giants, consumed) in factors {
         let out_k = k.saturating_sub(consumed);
-        lookups.extend(babies.into_iter().map(|rotation| (rotation, k)));
+        lookups.extend(babies.into_iter().map(|galois| (galois, k)));
         let giants = match rotations {
-            BsgsRotations::PerRotation => giants.into_iter().filter(|&rotation| rotation != 0).collect(),
-            rotations => rotations.giant_key_rotations(giants),
+            BsgsRotations::PerRotation => giants.into_iter().filter(|&galois| !galois_is_identity(galois)).collect(),
+            rotations => rotations.giant_key_galois(giants),
         };
-        lookups.extend(giants.into_iter().map(|rotation| (rotation, out_k)));
+        lookups.extend(giants.into_iter().map(|galois| (galois, out_k)));
         k = out_k;
     }
     lookups
@@ -457,9 +458,13 @@ pub(crate) fn transform_key_lookups<BE: Backend, Rg: Ring>(
         .iter()
         .zip(&workspace.babies)
         .map(|((lt, consumed), babies)| {
-            let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
+            let giants = lt
+                .giant_steps
+                .iter()
+                .filter(|gs| !gs.diagonals.is_empty())
+                .map(|gs| gs.galois);
             (
-                babies.rotations().baby_key_rotations(babies.baby_steps()),
+                babies.rotations().baby_key_galois(babies.baby_galois()),
                 lt.rotations,
                 giants.collect(),
                 *consumed,
@@ -489,8 +494,8 @@ where
         })
 }
 
-/// `MissingAutomorphismKey` for `op` unless `keys` cover each `(rotation, k)` of `lookups` on operands of degree `n`;
-/// otherwise the layouts of the keys, for the scratch queries.
+/// `MissingAutomorphismKey` for `op` unless `keys` cover each `(Galois element, k)` of `lookups` on operands of degree
+/// `n`, the error naming the element's slot rotation; otherwise the layouts of the keys, for the scratch queries.
 pub(crate) fn ensure_rotation_keys<BE, Rg, H>(
     op: &'static str,
     module: &Module<BE>,
@@ -505,9 +510,10 @@ where
 {
     lookups
         .into_iter()
-        .map(|(rotation, k)| {
-            let p = crate::operand_rotation_galois_element::<_, Rg>(op, module, n, rotation)?;
-            automorphism_key_layout(op, keys, p, rotation, k)
+        .map(|(galois, k)| {
+            let order = crate::operand_cyclotomic_order::<_, Rg>(op, module, n)?;
+            let rotation = galois_rotation(galois, (order / 4) as usize);
+            automorphism_key_layout(op, keys, galois_at(galois, order), rotation, k)
         })
         .collect()
 }
@@ -1207,12 +1213,12 @@ pub(crate) fn small_limbs<K: GGLWEInfos>(op: &'static str, base2k: usize, k_larg
 pub(crate) fn first_factor_key<'k, BE: Backend, K: BootstrappingLinearKeys<BE>>(
     op: &'static str,
     keys: &'k K,
-    rotation: i64,
+    galois: i64,
 ) -> CKKSResult<&'k K::SwitchingKey> {
-    let Some(key) = keys.first_factor_key(rotation) else {
+    let Some(key) = keys.first_factor_key(galois) else {
         return Err(CKKSCompositionError::InvalidOperand {
             op,
-            reason: format!("no first-factor key for the rotation {rotation}"),
+            reason: format!("no first-factor key for the Galois element {galois}"),
         }
         .into());
     };
@@ -1253,10 +1259,10 @@ where
         ckks_bail!("{op}: the first factor has no diagonal");
     };
     let (growth, width) = (diagonal_growth(diagonal), diagonal.encoded_k());
-    let key_layout = first_factor_key(op, keys, factor.giant_steps[0].rot)?.gglwe_layout();
+    let key_layout = first_factor_key(op, keys, factor.giant_steps[0].galois)?.gglwe_layout();
     for giant in &factor.giant_steps {
         ckks_ensure!(
-            giant.diagonals.len() == 1 && giant.diagonals[0].baby == 0,
+            giant.diagonals.len() == 1 && galois_is_identity(giant.diagonals[0].baby_galois),
             "{op}: a first factor on the raise has one diagonal per rotation and no baby step"
         );
         let diagonal = &giant.diagonals[0].plaintext;
@@ -1266,9 +1272,9 @@ where
         );
         ckks_ensure_operand!(
             op,
-            first_factor_key(op, keys, giant.rot)?.gglwe_layout() == key_layout,
-            "the first-factor key of the rotation {} differs in layout from the others",
-            giant.rot
+            first_factor_key(op, keys, giant.galois)?.gglwe_layout() == key_layout,
+            "the first-factor key of the Galois element {} differs in layout from the others",
+            giant.galois
         );
     }
     let small = small_limbs(op, base2k, k_large, &key_layout)?;
@@ -1294,9 +1300,9 @@ pub(crate) fn chain_key_lookups(
 ) -> Vec<(i64, usize)> {
     let factors = plans.iter().zip(consumed).map(|(plan, &bits)| {
         (
-            plan.rotations.baby_key_rotations(plan.baby_steps.iter().copied()),
+            plan.rotations.baby_key_galois(plan.baby_galois.iter().copied()),
             plan.rotations,
-            plan.giant_steps.clone(),
+            plan.giant_galois.clone(),
             bits,
         )
     });
@@ -1312,15 +1318,11 @@ pub(crate) fn chain_galois_lookups<M: poulpy_hal::layouts::CyclotomicOrder + ?Si
     consumed: &[usize],
     input_k: usize,
 ) -> CKKSResult<Vec<(i64, usize)>> {
-    chain_key_lookups(plans, consumed, input_k)
+    let order = crate::operand_cyclotomic_order::<M, poulpy_hal::layouts::Standard>(op, module, n)?;
+    Ok(chain_key_lookups(plans, consumed, input_k)
         .into_iter()
-        .map(|(rotation, k)| {
-            Ok((
-                crate::operand_rotation_galois_element::<M, poulpy_hal::layouts::Standard>(op, module, n, rotation)?,
-                k,
-            ))
-        })
-        .collect()
+        .map(|(galois, k)| (galois_at(galois, order), k))
+        .collect())
 }
 
 /// `MissingAutomorphismKey` for `op` unless `keys` cover each `(galois element, k)` of `lookups`, the error naming the

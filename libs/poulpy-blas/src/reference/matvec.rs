@@ -16,7 +16,7 @@ use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::layouts::{
     BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine,
     BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorLayout, BlasVectorMut, BlasVectorRef,
-    diagonal_ciphertext::{self, AppendAxis, append_rotations},
+    diagonal_ciphertext::{self, AppendAxis, append_rotations, step_rotation},
     matvec_operand::output_label,
     validate::{
         KeyLayouts, append_uses, assert_scratch, ensure_rotation, ensure_tensor_key, matvec_diagonal_tensor,
@@ -620,11 +620,12 @@ where
             module.ckks_left_operand_prepare(&mut left, &rotated, &mut s)?;
         }
         for gs in &mut m.diagonals.giant_steps {
-            let giant = gs.rot;
+            let giant = step_rotation(gs.galois);
             for d in &mut gs.diagonals {
+                let baby = step_rotation(d.baby_galois);
                 let shift = match axis {
-                    AppendAxis::Row if d.baby == r => -(at + giant),
-                    AppendAxis::Col if -giant == r => d.baby - at,
+                    AppendAxis::Row if baby == r => -(at + giant),
+                    AppendAxis::Col if -giant == r => baby - at,
                     _ => continue,
                 };
                 let galois = module.ckks_galois_element::<Rg>(shift.rem_euclid(slots));

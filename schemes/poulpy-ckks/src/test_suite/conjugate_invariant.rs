@@ -312,11 +312,16 @@ pub fn test_conjugate_invariant_leveled<BE>(
     for diagonal_slots in [slots, pt_slots] {
         let mut re = Diagonals::new(diagonal_slots);
         for d in [0, 1, 3, 5] {
-            re.set(d, (0..diagonal_slots).map(|i| ((i + d as usize) % 7) as f64 / 16.0).collect());
+            re.set(
+                poulpy_core::layouts::galois_of_rotation(d),
+                (0..diagonal_slots).map(|i| ((i + d as usize) % 7) as f64 / 16.0).collect(),
+            );
         }
         let diagonals = ComplexDiagonals::new(re, Diagonals::new(diagonal_slots));
         let mut complex = diagonals.clone();
-        complex.im.set(0, vec![0.25; diagonal_slots]);
+        complex
+            .im
+            .set(poulpy_core::layouts::galois_of_rotation(0), vec![0.25; diagonal_slots]);
         let err = with_scratch::<BE, _>(0, |s| {
             ckks_linear_transformation_encode_from_diagonals(
                 module,

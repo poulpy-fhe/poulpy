@@ -445,9 +445,9 @@ where
         }),
         first_factor_keys: first.map_or_else(HashMap::new, |key| {
             plan.coeffs_to_slots()
-                .first_factor_rotations(log_n)
+                .first_factor_galois(log_n)
                 .into_iter()
-                .map(|rotation| (rotation, prepared_gglwe(module, key, (rotation as u8).wrapping_add(113))))
+                .map(|galois| (galois, prepared_gglwe(module, key, (galois as u8).wrapping_add(113))))
                 .collect()
         }),
     }

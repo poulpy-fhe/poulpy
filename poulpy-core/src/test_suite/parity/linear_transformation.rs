@@ -17,7 +17,7 @@ use crate::{
         Base2K, Degree, DiagonalOperand, Dnum, GGLWEInfos, GLWE, GLWEAlloc, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout,
         GLWEBackendRef, GLWEInfos, GLWELayout, GLWETensorKeyAlloc, GLWETensorKeyLayout, GLWEToBackendRef, LWEInfos,
         LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout,
-        LinearTransformationStrategy, Rank, TorusPrecision, operand_galois_element,
+        LinearTransformationStrategy, Rank, TorusPrecision, galois_of_rotation, operand_galois_element,
         prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
     test_suite::{
@@ -69,13 +69,16 @@ where
 /// The transformation of the diagonals `plaintexts` at giant rotation 0, diagonal `i` at baby rotation `i`.
 fn baby_diagonals<P>(plaintexts: Vec<P>) -> LinearTransformation<P> {
     LinearTransformation {
-        baby_steps: (0..plaintexts.len() as i64).collect(),
+        baby_galois: (0..plaintexts.len() as i64).map(galois_of_rotation).collect(),
         rotations: Default::default(),
         giant_steps: vec![LinearTransformationGiantStep {
-            rot: 0,
+            galois: galois_of_rotation(0),
             diagonals: (0..)
                 .zip(plaintexts)
-                .map(|(baby, plaintext)| LinearTransformationDiagonal { baby, plaintext })
+                .map(|(baby, plaintext)| LinearTransformationDiagonal {
+                    baby_galois: galois_of_rotation(baby),
+                    plaintext,
+                })
                 .collect(),
         }],
     }
@@ -115,13 +118,13 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
     let k = 2 * base + 1;
     let mut source = Source::new([187; 32]);
     let schedule = LinearTransformationLayout {
-        indexes: vec![0, 1, 4, 5],
+        galois: [0, 1, 4, 5].into_iter().map(galois_of_rotation).collect(),
         slots: params.n / 2,
         strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
     };
     let plan = schedule.index();
     // The cache may hold rotations unused by this matrix.
-    let baby_steps = [0, 1, 3];
+    let baby_steps: Vec<i64> = [0, 1, 3].into_iter().map(galois_of_rotation).collect();
     for &rank in &shapes.ranks {
         for k_digit in shapes.k_digits(k, base, rank) {
             let ct = GLWELayout {
@@ -193,7 +196,10 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                     &mut poisoned_scratch::<BT>(t.glwe_linear_transformation_baby_steps_prepare_tmp_bytes(&ct, &plan, &key))
                         .borrow(),
                 );
-                assert_eq!(lhs_r.baby_steps().collect::<Vec<_>>(), lhs_t.baby_steps().collect::<Vec<_>>());
+                assert_eq!(
+                    lhs_r.baby_galois().collect::<Vec<_>>(),
+                    lhs_t.baby_galois().collect::<Vec<_>>()
+                );
                 assert_eq!((lhs_r.size(), lhs_r.cols()), (lhs_t.size(), lhs_t.cols()));
 
                 let mut twin_t = t.glwe_alloc_from_infos(&ct);
@@ -246,7 +252,7 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                         ..ct
                     };
                     let identity_schedule = LinearTransformationLayout {
-                        indexes: vec![0],
+                        galois: [0].into_iter().map(galois_of_rotation).collect(),
                         slots: params.n / 2,
                         strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
                     };
@@ -362,7 +368,7 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                             ..one_layout
                         };
                         let schedule = LinearTransformationLayout {
-                            indexes: (0..degrees.len() as i64).collect(),
+                            galois: (0..degrees.len() as i64).map(galois_of_rotation).collect(),
                             ..identity_schedule.clone()
                         };
                         let (mut low_r, mut low_t) = (Vec::new(), Vec::new());
@@ -449,16 +455,16 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                 // their resident preparations.
                 let transform = |source: &mut Source| {
                     let mut rhs_r = LinearTransformation {
-                        baby_steps: plan.baby_steps.clone(),
+                        baby_galois: plan.baby_galois.clone(),
                         rotations: plan.rotations,
                         giant_steps: Vec::new(),
                     };
                     let mut rhs_t = LinearTransformation {
-                        baby_steps: plan.baby_steps.clone(),
+                        baby_galois: plan.baby_galois.clone(),
                         rotations: plan.rotations,
                         giant_steps: Vec::new(),
                     };
-                    for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
+                    for (&galois, babies) in plan.giant_galois.iter().zip(&plan.index) {
                         let mut diagonals_r = Vec::new();
                         let mut diagonals_t = Vec::new();
                         for &baby in babies {
@@ -466,20 +472,20 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                             let mut diagonal_t = t.glwe_alloc_from_infos(&pt);
                             diagonal_r.transfer_into(&mut diagonal_t);
                             diagonals_r.push(LinearTransformationDiagonal {
-                                baby,
+                                baby_galois: baby,
                                 plaintext: StreamedDiagonal(diagonal_r),
                             });
                             diagonals_t.push(LinearTransformationDiagonal {
-                                baby,
+                                baby_galois: baby,
                                 plaintext: StreamedDiagonal(diagonal_t),
                             });
                         }
                         rhs_r.giant_steps.push(LinearTransformationGiantStep {
-                            rot,
+                            galois,
                             diagonals: diagonals_r,
                         });
                         rhs_t.giant_steps.push(LinearTransformationGiantStep {
-                            rot,
+                            galois,
                             diagonals: diagonals_t,
                         });
                     }
@@ -754,9 +760,9 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT, Rg: Ring>(
     let k = 2 * base + 1;
     let mut source = Source::new([188; 32]);
     let slots = params.n / 2;
-    for (indexes, pass_sizes) in [((-16..16).collect(), vec![1, 2]), (vec![0, 1, 60, 61], vec![1])] {
+    for (rotations, pass_sizes) in [((-16..16).collect::<Vec<i64>>(), vec![1, 2]), (vec![0, 1, 60, 61], vec![1])] {
         let schedule = LinearTransformationLayout {
-            indexes,
+            galois: rotations.into_iter().map(galois_of_rotation).collect(),
             slots,
             strategy: LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 },
         };
@@ -799,14 +805,14 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT, Rg: Ring>(
             let mut input_t = t.glwe_alloc_from_infos(&ct);
             input_r.transfer_into(&mut input_t);
             let rotations = plan.rotations;
-            let passes = rotations.baby_passes(plan.baby_steps.iter().copied());
+            let passes = rotations.baby_passes(plan.baby_galois.iter().copied());
             assert_eq!(passes.iter().map(|(_, pairs)| pairs.len()).collect::<Vec<_>>(), pass_sizes);
-            let mut keyed: Vec<i64> = rotations.baby_key_rotations(plan.baby_steps.iter().copied());
-            keyed.extend(rotations.giant_key_rotations(plan.giant_steps.iter().copied()));
+            let mut keyed: Vec<i64> = rotations.baby_key_galois(plan.baby_galois.iter().copied());
+            keyed.extend(rotations.giant_key_galois(plan.giant_galois.iter().copied()));
             let mut keys_r = HashMap::new();
             let mut keys_t = HashMap::new();
-            for rotation in keyed {
-                let p = operand_galois_element::<Rg>(params.n, rotation);
+            for galois in keyed {
+                let p = crate::layouts::galois_at(galois, Rg::CYCLOTOMIC_ORDER_FACTOR * params.n as i64);
                 let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                 fill_by_digit(r, &mut key_r, 1, &mut source);
                 key_r.p = p;
@@ -827,8 +833,8 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT, Rg: Ring>(
                 keys_r.insert(p, prepared_r);
                 keys_t.insert(p, prepared_t);
             }
-            let mut lhs_r = LinearTransformationBabySteps::alloc_with(r, &plan.baby_steps, rotations, &ct);
-            let mut lhs_t = LinearTransformationBabySteps::alloc_with(t, &plan.baby_steps, rotations, &ct);
+            let mut lhs_r = LinearTransformationBabySteps::alloc_with(r, &plan.baby_galois, rotations, &ct);
+            let mut lhs_t = LinearTransformationBabySteps::alloc_with(t, &plan.baby_galois, rotations, &ct);
             r.glwe_linear_transformation_baby_steps_prepare(
                 &mut lhs_r,
                 &input_r,
@@ -847,36 +853,36 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT, Rg: Ring>(
             let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
                 LinearTransformation::alloc_prepared(t, &schedule, &pt);
             let mut rhs_r = LinearTransformation {
-                baby_steps: plan.baby_steps.clone(),
+                baby_galois: plan.baby_galois.clone(),
                 rotations,
                 giant_steps: Vec::new(),
             };
             let mut rhs_t = LinearTransformation {
-                baby_steps: plan.baby_steps.clone(),
+                baby_galois: plan.baby_galois.clone(),
                 rotations,
                 giant_steps: Vec::new(),
             };
-            for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
+            for (&galois, babies) in plan.giant_galois.iter().zip(&plan.index) {
                 let (mut diagonals_r, mut diagonals_t) = (Vec::new(), Vec::new());
                 for &baby in babies {
                     let diagonal_r = ref_glwe(r, &pt, &mut source);
                     let mut diagonal_t = t.glwe_alloc_from_infos(&pt);
                     diagonal_r.transfer_into(&mut diagonal_t);
                     diagonals_r.push(LinearTransformationDiagonal {
-                        baby,
+                        baby_galois: baby,
                         plaintext: StreamedDiagonal(diagonal_r),
                     });
                     diagonals_t.push(LinearTransformationDiagonal {
-                        baby,
+                        baby_galois: baby,
                         plaintext: StreamedDiagonal(diagonal_t),
                     });
                 }
                 rhs_r.giant_steps.push(LinearTransformationGiantStep {
-                    rot,
+                    galois,
                     diagonals: diagonals_r,
                 });
                 rhs_t.giant_steps.push(LinearTransformationGiantStep {
-                    rot,
+                    galois,
                     diagonals: diagonals_t,
                 });
             }
@@ -964,7 +970,7 @@ fn ciphertext_diagonals_parity<BR, BT, Rg: Ring>(
     let base = params.base2k.min(12);
     let k = 2 * base + 1;
     let schedule = LinearTransformationLayout {
-        indexes: vec![0, 1, 4, 5],
+        galois: [0, 1, 4, 5].into_iter().map(galois_of_rotation).collect(),
         slots: params.n / 2,
         strategy,
     };
@@ -1057,8 +1063,8 @@ fn ciphertext_diagonals_parity<BR, BT, Rg: Ring>(
                 let input_r = ref_glwe(r, &ct, source);
                 let mut input_t = t.glwe_alloc_from_infos(&ct);
                 input_r.transfer_into(&mut input_t);
-                let mut lhs_r = LinearTransformationBabySteps::alloc_with(r, &plan.baby_steps, rotations, &ct);
-                let mut lhs_t = LinearTransformationBabySteps::alloc_with(t, &plan.baby_steps, rotations, &ct);
+                let mut lhs_r = LinearTransformationBabySteps::alloc_with(r, &plan.baby_galois, rotations, &ct);
+                let mut lhs_t = LinearTransformationBabySteps::alloc_with(t, &plan.baby_galois, rotations, &ct);
                 r.glwe_linear_transformation_baby_steps_prepare(
                     &mut lhs_r,
                     &input_r,
@@ -1078,36 +1084,36 @@ fn ciphertext_diagonals_parity<BR, BT, Rg: Ring>(
             // Random ciphertext diagonals, the same on both backends, and their resident preparations.
             let transform = |source: &mut Source| {
                 let mut rhs_r = LinearTransformation {
-                    baby_steps: plan.baby_steps.clone(),
+                    baby_galois: plan.baby_galois.clone(),
                     rotations,
                     giant_steps: Vec::new(),
                 };
                 let mut rhs_t = LinearTransformation {
-                    baby_steps: plan.baby_steps.clone(),
+                    baby_galois: plan.baby_galois.clone(),
                     rotations,
                     giant_steps: Vec::new(),
                 };
-                for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
+                for (&galois, babies) in plan.giant_galois.iter().zip(&plan.index) {
                     let (mut diagonals_r, mut diagonals_t) = (Vec::new(), Vec::new());
                     for &baby in babies {
                         let diagonal_r = ref_glwe(r, &ct, source);
                         let mut diagonal_t = t.glwe_alloc_from_infos(&ct);
                         diagonal_r.transfer_into(&mut diagonal_t);
                         diagonals_r.push(LinearTransformationDiagonal {
-                            baby,
+                            baby_galois: baby,
                             plaintext: StreamedDiagonal(diagonal_r),
                         });
                         diagonals_t.push(LinearTransformationDiagonal {
-                            baby,
+                            baby_galois: baby,
                             plaintext: StreamedDiagonal(diagonal_t),
                         });
                     }
                     rhs_r.giant_steps.push(LinearTransformationGiantStep {
-                        rot,
+                        galois,
                         diagonals: diagonals_r,
                     });
                     rhs_t.giant_steps.push(LinearTransformationGiantStep {
-                        rot,
+                        galois,
                         diagonals: diagonals_t,
                     });
                 }

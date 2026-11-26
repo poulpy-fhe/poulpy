@@ -12,7 +12,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEBytesOf, GLWEDiagonalProd,
-    layouts::{GLWEInfos, GetDegree, LWEInfos},
+    layouts::{GLWEInfos, GetDegree, LWEInfos, galois_parts},
 };
 use poulpy_hal::layouts::{PrepareHint, Ring, Standard, galois_elements_from_rotations};
 use std::collections::BTreeSet;
@@ -24,8 +24,8 @@ use poulpy_hal::{
 };
 
 /// A diagonal ciphertext's diagonals and their schedule: diagonal `t` of the `S x S` matrix over the `S` slots, `D_t[i] =
-/// M[i][i + t]`, for every `t` of `lt.indexes`, held as a ciphertext of layout `ct` and grouped as `lt.strategy`
-/// schedules them.
+/// M[i][i + t]`, for every `t` whose Galois element `5^t` is in `lt.galois`, `t` in `[0, S)`, held as a ciphertext of
+/// layout `ct` and grouped as `lt.strategy` schedules them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BlasDiagonalCiphertextLayout {
@@ -172,15 +172,25 @@ impl AppendAxis {
 }
 
 /// The rotations of the appended ciphertext an append along `axis` makes on a matrix of schedule `lt`, ascending and
-/// without repeats: the baby steps its diagonals read for a row, the opposites of its non-empty giant steps for a
-/// column.
+/// without repeats: the rotations of the baby steps its diagonals read for a row, the opposites of those of its
+/// non-empty giant steps for a column.
 pub(crate) fn append_rotations<P>(axis: AppendAxis, lt: &LinearTransformation<P>) -> Vec<i64> {
     let steps = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty());
     let rotations: BTreeSet<i64> = match axis {
-        AppendAxis::Row => steps.flat_map(|gs| gs.diagonals.iter().map(|d| d.baby)).collect(),
-        AppendAxis::Col => steps.map(|gs| -gs.rot).collect(),
+        AppendAxis::Row => steps
+            .flat_map(|gs| gs.diagonals.iter().map(|d| step_rotation(d.baby_galois)))
+            .collect(),
+        AppendAxis::Col => steps.map(|gs| -step_rotation(gs.galois)).collect(),
     };
     rotations.into_iter().collect()
+}
+
+/// The slot rotation of a step of a blas schedule, whose steps do not conjugate: its value in `[0, slots)`, as the
+/// schedule's plan normalizes it.
+pub(crate) fn step_rotation(galois: i64) -> i64 {
+    let (conjugate, rotation) = galois_parts(galois);
+    assert!(!conjugate, "a blas schedule step does not conjugate");
+    rotation
 }
 
 /// Panics unless `layout` fits `module`: its slots the module's, at least one diagonal, each in `0..slots`, diagonal
@@ -192,7 +202,12 @@ pub(crate) fn assert_fits<Rg: Ring>(module: &(impl CKKSModuleInfos + GetDegree),
         "the matrix's slots are not the module's"
     );
     assert!(
-        !layout.lt.indexes.is_empty() && layout.lt.indexes.iter().all(|&t| (0..slots as i64).contains(&t)),
+        !layout.lt.galois.is_empty()
+            && layout
+                .lt
+                .galois
+                .iter()
+                .all(|&g| g & 1 == 1 && matches!(galois_parts(g), (false, r) if r < slots as i64)),
         "the matrix holds no diagonal, or one outside its slots"
     );
     assert!(
@@ -299,18 +314,18 @@ where
     assert_fits::<Rg>(module, layout);
     let plan = layout.lt.index();
     let diagonals = LinearTransformation {
-        baby_steps: plan.baby_steps.clone(),
+        baby_galois: plan.baby_galois.clone(),
         rotations: plan.rotations,
         giant_steps: plan
-            .giant_steps
+            .giant_galois
             .iter()
             .zip(&plan.index)
-            .map(|(&rot, babies)| GiantStep {
-                rot,
+            .map(|(&galois, babies)| GiantStep {
+                galois,
                 diagonals: babies
                     .iter()
-                    .map(|&baby| Diagonal {
-                        baby,
+                    .map(|&baby_galois| Diagonal {
+                        baby_galois,
                         plaintext: module.ckks_ciphertext_alloc_from_infos(&layout.ct),
                     })
                     .collect(),
@@ -382,7 +397,7 @@ mod tests {
 
     fn layout(
         module: &Module<HostBytesBackend>,
-        indexes: Vec<i64>,
+        rotations: Vec<i64>,
         strategy: LinearTransformationStrategy,
     ) -> BlasDiagonalCiphertextLayout {
         let mut ct = layout_of(&module.ckks_ciphertext_alloc::<Standard>(19usize.into(), 60usize.into()));
@@ -390,7 +405,7 @@ mod tests {
         BlasDiagonalCiphertextLayout::new(
             ct,
             LinearTransformationLayout {
-                indexes,
+                galois: rotations.into_iter().map(poulpy_core::layouts::galois_of_rotation).collect(),
                 slots: module.ckks_max_slots::<Standard>(),
                 strategy,
             },

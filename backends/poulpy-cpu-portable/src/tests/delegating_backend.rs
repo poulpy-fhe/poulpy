@@ -47,7 +47,7 @@ const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 
 #[test]
 fn downstream_baby_step_preparation_preserves_cache_shape() {
-    use poulpy_core::layouts::LinearTransformationBabySteps;
+    use poulpy_core::layouts::{LinearTransformationBabySteps, galois_of_rotation};
     use poulpy_hal::api::CnvOps;
     let module = Module::<FFT64Portable>::new(256);
     let input = sample_glwe();
@@ -56,8 +56,9 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
         <Module<FFT64Portable> as GLWENormalize<FFT64Portable, Standard>>::glwe_normalize_tmp_bytes(&module),
     );
     module.glwe_normalize(&mut normalized, &input, &mut scratch.borrow());
-    let mut cache = LinearTransformationBabySteps::alloc(&module, &[0, 1, 1], &normalized);
-    let mut expected = LinearTransformationBabySteps::alloc(&module, &[0], &normalized);
+    let g = galois_of_rotation;
+    let mut cache = LinearTransformationBabySteps::alloc(&module, &[g(0), g(1), g(1)], &normalized);
+    let mut expected = LinearTransformationBabySteps::alloc(&module, &[g(0)], &normalized);
     let mut scratch = ScratchOwned::<FFT64Portable>::alloc(
         <Module<FFT64Portable> as CnvOps<FFT64Portable, Standard>>::cnv_pvec_left_prepare_tmp_bytes(
             &module,
@@ -66,22 +67,22 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
         ),
     );
     module.cnv_pvec_left_prepare(
-        &mut expected.baby_step_mut(0),
+        &mut expected.baby_mut(g(0)),
         GLWEToBackendRef::<FFT64Portable>::to_backend_ref(&normalized).data(),
         &mut scratch.borrow(),
     );
-    for (_, mut operand) in cache.baby_steps_mut() {
+    for (_, mut operand) in cache.babies_mut() {
         module.cnv_pvec_left_prepare(
             &mut operand,
             GLWEToBackendRef::<FFT64Portable>::to_backend_ref(&normalized).data(),
             &mut scratch.borrow(),
         );
     }
-    assert_eq!(cache.baby_steps().collect::<Vec<_>>(), vec![0, 1]);
-    for rot in cache.baby_steps() {
-        assert_eq!(cache.baby_step(rot), expected.baby_step(0), "baby step {rot}");
-        assert_eq!(cache.baby_step(rot).cols(), 3);
-        assert_eq!(cache.baby_step(rot).size(), normalized.size());
+    assert_eq!(cache.baby_galois().collect::<Vec<_>>(), vec![g(0), g(1)]);
+    for galois in cache.baby_galois() {
+        assert_eq!(cache.baby(galois), expected.baby(g(0)), "baby step {galois}");
+        assert_eq!(cache.baby(galois).cols(), 3);
+        assert_eq!(cache.baby(galois).size(), normalized.size());
     }
 }
 

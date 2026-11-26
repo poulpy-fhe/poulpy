@@ -95,7 +95,10 @@ pub fn test_linear_transformation_encode_from_diagonals_rejects_zero_k<BE, F, E>
 {
     let slots = params.n / 2;
     let mut re = Diagonals::new(slots);
-    re.set(0, vec![F::from_f64(1.0).unwrap(); slots]);
+    re.set(
+        poulpy_core::layouts::galois_of_rotation(0),
+        vec![F::from_f64(1.0).unwrap(); slots],
+    );
     let identity = ComplexDiagonals::new(re, Diagonals::new(slots));
     let err = with_scratch::<BE, _>(0, |scratch| {
         ckks_linear_transformation_encode_from_diagonals(
@@ -138,7 +141,10 @@ pub fn test_linear_transformation_encode_into<BE, F, E>(
     let map = |indexes: &[i64], value: f64| {
         let mut re = Diagonals::new(slots);
         for &index in indexes {
-            re.set(index, vec![F::from_f64(value).unwrap(); slots]);
+            re.set(
+                poulpy_core::layouts::galois_of_rotation(index),
+                vec![F::from_f64(value).unwrap(); slots],
+            );
         }
         ComplexDiagonals::new(re, Diagonals::new(slots))
     };

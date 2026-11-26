@@ -158,10 +158,10 @@ pub(crate) fn diagonals(map: &SlotMap) -> Diagonals<f64> {
 
 /// Their baby-step giant-step schedule.
 pub(crate) fn bsgs_layout(diagonals: &Diagonals<f64>) -> LinearTransformationLayout {
-    let indexes = diagonals.indexes();
-    let giant_step = optimal_bsgs_giant_step(indexes.iter().copied(), SLOTS);
+    let galois = diagonals.galois();
+    let giant_step = optimal_bsgs_giant_step(galois.iter().copied(), SLOTS);
     LinearTransformationLayout {
-        indexes,
+        galois,
         slots: SLOTS,
         strategy: LinearTransformationStrategy::Bsgs { giant_step },
     }

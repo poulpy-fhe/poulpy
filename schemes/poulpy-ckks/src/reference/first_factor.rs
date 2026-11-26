@@ -20,7 +20,7 @@ use poulpy_core::{
     ScratchArenaTakeGLWE, gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation,
-        Rank, prepared::GGLWEPreparedToBackendRef,
+        Rank, galois_at, galois_is_identity, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -29,10 +29,7 @@ use poulpy_hal::{
         VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
         VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
-    layouts::{
-        Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, Standard, VecZnxDftToBackendMut, VecZnxToBackendRef,
-        galois_element,
-    },
+    layouts::{Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, Standard, VecZnxDftToBackendMut, VecZnxToBackendRef},
 };
 
 use crate::{
@@ -285,7 +282,7 @@ where
 ///
 /// `factor` holds one giant step per diagonal, the diagonal rotated back by
 /// its own index and no baby step. `keys` gives the dense-to-sparse key under
-/// encapsulation and one first-factor key per rotation, all of one layout.
+/// encapsulation and one first-factor key per diagonal, all of one layout.
 /// `log_gap` is that of the plan: the sparse secret lies in the subring and the raise reads that subring only.
 #[expect(
     clippy::too_many_arguments,
@@ -427,16 +424,16 @@ where
             );
 
             // The rotation needs no key before the switch.
-            let term = if giant.rot == 0 {
+            let term = if galois_is_identity(giant.galois) {
                 &product
             } else {
-                glwe_automorphism_keyless(module, &mut rotated, galois_element(giant.rot, order), &product);
+                glwe_automorphism_keyless(module, &mut rotated, galois_at(giant.galois, order), &product);
                 &rotated
             };
 
             // The masked part of the switch joins the others in the transform domain;
             // the bodies are summed limb by limb, their integer part kept.
-            let key = first_factor_key(OP, keys, giant.rot)?.to_backend_ref();
+            let key = first_factor_key(OP, keys, giant.galois)?.to_backend_ref();
             let term_ref = term.to_backend_ref();
             if index == 0 {
                 module.glwe_keyswitch_dft(&mut acc.to_backend_mut(), term, &key, &mut scratch.borrow());

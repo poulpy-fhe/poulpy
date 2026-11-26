@@ -8,7 +8,9 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     GLWETrace,
-    layouts::{BackendGLWESecret, Base2K, Degree, LWEInfos, LinearTransformation, ModuleCoreAlloc},
+    layouts::{
+        BackendGLWESecret, Base2K, Degree, LWEInfos, LinearTransformation, ModuleCoreAlloc, galois_at, galois_of_rotation,
+    },
 };
 use poulpy_hal::{
     api::{VecZnxAutomorphism, VecZnxSwitchRing},
@@ -461,7 +463,9 @@ pub(crate) fn one_factor_matrix<F: CKKSEncodingScalar>(kind: DFTType, log_k: usi
     .pop()
     .context("the generator gives a factor")?;
     let entry = |diagonals: &poulpy_core::layouts::Diagonals<F>, o: usize, c: usize| {
-        diagonals.get(o as i64).map_or(F::zero(), |values| values[c % values.len()])
+        diagonals
+            .get(galois_of_rotation(o as i64))
+            .map_or(F::zero(), |values| values[c % values.len()])
     };
     Ok((0..k)
         .map(|c| {
@@ -600,7 +604,7 @@ fn times_minus_i_from<F: CKKSEncodingScalar>(diagonals: &mut ComplexDiagonals<F>
     let full = |values: Option<&Vec<F>>| -> Vec<F> {
         values.map_or_else(|| vec![F::zero(); n], |v| (0..n).map(|s| v[s % v.len()]).collect())
     };
-    for o in diagonals.indexes() {
+    for o in diagonals.galois() {
         let (mut re, mut im) = (full(diagonals.re.get(o)), full(diagonals.im.get(o)));
         for s in from..n {
             (re[s], im[s]) = (im[s], -re[s]);
@@ -653,7 +657,7 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         let chain = |plans: &[poulpy_core::layouts::LinearTransformationPlan], consumed: &[usize], k: usize| {
             crate::layouts::validation::chain_key_lookups(plans, consumed, k)
                 .into_iter()
-                .map(|(r, k)| (rotation(r), k))
+                .map(|(galois, k)| (galois_at(galois, order), k))
                 .collect::<Vec<_>>()
         };
         let packed = stages.packed.map(|double| {

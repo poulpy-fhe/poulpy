@@ -896,15 +896,20 @@ pub fn lt_key_uses<BE: Backend, Rg: Ring>(
 where
     Module<BE>: CKKSModuleInfos,
 {
-    let babies = lt.baby_steps().iter().map(|&rotation| (rotation, src_k));
+    let babies = lt.baby_galois().iter().map(|&galois| (galois, src_k));
     let giants = lt
         .giant_steps
         .iter()
         .filter(|gs| !gs.diagonals.is_empty())
-        .map(|gs| (gs.rot, res_k));
+        .map(|gs| (gs.galois, res_k));
     babies
         .chain(giants)
-        .map(|(rotation, k)| (module.ckks_galois_element::<Rg>(rotation), k))
+        .map(|(galois, k)| {
+            (
+                module.ckks_galois_element::<Rg>(poulpy_core::layouts::galois_parts(galois).1),
+                k,
+            )
+        })
         .collect()
 }
 

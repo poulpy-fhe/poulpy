@@ -86,9 +86,9 @@ fn validate_factor_encoding<F: CKKSScalar>(diagonals: &crate::layouts::ComplexDi
         .context("PaCo factor torus width overflows usize")?;
     let mut nonzero = false;
     for map in [&diagonals.re, &diagonals.im] {
-        for index in map.indexes() {
+        for galois in map.galois() {
             let values = map
-                .get(index)
+                .get(galois)
                 .context("PaCo generated-factor index is missing its diagonal")?;
             for &value in values {
                 let quantized = if width <= 63 {
@@ -367,7 +367,7 @@ mod tests {
         fn check<F: CKKSScalar>(value: F, log_delta: usize, log_budget: usize, expected: bool) {
             use poulpy_core::layouts::Diagonals;
             let mut diagonals = crate::layouts::ComplexDiagonals::new(Diagonals::new(1), Diagonals::new(1));
-            diagonals.re.set(0, vec![value]);
+            diagonals.re.set(poulpy_core::layouts::galois_of_rotation(0), vec![value]);
             let dft = PaCoDFTPlan::uniform(1, 1, 1, log_delta, log_budget).unwrap();
             assert_eq!(validate_factor_encoding(&diagonals, &dft).is_ok(), expected);
         }

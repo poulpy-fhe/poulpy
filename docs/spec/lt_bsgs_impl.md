@@ -35,20 +35,23 @@ and so the layout/schedule math stays free of any backend.
 ### Data types (in `layouts`)
 
 - [`LinearTransformationLayout`](../../poulpy-core/src/layouts/linear_transformation.rs) —
-  the *integer-only* spec of a transform: `{ indexes, slots, strategy }`. `.index()` /
-  `.plan(n1)` derive a `LinearTransformationPlan` (`baby_steps`, `giant_steps`, and the
-  `index[g]` grouping of baby rotations per giant step). This is where the BSGS
-  factorization §3 happens.
+  the *integer-only* spec of a transform: `{ galois, slots, strategy }`, the Galois
+  elements of the diagonals (`5^i` for the rotation by `i`, see
+  [`galois.rs`](../../poulpy-core/src/layouts/galois.rs)) over a power-of-two slot count.
+  `.index()` / `.plan(n1)` derive a `LinearTransformationPlan` (`baby_galois`,
+  `giant_galois`, and the `index[g]` grouping of baby steps per giant step). This is where
+  the BSGS factorization §3 happens.
 - [`LinearTransformation<P>`](../../poulpy-core/src/layouts/linear_transformation.rs) — the
   unprepared transform: schedule metadata plus the *encoded* (but not convolution-prepared)
   diagonal plaintexts `P`.
 - [`LinearTransformationRhsPrepared<BE>`](../../poulpy-core/src/layouts/prepared/linear_transformation.rs)
   — the prepared **right** operand: pruned giant steps, each holding `CnvPVecR` diagonals
-  keyed by the real baby rotation `k`, plus the plaintext limb layout the evaluator needs.
+  keyed by the Galois element of the real baby rotation `k`, plus the plaintext limb layout
+  the evaluator needs.
 - [`LinearTransformationBabySteps<BE, L>`](../../poulpy-core/src/layouts/prepared/linear_transformation.rs)
-  is the prepared **left** operand: a `BTreeMap<i64, L>` of baby rotations
-  `rot(v,k)`, addressed by the real BSGS index `k` (not a dense position), each an owned
-  `CnvPVecL` or one carved from a scratch arena.
+  is the prepared **left** operand: a `BTreeMap<i64, L>` of baby steps
+  `rot(v,k)`, addressed by the Galois element `5^k` of the real BSGS index `k` (not a dense
+  position), each an owned `CnvPVecL` or one carved from a scratch arena.
 
 ---
 
@@ -56,7 +59,8 @@ and so the layout/schedule math stays free of any backend.
 
 Everything starts from `LinearTransformationLayout::index()`, which calls
 [`linear_transformation_plan`](../../poulpy-core/src/layouts/linear_transformation.rs#L215).
-Given `slots` and a giant step `n1`, it factors each normalized diagonal `i` as
+Given `slots` and a giant step `n1`, it reads the rotation `i` of each diagonal modulo
+`slots` (and its conjugation bit, which goes to the giant step) and factors it as
 `i = n1·j + k`:
 
 ```
@@ -65,7 +69,8 @@ giant_rot = i - baby_rot     # n1·j
 ```
 
 It accumulates the distinct baby rotations (always including `0`), groups the real baby
-rotations under each giant rotation, and de-duplicates. The result `LinearTransformationPlan`
+rotations under each giant rotation, de-duplicates, and returns their Galois elements, by
+increasing rotation. The result `LinearTransformationPlan`
 already realizes **saving #7 (prune zero diagonals)**: only `(j,k)` pairs that correspond
 to a real diagonal are present, so empty baby/giant steps simply never appear and never
 get a key.
@@ -75,7 +80,11 @@ get a key.
 - `Direct` — one giant step per diagonal, no baby rotations (best for ≤ 2 diagonals).
 - `Bsgs { giant_step }` — caller-fixed `n1`. This is the "expose it so callers can align
   it with the diagonal structure" knob; a spec-§10-style default comes from
-  [`optimal_bsgs_giant_step`](../../poulpy-core/src/layouts/linear_transformation.rs#L256).
+  [`optimal_bsgs_giant_step`](../../poulpy-core/src/layouts/linear_transformation.rs).
+- `BsgsPowersOfTwo { giant_step }`: the `Bsgs` schedule, evaluated with the keys of the
+  power-of-two multiples of the two steps (`BsgsRotations::PowersOfTwo`).
+- `Hypercube`: the BSGS schedule of diagonals `X -> X^((-1)^c 5^j)` on the hypercube of
+  the generators `5^(2^k)` and `X -> X^-1`, for transforms whose diagonals conjugate.
 
 > **Beyond the spec.** The spec §10 defaults to `n1 = round(√|I|)`; §8 lists *structure-aware*
 > `n1` as future work. `optimal_bsgs_giant_step` already implements the structure-aware
@@ -201,10 +210,10 @@ this final normalize.
 |---|---|
 | #1 BSGS `O(√\|I\|)` | `linear_transformation_plan` + `optimal_bsgs_giant_step` |
 | #2 Hoisting | `glwe_linear_transformation_baby_steps_prepare` (`a_dft` computed once) |
-| #3 Free identities | `rot == 0` branches in baby_steps.rs **and** giant_steps.rs |
+| #3 Free identities | `galois_is_identity` branches in baby_steps.rs **and** giant_steps.rs |
 | #4 Lazy normalize across giants | DFT accumulator + single final normalize (lazy.rs) |
 | #5 Lazy normalize inside PROD | DFT accumulation in inner_product.rs |
-| #6 Skip `j=0` mask normalize | `rot == 0` giant branch of `glwe_eval_giant_steps` (giant_steps.rs) |
+| #6 Skip `j=0` mask normalize | identity giant branch of `glwe_eval_giant_steps` (giant_steps.rs) |
 | #7 Prune zero diagonals | schedule only stores real `(j,k)` (linear_transformation.rs) |
 | #8 Setup-time preparation | prepare.rs (RHS) + baby_steps.rs (LHS) |
 | #9 One rescale level | single `glwe_normalize_big_into` (lazy.rs) |

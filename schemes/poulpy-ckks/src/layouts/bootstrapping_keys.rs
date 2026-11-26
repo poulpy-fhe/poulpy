@@ -51,6 +51,7 @@ use poulpy_core::{
         GLWESecretToBackendRef, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
         GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
         GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        galois_at,
         prepared::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef,
         },
@@ -61,7 +62,7 @@ use poulpy_hal::{
     api::{VecZnxAutomorphism, VecZnxSwitchRing},
     layouts::{
         Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, Standard,
-        ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        ZnxWord, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
 };
@@ -93,11 +94,11 @@ pub trait BootstrappingLinearKeys<BE: Backend>: GetAutomorphismKey<BE> {
     /// switch to the dense secret instead.
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)>;
 
-    /// Key of the diagonal of slot rotation `rotation` of a first
-    /// `CoeffsToSlots` factor left to the modulus raise: a switching key with a
+    /// Key of the diagonal of Galois element `galois` (see [`poulpy_core::layouts::galois_parts`]) of a
+    /// first `CoeffsToSlots` factor left to the modulus raise: a switching key with a
     /// row offset from the rotated raise secret to the dense one (see
     /// [`BootstrappingKeysLayout::first_factor_key`]). None by default.
-    fn first_factor_key(&self, _rotation: i64) -> Option<&Self::SwitchingKey> {
+    fn first_factor_key(&self, _galois: i64) -> Option<&Self::SwitchingKey> {
         None
     }
 
@@ -160,7 +161,7 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`; no
     /// `sparseToDense` key with the first factor on the raise.
     pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKey<D, W>>>,
-    /// First-factor keys by slot rotation, possibly none: switching keys from
+    /// First-factor keys by the Galois element of their diagonal, possibly none: switching keys from
     /// the rotated raise secret (the sparse one under encapsulation) to the
     /// dense one, see [`BootstrappingKeysLayout::first_factor_key`].
     pub first_factor_keys: HashMap<i64, GLWESwitchingKey<D, W>>,
@@ -185,7 +186,7 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
     /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`;
     /// no `sparseToDense` key with the first factor on the raise.
     pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKeyPrepared<D, BE>>>,
-    /// Prepared first-factor keys by slot rotation, possibly none.
+    /// Prepared first-factor keys by the Galois element of their diagonal, possibly none.
     pub first_factor_keys: HashMap<i64, GLWESwitchingKeyPrepared<D, BE>>,
     /// Prepared trace and embedding keys, with EvalMod on the conjugate-invariant ring.
     pub conversion_keys: Option<(GLWECITraceKeyPrepared<D, BE>, GLWECIEmbedKeyPrepared<D, BE>)>,
@@ -252,8 +253,8 @@ where
         self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
     }
 
-    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
-        self.first_factor_keys.get(&rotation)
+    fn first_factor_key(&self, galois: i64) -> Option<&Self::SwitchingKey> {
+        self.first_factor_keys.get(&galois)
     }
 
     fn keys_layout(&self) -> Option<&BootstrappingKeysLayout> {
@@ -718,14 +719,14 @@ impl BootstrappingPlan {
             crate::layouts::dft::check_dft_fits(dft, log_n)?;
         }
         self.check_log_gap(log_n)?;
-        let first_factor_rotations = if self.coeffs_to_slots().first_factor_on_raise() {
-            self.coeffs_to_slots().first_factor_rotations(log_n)
+        let first_factor_galois = if self.coeffs_to_slots().first_factor_on_raise() {
+            self.coeffs_to_slots().first_factor_galois(log_n)
         } else {
             Vec::new()
         };
         Ok(KeyRecipe::new(
             self.galois_elements(log_n, cyclotomic_order).into_iter().collect(),
-            first_factor_rotations,
+            first_factor_galois,
             self.sparse_secret_hamming_weight(),
             self.eval_mod_ring(),
             cyclotomic_order,
@@ -740,8 +741,8 @@ pub(crate) struct KeyRecipe {
     /// Galois elements of the homomorphic DFTs and of the bypass, and
     /// conjugation with EvalMod on the standard ring.
     galois_elements: BTreeSet<i64>,
-    /// Slot rotations of a first CoeffsToSlots factor left to the raise.
-    first_factor_rotations: Vec<i64>,
+    /// Galois elements of the diagonals of a first CoeffsToSlots factor left to the raise.
+    first_factor_galois: Vec<i64>,
     sparse_secret_hamming_weight: Option<usize>,
     eval_mod_ring: EvalModRing,
     cyclotomic_order: i64,
@@ -751,7 +752,7 @@ pub(crate) struct KeyRecipe {
 impl KeyRecipe {
     pub(crate) fn new(
         mut galois_elements: BTreeSet<i64>,
-        first_factor_rotations: Vec<i64>,
+        first_factor_galois: Vec<i64>,
         sparse_secret_hamming_weight: Option<usize>,
         eval_mod_ring: EvalModRing,
         cyclotomic_order: i64,
@@ -763,7 +764,7 @@ impl KeyRecipe {
         }
         Self {
             galois_elements,
-            first_factor_rotations,
+            first_factor_galois,
             sparse_secret_hamming_weight,
             eval_mod_ring,
             cyclotomic_order,
@@ -883,16 +884,16 @@ impl KeyRecipe {
             layout.encapsulation.is_some()
         );
 
-        let (order, first_factor_rotations) = (self.cyclotomic_order, &self.first_factor_rotations);
+        let (order, first_factor_galois) = (self.cyclotomic_order, &self.first_factor_galois);
         anyhow::ensure!(
-            first_factor_rotations.is_empty() == layout.first_factor_key.is_none(),
-            "bootstrapping key layout has {} first-factor key layout, the compiled recipe has {} first-factor rotations",
+            first_factor_galois.is_empty() == layout.first_factor_key.is_none(),
+            "bootstrapping key layout has {} first-factor key layout, the compiled recipe has {} first-factor diagonals",
             if layout.first_factor_key.is_some() { "a" } else { "no" },
-            first_factor_rotations.len()
+            first_factor_galois.len()
         );
         if let Some(encaps) = &layout.encapsulation {
             anyhow::ensure!(
-                encaps.sparse_to_dense.is_some() == first_factor_rotations.is_empty(),
+                encaps.sparse_to_dense.is_some() == first_factor_galois.is_empty(),
                 "bootstrapping key layout {} a sparse-to-dense key, which the recipe uses only without the first factor on the raise",
                 if encaps.sparse_to_dense.is_some() { "has" } else { "lacks" }
             );
@@ -925,22 +926,22 @@ impl KeyRecipe {
                             source_xe: &mut Source,
                             source_xa: &mut Source,
                             scratch: &mut ScratchArena<'_, BE>| {
-            let mut keys = HashMap::with_capacity(first_factor_rotations.len());
+            let mut keys = HashMap::with_capacity(first_factor_galois.len());
             if let Some(key_layout) = &layout.first_factor_key {
                 let rank = sk_raise.rank();
                 let (mut sk_rotated, mut scratch) = scratch.borrow().take_glwe_secret_scratch(sk_raise.n(), rank);
                 *sk_rotated.dist_mut() = *sk_raise.dist();
-                for &rotation in first_factor_rotations {
+                for &galois in first_factor_galois {
                     {
                         let sk = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_raise.data());
                         let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_rotated.data_mut());
                         for col in 0..rank.as_usize() {
-                            module.vec_znx_automorphism(galois_element(rotation, order), &mut res, col, &sk, col);
+                            module.vec_znx_automorphism(galois_at(galois, order), &mut res, col, &sk, col);
                         }
                     }
                     let mut key = module.glwe_switching_key_alloc_from_infos(key_layout);
                     module.glwe_switching_key_encrypt_sk(&mut key, &sk_rotated, sk_dense, source_xe, source_xa, &mut scratch);
-                    keys.insert(rotation, key);
+                    keys.insert(galois, key);
                 }
             }
             keys

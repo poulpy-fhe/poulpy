@@ -53,7 +53,7 @@ impl<F> Scheduled<F> {
     pub(crate) fn layout(&self) -> MapLayout {
         MapLayout {
             lt: LinearTransformationLayout {
-                indexes: self.map.indexes(),
+                galois: self.map.galois(),
                 slots: self.map.slots(),
                 strategy: self.strategy,
             },
@@ -147,18 +147,18 @@ impl MapLayout {
 /// The transform of schedule `plan` with `diagonal` at every diagonal.
 pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) -> LinearTransformation<P> {
     LinearTransformation {
-        baby_steps: plan.baby_steps.clone(),
+        baby_galois: plan.baby_galois.clone(),
         rotations: plan.rotations,
         giant_steps: plan
-            .giant_steps
+            .giant_galois
             .iter()
             .zip(&plan.index)
-            .map(|(&rot, babies)| GiantStep {
-                rot,
+            .map(|(&galois, babies)| GiantStep {
+                galois,
                 diagonals: babies
                     .iter()
-                    .map(|&baby| Diagonal {
-                        baby,
+                    .map(|&baby_galois| Diagonal {
+                        baby_galois,
                         plaintext: diagonal,
                     })
                     .collect(),

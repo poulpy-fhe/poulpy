@@ -27,7 +27,7 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes required by [`Self::glwe_linear_transformation_eval_into`] for a transform
     /// with the schedule `plan` ([`LinearTransformation::index`]), which gives the giant-step
     /// tree of [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo); every
-    /// plan with a key per rotation gives the same bytes. `pt` is the layout of the diagonals, whose
+    /// plan with a key per step gives the same bytes. `pt` is the layout of the diagonals, whose
     /// rank selects the product: plaintexts at rank 0, ciphertexts at the rank of `a`, then relinearized
     /// with a tensor key no wider than `tsk`, which plaintext diagonals never read. `key` is the widest
     /// key the transform switches with.
@@ -108,7 +108,7 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes required by [`Self::glwe_linear_transformation_baby_steps_prepare`] for a
     /// cache of the baby steps of `plan`, which gives the doubling of
     /// [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo); every plan with
-    /// a key per rotation gives the same bytes.
+    /// a key per step gives the same bytes.
     fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes<A, K>(
         &self,
         a: &A,
@@ -156,15 +156,15 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
         A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
         H: GetAutomorphismKey<BE, Rg>;
 
-    /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
-    /// rotations) and the matrix `rhs`, generic over the diagonal representation
+    /// Computes `res = M(a)` from the prepared left cache `lhs` (the input mapped by
+    /// the baby Galois elements) and the matrix `rhs`, generic over the diagonal representation
     /// `P` (see [`GLWEDiagonalProd`](crate::layouts::GLWEDiagonalProd)), the rank of the diagonals selecting the product:
     /// plaintexts at rank 0, multiplied into each giant step's product, or ciphertexts of the rank of `a`,
     /// prepared by [`Self::glwe_linear_transformation_rhs_prepare`] or streamed, whose products of each giant step are
     /// summed in DFT and relinearized once with the tensor key of `keys` at the larger of the widths of `lhs`
     /// ([`LinearTransformationBabySteps::k`]) and of the diagonals, through the one-pass relinearization where it
     /// applies (rank 1, `cnv_offset` at least `base2k`, the tensor key at `res`'s `base2k`), else as a tensor.
-    /// Where the one-pass product applies, one giant step at rotation 0 is
+    /// Where the one-pass product applies, one identity giant step is
     /// [`GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum`](crate::GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum)
     /// of its pairs, bit for bit.
     ///
@@ -176,15 +176,15 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     ///   compute, for implementations constrained by memory bandwidth.
     ///
     /// Both paths share this single evaluator and give the same result. `lhs` may
-    /// carry exactly `rhs.baby_steps` or a superset (e.g. the union of baby
-    /// rotations needed by several transforms).
+    /// carry exactly `rhs.baby_galois` or a superset (e.g. the union of baby
+    /// steps needed by several transforms).
     ///
     /// # Panics
     ///
     /// Before writing `res`, if `rhs` has no diagonal or a giant step
     /// without one, if a giant step's first diagonal is not as wide as the
     /// transform's first diagonal, if a diagonal's degree raised to `MIN_DEGREE`
-    /// differs from the first diagonal's, or if `lhs` lacks a baby rotation that `rhs`
+    /// differs from the first diagonal's, or if `lhs` lacks a baby step that `rhs`
     /// reads. The width and scale of the other plaintext diagonals are not checked: every diagonal of a
     /// transform shares them, as the encoder produces them. Ciphertext diagonals are each checked against the degree, `base2k` and
     /// rank of `res` and the first one's width, and `lhs` against the rank of `res`, and `keys` must hold the tensor
@@ -217,7 +217,7 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Before writing `res`, if `babies` is empty or `lts` is not as
     /// long, if a transform has no diagonal or a giant step without one, or if
-    /// a cache lacks a baby rotation that its transform reads. Also before
+    /// a cache lacks a baby step that its transform reads. Also before
     /// writing `res`, unless every term shares the first one's giant schedule,
     /// source layout, and first diagonal's layout, width and scale, every
     /// giant step's first diagonal has that width, and every diagonal's degree raised to `MIN_DEGREE` equals its term's

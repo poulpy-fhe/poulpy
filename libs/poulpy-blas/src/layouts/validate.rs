@@ -26,7 +26,7 @@ use super::{
     BlasVectorShape, Left, Right,
     ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
-    diagonal_ciphertext::{AppendAxis, append_rotations},
+    diagonal_ciphertext::{AppendAxis, append_rotations, step_rotation},
     grid_batch,
     matmul_operand::{
         left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout, same_shape,
@@ -377,16 +377,26 @@ fn bsgs_uses<P>(
     rank: Rank,
     f: UseSink<'_>,
 ) -> Result<()> {
-    let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-    let giants = match lt.rotations {
+    let giants = lt
+        .giant_steps
+        .iter()
+        .filter(|gs| !gs.diagonals.is_empty())
+        .map(|gs| gs.galois);
+    let giants: Vec<i64> = match lt.rotations {
         BsgsRotations::PerRotation => giants.collect(),
-        rotations => rotations.giant_key_rotations(giants),
+        rotations => rotations.giant_key_galois(giants),
     };
-    let babies = lt.rotations.baby_key_rotations(lt.baby_steps().iter().copied());
-    let babies = babies.into_iter().map(|rotation| (rotation, baby_k));
+    let babies = lt.rotations.baby_key_galois(lt.baby_galois().iter().copied());
+    let babies = babies.into_iter().map(|galois| (galois, baby_k));
     babies
-        .chain(giants.into_iter().map(|rotation| (rotation, giant_k)))
-        .try_for_each(|(rotation, k)| f(RotationUse { rotation, k, rank }))
+        .chain(giants.into_iter().map(|galois| (galois, giant_k)))
+        .try_for_each(|(galois, k)| {
+            f(RotationUse {
+                rotation: step_rotation(galois),
+                k,
+                rank,
+            })
+        })
 }
 
 /// Whether `uses`, an enumerator, yields a look-up [`ensure_rotation`] makes: a rotation other than the identity.

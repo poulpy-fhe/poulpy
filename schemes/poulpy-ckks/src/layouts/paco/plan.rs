@@ -51,7 +51,7 @@ pub struct PaCoDFTPlan {
     /// unit list, in **evaluation order** (see the module docs for the unit
     /// lists). Shape invariants are owned by [`FactorSchedule`] — the same
     /// validator [`DFTPlan`](crate::layouts::DFTPlan) uses. For a giant-step
-    /// heuristic, feed the factor's diagonal indexes to
+    /// heuristic, feed the factor's diagonal Galois elements to
     /// [`optimal_bsgs_giant_step`](poulpy_core::layouts::optimal_bsgs_giant_step).
     schedule: FactorSchedule,
     /// Plaintext encode scale of this chain's factors; each of the chain's
@@ -619,7 +619,7 @@ impl PaCoPlan {
     /// The slot rotations of the trace/product folds of Algorithm 4, in
     /// pipeline order: `Tr_{N/2→n}` and `Pr_{n→2C}` (the paper's tail traces
     /// are folded into the SlotToCoeff factors, whose rotations
-    /// [`Self::galois_elements`] collects from the factor indexes).
+    /// [`Self::galois_elements`] collects from the factor diagonals).
     pub fn fold_rotations(&self) -> Vec<i64> {
         let mut rots = fold_rotations(self.half_n(), self.slots());
         rots.extend(fold_rotations(self.slots(), 2 * self.c));
@@ -646,7 +646,7 @@ impl PaCoPlan {
                 .with_slot_order(slot_order)
                 .stc_factors()
                 .iter()
-                .map(|f| f.indexes().len())
+                .map(|f| f.galois().len())
                 .sum()
         };
         (count(PaCoSlotOrder::Natural), count(PaCoSlotOrder::BitRevLow))
@@ -674,7 +674,7 @@ impl PaCoPlan {
 
     /// Enumerates keys from factor matrices that were already generated for
     /// context compilation, avoiding a second factorization solely to recover
-    /// diagonal indexes.
+    /// their diagonals.
     pub(crate) fn galois_elements_from_factors<T>(
         &self,
         coeffs_to_slots: &[ComplexDiagonals<T>],
@@ -691,7 +691,7 @@ impl PaCoPlan {
         }
         let mut extend = |factor: &ComplexDiagonals<T>, giant_step: usize| {
             let layout = LinearTransformationLayout {
-                indexes: factor.indexes(),
+                galois: factor.galois(),
                 slots: factor.slots(),
                 strategy: LinearTransformationStrategy::Bsgs { giant_step },
             };

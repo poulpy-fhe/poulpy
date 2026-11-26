@@ -819,8 +819,8 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     );
 }
 
-/// The plan-level [`DFTPlan`] helpers — [`DFTPlan::galois_elements`],
-/// [`DFTPlan::diagonal_indexes`], [`DFTPlan::num_diagonals`] — are derived
+/// The plan-level [`DFTPlan`] helpers, [`DFTPlan::galois_elements`],
+/// [`DFTPlan::diagonal_galois`] and [`DFTPlan::num_diagonals`], are derived
 /// structurally from the factorization schedule, without generating any diagonal.
 /// This pins them to the compiled [`DFTMatrix`]: the Galois elements must match
 /// exactly (keys are addressed by Galois element), for both directions and the
@@ -895,7 +895,7 @@ where
                 factor.giant_steps.iter().flat_map(|gs| {
                     gs.diagonals
                         .iter()
-                        .map(move |d| (gs.rot, d.baby, d.plaintext.plaintext_meta()))
+                        .map(move |d| (gs.galois, d.baby_galois, d.plaintext.plaintext_meta()))
                 })
             })
             .collect();

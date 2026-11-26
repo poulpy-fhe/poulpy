@@ -15,7 +15,7 @@ use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{
         GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationPlan,
-        LinearTransformationStrategy, optimal_bsgs_giant_step,
+        LinearTransformationStrategy, galois_of_rotation, galois_rotation, optimal_bsgs_giant_step,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, galois_element};
@@ -59,7 +59,7 @@ pub enum DFTOutputFormat {
 ///
 /// Built with [`Self::new`], which validates the shape invariants once — a
 /// `DFTPlan` that exists is always shape-valid, so the derived-index APIs
-/// ([`Self::diagonal_indexes`], [`Self::galois_elements`]) are infallible.
+/// ([`Self::diagonal_galois`], [`Self::galois_elements`]) are infallible.
 ///
 /// The [`FactorSchedule`] gives one [`FactorStep`] per factor matrix: how many
 /// radix-2 FFT layers that matrix merges (`depth`) and its BSGS giant-step
@@ -114,7 +114,7 @@ pub struct DFTPlan {
 
 /// Single source of truth for the radix-2 merge geometry, shared by the factor
 /// generator (`crate::layouts::dft_matrices::merge_next_layer`) and the
-/// value-free index replay ([`DFTPlan::diagonal_indexes`]): the rotation a
+/// value-free index replay ([`DFTPlan::diagonal_galois`]): the rotation a
 /// merged FFT layer applies. `level` counts down from `log_slots` (the layer
 /// being merged into the factor); `mask` is the factor's slot-count mask
 /// (`2·slots − 1` on the sparse-repack first `Decode` factor, else `slots − 1`).
@@ -391,16 +391,16 @@ impl DFTPlan {
         self.num_factors() - usize::from(self.first_factor_on_raise)
     }
 
-    /// Slot rotations of the first factor's diagonals, in increasing order, on a
+    /// Galois elements of the first factor's diagonals, by increasing rotation, on a
     /// ring of degree `2^log_n`: one giant step each when the factor is left to
     /// the modulus raise ([`Self::with_first_factor_on_raise`]).
-    pub fn first_factor_rotations(&self, log_n: usize) -> Vec<i64> {
+    pub fn first_factor_galois(&self, log_n: usize) -> Vec<i64> {
         let slots = 1i64 << (self.log_slots() + usize::from(self.is_sparse_repack(log_n)));
-        let rotations: BTreeSet<i64> = self.diagonal_indexes(log_n)[0]
+        let rotations: BTreeSet<i64> = self.diagonal_rotations(log_n)[0]
             .iter()
             .map(|index| index.rem_euclid(slots))
             .collect();
-        rotations.into_iter().collect()
+        rotations.into_iter().map(galois_of_rotation).collect()
     }
 
     /// Applies the transform bit-reversed (and expects bit-reversed inputs).
@@ -424,16 +424,16 @@ impl DFTPlan {
         let slots = 1usize << self.log_slots();
         let last_factor = self.num_factors() - 1;
         let giant_steps: Vec<_> = self
-            .diagonal_indexes(log_n)
+            .diagonal_galois(log_n)
             .into_iter()
             .enumerate()
-            .map(|(i, indexes)| {
+            .map(|(i, galois)| {
                 let repack_boundary = match self.kind {
                     DFTType::Encode => i == last_factor,
                     DFTType::Decode => i == 0,
                 };
                 let factor_slots = if sparse && repack_boundary { slots << 1 } else { slots };
-                optimal_bsgs_giant_step(indexes, factor_slots)
+                optimal_bsgs_giant_step(galois, factor_slots)
             })
             .collect();
         for (step, giant_step) in self.schedule.steps.iter_mut().zip(giant_steps) {
@@ -569,8 +569,8 @@ impl DFTPlan {
         out
     }
 
-    /// Non-zero diagonal indexes of each factor matrix, in evaluation order
-    /// (`diagonal_indexes(..)[i]` sorted ascending), **derived without generating
+    /// Galois elements of the non-zero diagonals of each factor matrix, in evaluation order
+    /// (by increasing rotation), **derived without generating
     /// any diagonal value**.
     ///
     /// The radix-2 butterfly merge spreads every diagonal `d` of a factor to
@@ -584,7 +584,15 @@ impl DFTPlan {
     ///
     /// Infallible: every `DFTPlan` is shape-valid by construction
     /// ([`Self::new`]).
-    pub fn diagonal_indexes(&self, log_n: usize) -> Vec<Vec<i64>> {
+    pub fn diagonal_galois(&self, log_n: usize) -> Vec<Vec<i64>> {
+        self.diagonal_rotations(log_n)
+            .into_iter()
+            .map(|rotations| rotations.into_iter().map(galois_of_rotation).collect())
+            .collect()
+    }
+
+    /// The rotations of [`Self::diagonal_galois`], by increasing value.
+    fn diagonal_rotations(&self, log_n: usize) -> Vec<Vec<i64>> {
         self.replay_diagonals(log_n)
             .iter()
             .map(|map| map.keys().copied().collect())
@@ -592,7 +600,7 @@ impl DFTPlan {
     }
 
     /// Sparsity of every non-zero diagonal of each factor matrix, in evaluation
-    /// order and sorted by index like [`Self::diagonal_indexes`], **derived
+    /// order and sorted by rotation like [`Self::diagonal_galois`], **derived
     /// without generating any diagonal value**.
     ///
     /// The value `s` paired with a diagonal means that, encoded on a ring of
@@ -634,7 +642,7 @@ impl DFTPlan {
             .iter()
             .map(|map| {
                 map.iter()
-                    .map(|(&index, &period)| (index, log_n.saturating_sub(1 + period.ilog2() as usize)))
+                    .map(|(&index, &period)| (galois_of_rotation(index), log_n.saturating_sub(1 + period.ilog2() as usize)))
                     .collect()
             })
             .collect()
@@ -651,15 +659,15 @@ impl DFTPlan {
     }
 
     /// Number of non-zero diagonals of each factor matrix, in evaluation order
-    /// (the per-factor lengths of [`diagonal_indexes`](Self::diagonal_indexes)).
+    /// (the per-factor lengths of [`diagonal_galois`](Self::diagonal_galois)).
     pub fn num_diagonals(&self, log_n: usize) -> Vec<usize> {
-        self.diagonal_indexes(log_n).iter().map(Vec::len).collect()
+        self.diagonal_rotations(log_n).iter().map(Vec::len).collect()
     }
 
     /// Distinct Galois elements whose automorphism keys evaluating this transform
     /// requires, on a ring of degree `2^log_n` with the given `cyclotomic_order`.
     ///
-    /// Derived from the per-factor [`diagonal_indexes`](Self::diagonal_indexes) and
+    /// Derived from the per-factor [`diagonal_galois`](Self::diagonal_galois) and
     /// per-factor BSGS `giant_steps` (plus the `slots` repack rotation on the
     /// sparse path), without generating any diagonal. Equals
     /// [`DFTMatrix::galois_elements`] on the compiled matrix. The conjugation key
@@ -705,14 +713,14 @@ impl DFTPlan {
     /// the modulus raise, which rotates with keys of its own.
     fn factor_schedules(&self, log_n: usize) -> Vec<Option<LinearTransformationPlan>> {
         let slot_count = self.factor_slots(log_n);
-        self.diagonal_indexes(log_n)
+        self.diagonal_galois(log_n)
             .into_iter()
             .zip(&self.schedule.steps)
             .enumerate()
-            .map(|(factor, (indexes, step))| {
+            .map(|(factor, (galois, step))| {
                 (factor != 0 || !self.first_factor_on_raise).then(|| {
                     LinearTransformationLayout {
-                        indexes,
+                        galois,
                         slots: slot_count,
                         strategy: self.factor_strategy(step.giant_step),
                     }
@@ -781,16 +789,17 @@ impl DFTPlan {
     fn last_factor_schedule_at(&self, log_n: usize, slots: usize) -> LinearTransformationPlan {
         let tile = self.factor_slots(log_n).max(slots);
         let last = self
-            .diagonal_indexes(log_n)
+            .diagonal_rotations(log_n)
             .pop()
             .expect("a DFT plan has at least one factor");
         let step = self.schedule.steps.last().expect("a DFT plan has at least one factor");
         LinearTransformationLayout {
-            indexes: last
+            galois: last
                 .into_iter()
                 .map(|index| index.rem_euclid(tile as i64))
                 .collect::<BTreeSet<_>>()
                 .into_iter()
+                .map(galois_of_rotation)
                 .collect(),
             slots: tile,
             strategy: self.factor_strategy(step.giant_step),
@@ -813,11 +822,11 @@ fn charge_factor_keys(
     scale: usize,
     cyclotomic_order: i64,
 ) {
-    let babies = schedule.baby_steps.iter().copied();
+    let babies = schedule.baby_galois.iter().copied();
     for p in schedule.rotations.galois_elements(babies, [], cyclotomic_order) {
         charge_key(offsets, p, below);
     }
-    let giants = schedule.giant_steps.iter().copied();
+    let giants = schedule.giant_galois.iter().copied();
     for p in schedule.rotations.galois_elements([], giants, cyclotomic_order) {
         charge_key(offsets, p, below + scale);
     }
@@ -1199,15 +1208,15 @@ fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::
                 let pt = &diagonal.plaintext;
                 crate::ckks_ensure_operand!(
                     op,
-                    factor.baby_steps.contains(&diagonal.baby),
+                    factor.baby_galois.contains(&diagonal.baby_galois),
                     "DFT diagonal has no baby step"
                 );
                 crate::ckks_ensure_operand!(
                     op,
-                    entries.insert((giant.rot, diagonal.baby)),
-                    "DFT factor repeats the diagonal (giant rot {}, baby {})",
-                    giant.rot,
-                    diagonal.baby
+                    entries.insert((giant.galois, diagonal.baby_galois)),
+                    "DFT factor repeats the diagonal (giant Galois element {}, baby {})",
+                    giant.galois,
+                    diagonal.baby_galois
                 );
                 crate::ckks_ensure_operand!(
                     op,
@@ -1342,7 +1351,7 @@ where
     let merged = block_scaled(&last, values);
     let step = plan.schedule.steps.last().expect("a DFT plan has at least one factor");
     let max = merged
-        .indexes()
+        .galois()
         .iter()
         .flat_map(|&d| [merged.re.get(d), merged.im.get(d)])
         .flatten()
@@ -1374,7 +1383,7 @@ where
 
 /// The diagonals of `last`, a factor of `slots` slots, with the columns of block `B` scaled on the left by the slots
 /// `values[B]`: `M[j][c]` becomes `values[c / m][j]·M[j][c]` for blocks of `m` columns. The diagonals keep their
-/// indexes, so the factor keeps its keys.
+/// Galois elements, so the factor keeps its keys.
 fn block_scaled<F: DftScalar>(
     last: &crate::layouts::ComplexDiagonals<F>,
     values: &[(Vec<F>, Vec<F>)],
@@ -1384,11 +1393,12 @@ fn block_scaled<F: DftScalar>(
     let slots = last.slots();
     let m = slots / values.len();
     let mut scaled = crate::layouts::ComplexDiagonals::new(Diagonals::new(slots), Diagonals::new(slots));
-    for d in last.indexes() {
+    for d in last.galois() {
+        let shift = galois_rotation(d, slots) as usize;
         let at = |part: &Diagonals<F>, j: usize| part.get(d).map_or(F::zero(), |v| v[j % v.len()]);
         let (mut re, mut im) = (Vec::with_capacity(slots), Vec::with_capacity(slots));
         for j in 0..slots {
-            let (scale_re, scale_im) = &values[(j + d as usize) % slots / m];
+            let (scale_re, scale_im) = &values[(j + shift) % slots / m];
             let (a, b, c, e) = (at(&last.re, j), at(&last.im, j), scale_re[j], scale_im[j]);
             re.push(a * c - b * e);
             im.push(a * e + b * c);
@@ -1402,6 +1412,7 @@ fn block_scaled<F: DftScalar>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use poulpy_core::layouts::galois_is_identity;
 
     fn plan(kind: DFTType, depths: &[usize], format: DFTOutputFormat) -> DFTPlan {
         DFTPlan::new(
@@ -1435,11 +1446,11 @@ mod tests {
                 poulpy_core::layouts::Diagonals::new(half),
                 poulpy_core::layouts::Diagonals::new(half),
             );
-            scale.re.set(0, vec![0.5]);
-            scale.im.set(0, vec![-0.5]);
+            scale.re.set(galois_of_rotation(0), vec![0.5]);
+            scale.im.set(galois_of_rotation(0), vec![-0.5]);
             let folded = scale.compose(&last);
             let layout = LinearTransformationLayout {
-                indexes: folded.indexes(),
+                galois: folded.galois(),
                 slots: folded.slots(),
                 strategy: plan.factor_strategy(plan.schedule.steps.last().unwrap().giant_step),
             };
@@ -1544,10 +1555,10 @@ mod tests {
     #[test]
     fn optimal_bsgs_matches_dense_dft_geometry() {
         let encode = plan(DFTType::Encode, &[2, 3, 3, 3], DFTOutputFormat::SplitRealAndImag);
-        let encode_indexes = encode.diagonal_indexes(12);
+        let encode_galois = encode.diagonal_galois(12);
         let encode = encode.with_optimal_bsgs(12);
         assert_eq!(encode.schedule().giant_steps(), vec![1024, 256, 32, 4]);
-        assert_eq!(encode.diagonal_indexes(12), encode_indexes);
+        assert_eq!(encode.diagonal_galois(12), encode_galois);
 
         let decode = plan(DFTType::Decode, &[3, 3, 3, 2], DFTOutputFormat::SplitRealAndImag).with_optimal_bsgs(12);
         assert_eq!(decode.schedule().giant_steps(), vec![4, 32, 256, 1024]);
@@ -1592,24 +1603,32 @@ mod tests {
         assert_eq!(reversed.factor_log_sparsity(16), vec![0; 4]);
     }
 
-    fn bsgs_cost(indexes: &[i64], slots: usize, giant_step: usize) -> (usize, [usize; 2], BTreeSet<i64>) {
+    fn bsgs_cost(galois: &[i64], slots: usize, giant_step: usize) -> (usize, [usize; 2], BTreeSet<i64>) {
         let index = LinearTransformationLayout {
-            indexes: indexes.to_vec(),
+            galois: galois.to_vec(),
             slots,
             strategy: LinearTransformationStrategy::Bsgs { giant_step },
         }
         .index();
         let products = index.index.iter().map(Vec::len).sum();
         let rotations: BTreeSet<_> = index
-            .baby_steps
+            .baby_galois
             .iter()
-            .chain(&index.giant_steps)
+            .chain(&index.giant_galois)
             .copied()
-            .filter(|&rotation| rotation != 0)
+            .filter(|&galois| !galois_is_identity(galois))
             .collect();
         let mut rotations_by_side = [
-            index.baby_steps.iter().filter(|&&rotation| rotation != 0).count(),
-            index.giant_steps.iter().filter(|&&rotation| rotation != 0).count(),
+            index
+                .baby_galois
+                .iter()
+                .filter(|&&galois| !galois_is_identity(galois))
+                .count(),
+            index
+                .giant_galois
+                .iter()
+                .filter(|&&galois| !galois_is_identity(galois))
+                .count(),
         ];
         rotations_by_side.sort_unstable();
         (products, rotations_by_side, rotations)
@@ -1627,7 +1646,7 @@ mod tests {
                     for bit_reversed in [false, true] {
                         let plan = plan(kind, &depths, DFTOutputFormat::RepackImagAsReal).with_bit_reversed(bit_reversed);
                         let log_n = log_slots + 2;
-                        let indexes = plan.diagonal_indexes(log_n);
+                        let indexes = plan.diagonal_galois(log_n);
                         let doubled_slots = 1 << (log_slots + 1);
                         let old_giant_steps: Vec<_> = indexes
                             .iter()

@@ -34,7 +34,7 @@
 //! **application order** (first element is applied to the ciphertext first);
 //! the chain product is grouping-invariant.
 
-use poulpy_core::layouts::DiagonalArithmetic;
+use poulpy_core::layouts::{DiagonalArithmetic, galois_of_rotation, galois_rotation};
 
 use crate::layouts::{
     ComplexDiagonals,
@@ -182,14 +182,14 @@ pub(crate) fn paco_psi_c2s_factors<F: DftScalar + DiagonalArithmetic>(
     );
     let mut mu_diag = vec![<F as num_traits::Zero>::zero(); two_c];
     mu_diag[..p.c()].fill(F::one());
-    mu.re.set(0, mu_diag);
+    mu.re.set(galois_of_rotation(0), mu_diag);
 
     // R_C: slot rotation by C (`out[j] = v[j+C]`).
     let mut rot_c = ComplexDiagonals::new(
         poulpy_core::layouts::Diagonals::<F>::new(two_c),
         poulpy_core::layouts::Diagonals::<F>::new(two_c),
     );
-    rot_c.re.set(p.c() as i64, vec![F::one(); two_c]);
+    rot_c.re.set(galois_of_rotation(p.c() as i64), vec![F::one(); two_c]);
 
     let a = mu.compose(&last);
     let mut conj_last = last;
@@ -303,8 +303,8 @@ pub(crate) fn paco_pack_factor<F: DftScalar>(p: &PaCoPlan) -> ComplexDiagonals<F
     // Quarter q_k = [k·C/2, (k+1)·C/2): the −i read (real route) sits at
     // offset (−k·C/2) mod 2C, the +1 read (imaginary route) C/2 further.
     for k in 0..4usize {
-        let neg_i_idx = ((4 - k) % 4 * quarter) as i64;
-        let one_idx = (neg_i_idx + quarter as i64).rem_euclid(tile as i64);
+        let neg_i_idx = galois_of_rotation(((4 - k) % 4 * quarter) as i64);
+        let one_idx = galois_of_rotation((((4 - k) % 4 * quarter + quarter) % tile) as i64);
         let mut d_im = im.get(neg_i_idx).cloned().unwrap_or_else(|| vec![F::zero(); tile]);
         let mut d_re = re.get(one_idx).cloned().unwrap_or_else(|| vec![F::zero(); tile]);
         for j in k * quarter..(k + 1) * quarter {
@@ -339,8 +339,9 @@ pub(crate) fn conjugate_by_low_bitrev<F: DftScalar>(cd: &ComplexDiagonals<F>, lo
     let p = |x: usize| crate::layouts::slots::ext_bitrev_low(x, log_p);
     let mut re = poulpy_core::layouts::Diagonals::<F>::new(m);
     let mut im = poulpy_core::layouts::Diagonals::<F>::new(m);
-    for i in cd.indexes() {
-        let (dre, dim) = (cd.re.get(i), cd.im.get(i));
+    for g in cd.galois() {
+        let i = galois_rotation(g, m);
+        let (dre, dim) = (cd.re.get(g), cd.im.get(g));
         for r in 0..m {
             let vre = dre.map_or_else(F::zero, |d| d[r % d.len()]);
             let vim = dim.map_or_else(F::zero, |d| d[r % d.len()]);
@@ -349,7 +350,7 @@ pub(crate) fn conjugate_by_low_bitrev<F: DftScalar>(cd: &ComplexDiagonals<F>, lo
             }
             let c_old = (r as i64 + i).rem_euclid(m as i64) as usize;
             let (r_new, c_new) = (p(r), p(c_old));
-            let idx = ((c_new + m - r_new) % m) as i64;
+            let idx = galois_of_rotation(((c_new + m - r_new) % m) as i64);
             if vre != F::zero() {
                 let mut d = re.get(idx).cloned().unwrap_or_else(|| vec![F::zero(); m]);
                 d[r_new] = d[r_new] + vre;
@@ -373,12 +374,13 @@ fn bit_reverse_columns<F: DftScalar>(cd: &ComplexDiagonals<F>) -> ComplexDiagona
     let br = |x: usize| (x as u32).reverse_bits() as usize >> (u32::BITS - log_m);
     let mut re = poulpy_core::layouts::Diagonals::<F>::new(m);
     let mut im = poulpy_core::layouts::Diagonals::<F>::new(m);
-    for i in cd.indexes() {
-        let (dre, dim) = (cd.re.get(i), cd.im.get(i));
+    for g in cd.galois() {
+        let i = galois_rotation(g, m);
+        let (dre, dim) = (cd.re.get(g), cd.im.get(g));
         for r in 0..m {
             let c_old = (r + i as usize) % m;
             let c_new = br(c_old);
-            let idx = ((c_new + m - r) % m) as i64;
+            let idx = galois_of_rotation(((c_new + m - r) % m) as i64);
             let vre = dre.map_or(F::zero(), |d| d[r % d.len()]);
             let vim = dim.map_or(F::zero(), |d| d[r % d.len()]);
             if vre != F::zero() {
@@ -410,9 +412,10 @@ pub(crate) fn mul_vec_tiled<F: DftScalar>(cd: &ComplexDiagonals<F>, v: &[Cpx<F>]
     let len = v.len();
     debug_assert!(len.is_multiple_of(m));
     let mut out = vec![Cpx::zero(); len];
-    for i in cd.indexes() {
-        let re = cd.re.get(i);
-        let im = cd.im.get(i);
+    for g in cd.galois() {
+        let i = galois_rotation(g, m);
+        let re = cd.re.get(g);
+        let im = cd.im.get(g);
         for (j, o) in out.iter_mut().enumerate() {
             let d = Cpx::new(
                 re.map_or_else(F::zero, |d| d[j % d.len()]),
@@ -594,15 +597,19 @@ mod tests {
     fn assert_cd_eq(a: &ComplexDiagonals<f64>, b: &ComplexDiagonals<f64>, ctx: &str) {
         assert_eq!(a.slots(), b.slots(), "{ctx}: slots");
         let m = a.slots();
-        let mut offsets = a.indexes();
-        offsets.extend(b.indexes());
+        let mut offsets: Vec<i64> = a
+            .galois()
+            .into_iter()
+            .chain(b.galois())
+            .map(|g| galois_rotation(g, m))
+            .collect();
         offsets.sort_unstable();
         offsets.dedup();
         let zeros = vec![0.0; m];
         for i in offsets {
             for (pa, pb, part) in [(&a.re, &b.re, "re"), (&a.im, &b.im, "im")] {
-                let x = pa.get(i).unwrap_or(&zeros);
-                let y = pb.get(i).unwrap_or(&zeros);
+                let x = pa.get(galois_of_rotation(i)).unwrap_or(&zeros);
+                let y = pb.get(galois_of_rotation(i)).unwrap_or(&zeros);
                 let x: Vec<f64> = (0..m).map(|j| x[j % x.len()]).collect();
                 let y: Vec<f64> = (0..m).map(|j| y[j % y.len()]).collect();
                 assert_eq!(x, y, "{ctx}: diag {i} {part}");
@@ -658,11 +665,16 @@ mod tests {
         for m in paco_c2s_factors::<f64>(&p, &[1, 1, 1, 1]) {
             let dim = m.slots() as i64;
             let magnitude = |cd: &ComplexDiagonals<f64>| -> i64 {
-                cd.indexes().iter().map(|&i| i.min((dim - i).rem_euclid(dim))).max().unwrap()
+                cd.galois()
+                    .iter()
+                    .map(|&g| galois_rotation(g, dim as usize))
+                    .map(|i| i.min((dim - i).rem_euclid(dim)))
+                    .max()
+                    .unwrap()
             };
             let mag = magnitude(&m);
             let mc = conjugate_by_low_bitrev(&m, log_p);
-            assert_eq!(mc.indexes().len(), m.indexes().len(), "count at magnitude {mag}");
+            assert_eq!(mc.galois().len(), m.galois().len(), "count at magnitude {mag}");
             let l = mag.trailing_zeros() as usize;
             if l >= log_p {
                 assert_cd_eq(&m, &mc, &format!("level {l} (≥ log_p)"));
@@ -688,11 +700,11 @@ mod tests {
         let mut mu = ComplexDiagonals::new(Diagonals::<f64>::new(two_c), Diagonals::<f64>::new(two_c));
         let mut d = vec![0.0; two_c];
         d[..p.c()].fill(1.0);
-        mu.re.set(0, d);
+        mu.re.set(galois_of_rotation(0), d);
         assert_cd_eq(&mu, &conjugate_by_low_bitrev(&mu, log_p), "mu");
 
         let mut rc = ComplexDiagonals::new(Diagonals::<f64>::new(two_c), Diagonals::<f64>::new(two_c));
-        rc.re.set(p.c() as i64, vec![1.0; two_c]);
+        rc.re.set(galois_of_rotation(p.c() as i64), vec![1.0; two_c]);
         assert_cd_eq(&rc, &conjugate_by_low_bitrev(&rc, log_p), "rot_C");
     }
 
@@ -721,7 +733,7 @@ mod tests {
             let log_p = p.log_c() - 1;
             let counts: Vec<(usize, usize)> = paco_c2s_factors::<f64>(&p, &schedule)
                 .iter()
-                .map(|m| (m.indexes().len(), conjugate_by_low_bitrev(m, log_p).indexes().len()))
+                .map(|m| (m.galois().len(), conjugate_by_low_bitrev(m, log_p).galois().len()))
                 .collect();
             assert_eq!(counts, want, "C={c} {schedule:?}");
         }
@@ -798,8 +810,8 @@ mod tests {
             // returns to its raw sparsity under BitRevLow; fully merged chains
             // sit at the dense ceiling either way.
             let (nat_counts, brl_counts): (Vec<usize>, Vec<usize>) = (
-                nat.iter().map(|m| m.indexes().len()).collect(),
-                brl.iter().map(|m| m.indexes().len()).collect(),
+                nat.iter().map(|m| m.galois().len()).collect(),
+                brl.iter().map(|m| m.galois().len()).collect(),
             );
             let (want_nat, want_brl): (Vec<usize>, Vec<usize>) = match schedule.as_slice() {
                 [1, 1, 1, 1, 1] => (vec![4, 14, 3, 3, 2], vec![4, 3, 3, 3, 2]),

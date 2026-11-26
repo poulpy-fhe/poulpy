@@ -1,6 +1,6 @@
 //! The products of a linear transformation whose diagonals are of the rank of its source.
 //!
-//! A giant step's product is the dot product of its baby rotations by its diagonals, summed over the terms of a sum
+//! A giant step's product is the dot product of its baby steps by its diagonals, summed over the terms of a sum
 //! and relinearized once: the baby-step kernel sums the tensor columns of every pair in DFT, then the one-pass
 //! relinearization brings back to digits the column it key-switches only, leaving the product in DFT before the
 //! normalization that `glwe_mul_prepared_relinearize_sum` would end with, so the giant-step loop rotates and sums it
@@ -37,7 +37,7 @@ use crate::{
 };
 
 /// The products of the transforms `lts` from the baby caches `babies`, into a result of the layout `res`: giant step
-/// `g`'s is the dot product of the baby rotations of every term by its diagonals of giant step `g`.
+/// `g`'s is the dot product of the baby steps of every term by its diagonals of giant step `g`.
 pub(super) struct CiphertextProducts<'a, BE: Backend, P, L, Rg: Ring> {
     babies: &'a [&'a LinearTransformationBabySteps<BE, Rg, L>],
     lts: &'a [&'a LinearTransformation<P>],
@@ -74,8 +74,8 @@ where
             for gs in &lt.giant_steps {
                 for d in &gs.diagonals {
                     assert!(
-                        b.baby_step(d.baby).n() == res.n.as_usize(),
-                        "a baby rotation is not at the degree of res"
+                        b.baby(d.baby_galois).n() == res.n.as_usize(),
+                        "a baby step is not at the degree of res"
                     );
                     let p = &d.plaintext;
                     assert!(
@@ -175,13 +175,13 @@ where
         let (n, cols) = (self.res.n.as_usize(), self.res.rank.as_usize() + 1);
         let (cnv_offset_hi, _) = cnv_offset_to_limb_offset(self.cnv_offset, self.res.base2k.as_usize());
         for (prod, g) in prods.iter_mut().zip(steps) {
-            // 1. The pairs of giant step `g` over every term: a baby rotation and a diagonal, prepared or a GLWE view
+            // 1. The pairs of giant step `g` over every term: a baby step and a diagonal, prepared or a GLWE view
             //    (`GLWEDiagonalProd::operand`).
             let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
                 lt.giant_steps[g]
                     .diagonals
                     .iter()
-                    .map(move |d| (lhs.baby_step(d.baby), d.plaintext.operand()))
+                    .map(move |d| (lhs.baby(d.baby_galois), d.plaintext.operand()))
             });
             // 2. The tensor route's result, and the tensor columns in DFT: `diag[i] = sum a[i] * b[i]` and `cross`, in row
             //    order of `i < j`, `sum a[i] * b[j] + a[j] * b[i]`.

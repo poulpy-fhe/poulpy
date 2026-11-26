@@ -10,7 +10,7 @@ use poulpy_core::{
     GLWEDiagonalProd,
     layouts::{
         Base2K, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
-        optimal_bsgs_giant_step,
+        galois_of_rotation, optimal_bsgs_giant_step,
     },
 };
 use poulpy_hal::{
@@ -83,7 +83,7 @@ impl BlasMatVecOperandLayout {
     ///
     /// As [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
     pub fn with_optimal_bsgs(self) -> Self {
-        let giant_step = optimal_bsgs_giant_step(map_indexes(&self), self.slots);
+        let giant_step = optimal_bsgs_giant_step(map_galois(&self), self.slots);
         self.with_strategy(LinearTransformationStrategy::Bsgs { giant_step })
     }
 
@@ -266,6 +266,7 @@ pub(crate) fn assert_fits(layout: &BlasMatVecOperandLayout) {
         LinearTransformationStrategy::BsgsPowersOfTwo { .. } => {
             panic!("the operand's schedule takes a key per rotation: Direct or Bsgs")
         }
+        LinearTransformationStrategy::Hypercube => panic!("the operand's schedule is Direct or Bsgs"),
     }
 }
 
@@ -328,15 +329,16 @@ fn block_diagonals<F: DiagonalArithmetic>(
     Diagonals::from_slot_map(layout.slots, layout.map_period(), terms)
 }
 
-/// The diagonals every map of an operand of `layout` has, whatever its values, ascending.
-fn map_indexes(layout: &BlasMatVecOperandLayout) -> Vec<i64> {
+/// The Galois elements of the diagonals every map of an operand of `layout` has, whatever its values, by increasing
+/// rotation.
+fn map_galois(layout: &BlasMatVecOperandLayout) -> Vec<i64> {
     assert_fits(layout);
     let (p_in, slots) = (layout.input_period, layout.slots);
     let mut used = vec![false; p_in];
     for (s, j, _, _) in terms(layout) {
         used[(j + slots - s) % slots] = true;
     }
-    (0..p_in).filter(|&d| used[d]).map(|d| d as i64).collect()
+    (0..p_in).filter(|&d| used[d]).map(|d| galois_of_rotation(d as i64)).collect()
 }
 
 /// The shape every map of an operand of `layout` shares, [`block_map`]'s, from the layout alone.
@@ -346,7 +348,7 @@ pub(crate) fn map_layout(layout: &BlasMatVecOperandLayout) -> MapLayout {
     MapLayout::new(
         LinearTransformationLayout {
             strategy: layout.strategy,
-            indexes: map_indexes(layout),
+            galois: map_galois(layout),
             slots: layout.slots,
         },
         layout.map_period(),

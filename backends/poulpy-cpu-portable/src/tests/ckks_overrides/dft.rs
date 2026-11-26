@@ -19,7 +19,7 @@ use poulpy_ckks::{CKKSCompositionError, CKKSInfos, CKKSResult, CoeffsMeta, Slots
 use poulpy_core::layouts::{
     Base2K, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedBackendRef, GLWEInfos, GLWETensorKeyLayout,
     GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, LinearTransformationPrepared,
-    SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
+    SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision, galois_of_rotation,
 };
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
@@ -154,7 +154,7 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
         "DFT factor has no diagonals",
     );
     let mut bad = factors();
-    bad[0].baby_steps.clear();
+    bad[0].baby_galois.clear();
     refused(
         "no baby step",
         matrix.try_with_factor_operands(&module, bad).map(drop),
@@ -199,16 +199,22 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
         if real {
             pt.set_slots(SlotsKind::Real);
         }
-        LinearTransformationDiagonal { baby, plaintext: pt }
+        LinearTransformationDiagonal {
+            baby_galois: galois_of_rotation(baby),
+            plaintext: pt,
+        }
     };
     let build = |diagonals| {
         DFTMatrix::<FFT64Portable, Encode, Standard, _>::try_from_factor_operands(
             &module,
             dft_plan(),
             vec![LinearTransformation {
-                baby_steps: vec![0, 1],
+                baby_galois: vec![galois_of_rotation(0), galois_of_rotation(1)],
                 rotations: Default::default(),
-                giant_steps: vec![LinearTransformationGiantStep { rot: 0, diagonals }],
+                giant_steps: vec![LinearTransformationGiantStep {
+                    galois: galois_of_rotation(0),
+                    diagonals,
+                }],
             }],
         )
     };
@@ -228,7 +234,7 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
     refused(
         "repeated diagonal",
         vec![diagonal(0, k, false), diagonal(0, k, false)],
-        "DFT factor repeats the diagonal (giant rot 0, baby 0)",
+        "DFT factor repeats the diagonal (giant Galois element 1, baby 1)",
     );
     // Storage wider than the precision selects would be truncated by preparation.
     refused(
@@ -299,12 +305,12 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
     .unwrap();
     let factors = |width| {
         vec![LinearTransformation {
-            baby_steps: vec![0],
+            baby_galois: vec![galois_of_rotation(0)],
             rotations: Default::default(),
             giant_steps: vec![GiantStep {
-                rot: 0,
+                galois: galois_of_rotation(0),
                 diagonals: vec![Diagonal {
-                    baby: 0,
+                    baby_galois: galois_of_rotation(0),
                     plaintext: DiagonalWidth(width),
                 }],
             }],
@@ -458,11 +464,14 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
         &module,
         DFTPlan::new(DFTType::Decode, vec![(2, 1)], DFTOutputFormat::RepackImagAsReal, meta).unwrap(),
         vec![LinearTransformation {
-            baby_steps: vec![0],
+            baby_galois: vec![galois_of_rotation(0)],
             rotations: Default::default(),
             giant_steps: vec![LinearTransformationGiantStep {
-                rot: 0,
-                diagonals: vec![LinearTransformationDiagonal { baby: 0, plaintext: pt }],
+                galois: galois_of_rotation(0),
+                diagonals: vec![LinearTransformationDiagonal {
+                    baby_galois: galois_of_rotation(0),
+                    plaintext: pt,
+                }],
             }],
         }],
     )
@@ -788,11 +797,14 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
         &module,
         DFTPlan::new(DFTType::Encode, vec![(1, 1)], DFTOutputFormat::Standard, meta).unwrap(),
         vec![LinearTransformation {
-            baby_steps: vec![0],
+            baby_galois: vec![galois_of_rotation(0)],
             rotations: Default::default(),
             giant_steps: vec![LinearTransformationGiantStep {
-                rot: 0,
-                diagonals: vec![LinearTransformationDiagonal { baby: 0, plaintext: pt }],
+                galois: galois_of_rotation(0),
+                diagonals: vec![LinearTransformationDiagonal {
+                    baby_galois: galois_of_rotation(0),
+                    plaintext: pt,
+                }],
             }],
         }],
     )

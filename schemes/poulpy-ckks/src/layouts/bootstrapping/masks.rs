@@ -219,8 +219,8 @@ where
             }
         }
         let mut scale = ComplexDiagonals::new(Diagonals::new(slots), Diagonals::new(slots));
-        scale.re.set(0, re);
-        scale.im.set(0, im);
+        scale.re.set(poulpy_core::layouts::galois_of_rotation(0), re);
+        scale.im.set(poulpy_core::layouts::galois_of_rotation(0), im);
         let log_n = (2 * half).ilog2() as usize;
         let masked = crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(module, base2k, plan, log_n, &[scale], scratch)?;
         Ok(CoeffsMaskPrepared(module.ckks_dft_matrix_prepare_alloc(&masked, scratch)?))

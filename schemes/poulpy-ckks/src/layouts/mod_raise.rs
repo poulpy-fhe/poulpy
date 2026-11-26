@@ -133,17 +133,17 @@ where
         let mut diagonals = Vec::with_capacity(giant.diagonals.len());
         for diagonal in giant.diagonals {
             diagonals.push(LinearTransformationDiagonal {
-                baby: diagonal.baby,
+                baby_galois: diagonal.baby_galois,
                 plaintext: module.ckks_right_operand_prepare_alloc(&diagonal.plaintext, PrepareHint::Reuse, scratch)?,
             });
         }
         giant_steps.push(LinearTransformationGiantStep {
-            rot: giant.rot,
+            galois: giant.galois,
             diagonals,
         });
     }
     Ok(LinearTransformation {
-        baby_steps: factor.baby_steps,
+        baby_galois: factor.baby_galois,
         giant_steps,
         rotations: factor.rotations,
     })

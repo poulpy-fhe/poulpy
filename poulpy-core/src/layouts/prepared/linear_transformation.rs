@@ -1,7 +1,8 @@
 //! Prepared (convolution-domain) operands for the GLWE linear transformation.
 //!
 //! The BSGS evaluation `M·v = Σ_k baby_k ⊗ diagonal_k` is a bivariate
-//! convolution: the input baby rotations are the *left* operand (`CnvPVecL`)
+//! convolution: the input baby steps, the input mapped by the baby Galois elements, are the
+//! *left* operand (`CnvPVecL`)
 //! and the matrix diagonals are the *right* operand (`CnvPVecR`). The two
 //! caches here hold those prepared operands. They are allocated and populated
 //! by the HAL-dependent routines in [`crate::reference::linear_transformation`];
@@ -119,7 +120,7 @@ impl<D: Data, BE: Backend, Rg: Ring> GLWEInfos for PreparedDiagonal<D, BE, Rg> {
     }
 }
 
-/// A prepared baby rotation of a [`LinearTransformationBabySteps`] cache: owned
+/// A prepared baby step of a [`LinearTransformationBabySteps`] cache: owned
 /// ([`CnvPVecLOwned`]) or carved from a scratch arena ([`CnvPVecLViewMut`](poulpy_hal::layouts::CnvPVecLViewMut)).
 /// Blanket-implemented.
 pub trait BabyStepOperand<BE: Backend, Rg: Ring = Standard>:
@@ -132,7 +133,7 @@ impl<BE: Backend, T, Rg: Ring> BabyStepOperand<BE, Rg> for T where
 {
 }
 
-/// Prepared left operands for the baby rotations of one input ciphertext.
+/// Prepared left operands for the baby steps of one input ciphertext, by Galois element.
 ///
 /// The values are populated by `glwe_linear_transformation_baby_steps_prepare`. A cache
 /// a caller keeps is allocated by [`LinearTransformationBabySteps::alloc`], and a cache
@@ -142,16 +143,17 @@ impl<BE: Backend, T, Rg: Ring> BabyStepOperand<BE, Rg> for T where
 // Generic over the operand rather than its storage `D`: hal gives backend views of a `CnvPVecL` of owned storage
 // and of its scratch wrapper, and a pair of impls over `BE::OwnedBuf` and `BE::BufMut<'_>` would overlap.
 pub struct LinearTransformationBabySteps<BE: Backend, Rg: Ring = Standard, L = CnvPVecLOwned<BE, Rg>> {
+    /// The prepared operands, by Galois element.
     pub(crate) values: BTreeMap<i64, L>,
-    /// How the preparation reaches the rotations.
+    /// How the preparation reaches the baby steps.
     pub(crate) rotations: crate::layouts::BsgsRotations,
-    /// Width of the source the rotations were prepared from.
+    /// Width of the source the baby steps were prepared from.
     pub(crate) k: TorusPrecision,
     pub(crate) _backend: std::marker::PhantomData<fn() -> (BE, Rg)>,
 }
 
 impl<BE: Backend, L: BabyStepOperand<BE, Rg>, Rg: Ring> LinearTransformationBabySteps<BE, Rg, L> {
-    /// How the preparation reaches the rotations.
+    /// How the preparation reaches the baby steps.
     pub fn rotations(&self) -> crate::layouts::BsgsRotations {
         self.rotations
     }
@@ -161,12 +163,12 @@ impl<BE: Backend, L: BabyStepOperand<BE, Rg>, Rg: Ring> LinearTransformationBaby
         cnv_pvec.size()
     }
 
-    /// Width of the source the rotations were prepared from, that of the source it was allocated for until prepared.
+    /// Width of the source the baby steps were prepared from, that of the source it was allocated for until prepared.
     pub fn k(&self) -> TorusPrecision {
         self.k
     }
 
-    /// Records the width of the source the rotations were prepared from, as every preparation of the cache does.
+    /// Records the width of the source the baby steps were prepared from, as every preparation of the cache does.
     pub fn set_k(&mut self, k: TorusPrecision) {
         self.k = k;
     }
@@ -176,45 +178,47 @@ impl<BE: Backend, L: BabyStepOperand<BE, Rg>, Rg: Ring> LinearTransformationBaby
         cnv_pvec.cols()
     }
 
-    /// The slot rotations represented by this prepared baby cache.
-    pub fn baby_steps(&self) -> impl ExactSizeIterator<Item = i64> + '_ {
+    /// The Galois elements of the baby steps this prepared cache holds.
+    pub fn baby_galois(&self) -> impl ExactSizeIterator<Item = i64> + '_ {
         self.values.keys().copied()
     }
 
-    /// Returns true when `rot` is available in this prepared baby cache.
-    pub fn contains_baby_step(&self, rot: i64) -> bool {
-        self.values.contains_key(&rot)
+    /// Returns true when the baby step of `galois` is available in this prepared cache.
+    pub fn contains_baby_galois(&self, galois: i64) -> bool {
+        self.values.contains_key(&galois)
     }
 
-    /// Number of prepared baby rotations.
+    /// Number of prepared baby steps.
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    /// Returns true when no baby rotations are prepared.
+    /// Returns true when no baby steps are prepared.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
-    /// Returns the prepared left operand `rot(v, k)` for the baby rotation `k`.
-    pub fn baby_step(&self, rot: i64) -> &L {
+    /// Returns the prepared left operand `sigma_b(v)` for the baby step of the Galois element `b`.
+    pub fn baby(&self, galois: i64) -> &L {
         self.values
-            .get(&rot)
-            .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
+            .get(&galois)
+            .unwrap_or_else(|| panic!("missing prepared baby step of Galois element {galois}"))
     }
 
     /// Borrows an allocated operand for preparation, as a view that cannot change its shape.
-    pub fn baby_step_mut(&mut self, rot: i64) -> CnvPVecLBackendMut<'_, BE, Rg> {
+    pub fn baby_mut(&mut self, galois: i64) -> CnvPVecLBackendMut<'_, BE, Rg> {
         self.values
-            .get_mut(&rot)
-            .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
+            .get_mut(&galois)
+            .unwrap_or_else(|| panic!("missing prepared baby step of Galois element {galois}"))
             .to_backend_mut()
     }
 
-    /// Borrows all allocated operands in rotation order, as views that can change
+    /// Borrows all allocated operands, by increasing Galois element, as views that can change
     /// neither the cache keys nor the operand shapes.
-    pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE, Rg>)> + '_ {
-        self.values.iter_mut().map(|(&rot, operand)| (rot, operand.to_backend_mut()))
+    pub fn babies_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE, Rg>)> + '_ {
+        self.values
+            .iter_mut()
+            .map(|(&galois, operand)| (galois, operand.to_backend_mut()))
     }
 }
 
@@ -350,7 +354,7 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOpera
             .iter()
             .map(|d| {
                 let diagonal = prepared(d.plaintext.operand());
-                let baby = lhs.baby_step(d.baby);
+                let baby = lhs.baby(d.baby_galois);
                 assert_eq!(baby.cols(), cols);
                 assert_eq!(prod_dft_size(baby.size(), diagonal.size(), cnv_offset_hi), res_dft_size);
                 CnvDftAccTerm {
@@ -410,7 +414,7 @@ fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE, Rg
     // Baby is the outer loop, so the first baby initializes every output column
     // (overwrite) and the rest accumulate in place; each diagonal is prepared once.
     for (term_idx, d) in gs.diagonals.iter().enumerate() {
-        let baby = lhs.baby_step(d.baby);
+        let baby = lhs.baby(d.baby_galois);
         assert_eq!(baby.cols(), cols);
         assert_eq!(prod_dft_size(baby.size(), diagonal_size, cnv_offset_hi), res_dft_size);
         let plaintext = unprepared(d.plaintext.operand());

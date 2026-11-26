@@ -399,7 +399,7 @@ impl<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring> GetTensorKey<BE, Rg> for Co
 fn rotating_giant_steps<BE: Backend, Rg: Ring>(lt: &LinearTransformationPrepared<BE, Rg>) -> usize {
     lt.giant_steps
         .iter()
-        .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
+        .filter(|gs| !poulpy_core::layouts::galois_is_identity(gs.galois) && !gs.diagonals.is_empty())
         .count()
 }
 
@@ -427,7 +427,7 @@ where
             .iter()
             .zip(&lts)
             .map(|(&src, lt)| {
-                let mut cache = LinearTransformationBabySteps::alloc(module, lt.baby_steps(), src);
+                let mut cache = LinearTransformationBabySteps::alloc(module, lt.baby_galois(), src);
                 module
                     .ckks_linear_transformation_baby_steps_prepare(&mut cache, src, keys, scratch)
                     .unwrap();

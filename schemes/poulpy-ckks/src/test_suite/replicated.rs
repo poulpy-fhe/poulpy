@@ -1014,7 +1014,7 @@ where
 
     let gal = module.ckks_galois_element::<Rg>(1);
     let atks = HashMap::from([(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()))]);
-    let mut babies = LinearTransformationBabySteps::alloc(module, &[1], &shaped);
+    let mut babies = LinearTransformationBabySteps::alloc(module, &[poulpy_core::layouts::galois_of_rotation(1)], &shaped);
     refused!(
         Rg,
         "ckks_linear_transformation_baby_steps_prepare",
@@ -1992,8 +1992,9 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch::<BE, Rg>(&params, module);
     let mut atks = HashMap::new();
-    for r in conv.rotations() {
-        let gal = crate::operand_rotation_galois_element::<_, Rg>("test", module, params.n, r)?;
+    let order = crate::operand_cyclotomic_order::<_, Rg>("test", module, params.n)?;
+    for galois in conv.galois() {
+        let gal = poulpy_core::layouts::galois_at(galois, order);
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
 
@@ -2164,7 +2165,8 @@ where
         },
     );
     let mut wrong_rotations = conv.alloc_to_workspace(module, &ckks);
-    wrong_rotations.babies[0] = LinearTransformationBabySteps::alloc(module, &[1], &wrong_rotations.input);
+    wrong_rotations.babies[0] =
+        LinearTransformationBabySteps::alloc(module, &[poulpy_core::layouts::galois_of_rotation(1)], &wrong_rotations.input);
     for workspace in [&mut wrong_width, &mut wrong_rotations] {
         refused!(
             Rg,
@@ -2377,13 +2379,14 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch::<BE, Rg>(&params, module);
     let mut atks = HashMap::new();
-    for r in to
-        .rotations()
+    let order = 4 * module.ckks_max_slots::<Rg>() as i64;
+    for gal in to
+        .galois()
         .into_iter()
-        .chain(gather.rotations())
-        .chain(trace.iter().copied())
+        .chain(gather.galois())
+        .map(|galois| poulpy_core::layouts::galois_at(galois, order))
+        .chain(trace.iter().map(|&r| module.ckks_galois_element::<Rg>(r)))
     {
-        let gal = module.ckks_galois_element::<Rg>(r);
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
     let values = unit_batch::<Rg, F>(len, 0);
@@ -3546,14 +3549,10 @@ fn assert_conversion_lookups<BE: Backend, Rg: Ring>(
     model: &[(i64, usize)],
     seen: Vec<(i64, poulpy_core::layouts::TorusPrecision)>,
 ) {
+    let order = crate::operand_cyclotomic_order::<_, Rg>("test", module, n).unwrap();
     let entry: Vec<(i64, usize)> = model
         .iter()
-        .map(|&(r, k)| {
-            (
-                crate::operand_rotation_galois_element::<_, Rg>("test", module, n, r).unwrap(),
-                k,
-            )
-        })
+        .map(|&(p, k)| (poulpy_core::layouts::galois_at(p, order), k))
         .collect();
     let seen: Vec<(i64, usize)> = seen.into_iter().map(|(p, k)| (p, k.as_usize())).collect();
     super::helpers::assert_entry_then_widest(label, &seen, &entry);

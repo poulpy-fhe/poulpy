@@ -88,9 +88,9 @@ where
     M: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE>,
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
 {
-    let rotations: Vec<i64> = maps.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
+    let baby_galois: Vec<i64> = maps.iter().flat_map(|lt| lt.baby_galois().iter().copied()).collect();
     (0..count)
-        .map(|_| LinearTransformationBabySteps::alloc(module, &rotations, src))
+        .map(|_| LinearTransformationBabySteps::alloc(module, &baby_galois, src))
         .collect()
 }
 

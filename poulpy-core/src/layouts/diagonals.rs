@@ -1,14 +1,15 @@
 //! Generic diagonal representation of a square slot-matrix linear map.
 //!
 //! A homomorphic linear transformation evaluates `w = M·v` where `M` is an
-//! `s×s` matrix over the `s = cols` slots and `v` is the slot vector. `M` is
+//! `s×s` matrix over the `s = cols` slots and `v` is the slot vector, `s` a power of two. `M` is
 //! stored in *diagonal form*: only the non-zero generalized diagonals
 //!
 //! ```text
 //! diag_i[j] = M[j][(j + i) mod s]
 //! ```
 //!
-//! are kept, in a map `i -> diag_i`. This module provides:
+//! are kept, each under the Galois element `5^i` of the rotation by `i` slots
+//! ([`galois_of_rotation`]), in a map `5^i -> diag_i`. This module provides:
 //!
 //! - [`Diagonals<T>`] — the diagonal map over a *real* scalar `T`
 //!   (`f64`, `i64`, ...).
@@ -37,7 +38,9 @@
 
 use std::collections::BTreeMap;
 
-use super::{LinearTransformationLayout, LinearTransformationStrategy};
+use super::{
+    LinearTransformationLayout, LinearTransformationStrategy, galois_compose, galois_inverse, galois_of_rotation, galois_rotation,
+};
 
 /// Element-wise arithmetic on the real scalar carried by [`Diagonals`].
 ///
@@ -111,19 +114,25 @@ pub fn period_lcm(a: usize, b: usize) -> usize {
     a / gcd(a, b) * b
 }
 
-/// Left-rotates `src` by `k` slots into `out`: `out[j] = src[(j + k) mod src.len()]`.
+/// Left-rotates `src` by the rotation `k` of the Galois element `galois` into `out`:
+/// `out[j] = src[(j + k) mod src.len()]`.
 ///
 /// Public utility matching the scheme slot-rotation convention
 /// `rot(v, k)[j] = v[(j+k) mod n]`; downstream diagonal-map flavors (e.g. the
 /// CKKS `ComplexDiagonals`) use it to apply baby / giant pre-rotations under
 /// the same convention as the homomorphic engine. `src` is read as a periodic
-/// vector, so `out` may be any multiple of its length: one stored period
-/// rotates into any replication of itself.
-pub fn rotate_slots_into<T: Clone>(src: &[T], k: i64, out: &mut [T]) {
-    let n = src.len() as i64;
-    debug_assert!(out.len().is_multiple_of(src.len()));
+/// vector of a power-of-two length, so `out` may be any multiple of its length: one stored
+/// period rotates into any replication of itself.
+///
+/// # Panics
+///
+/// When `galois` conjugates.
+pub fn rotate_slots_into<T: Clone>(src: &[T], galois: i64, out: &mut [T]) {
+    let n = src.len();
+    let k = galois_rotation(galois, n) as usize;
+    debug_assert!(out.len().is_multiple_of(n));
     for (j, slot) in out.iter_mut().enumerate() {
-        *slot = src[(j as i64 + k).rem_euclid(n) as usize].clone();
+        *slot = src[(j + k) % n].clone();
     }
 }
 
@@ -131,19 +140,21 @@ pub fn rotate_slots_into<T: Clone>(src: &[T], k: i64, out: &mut [T]) {
 ///
 /// One-dimensional: the matrix has `slots × slots` shape and every diagonal is a
 /// length-`slots` vector, stored as one period of its values (see the module
-/// docs). Keys are diagonal indexes normalized to `[0, slots)`.
+/// docs). Keys are the Galois elements of the diagonals' rotations, taken modulo `slots`; none
+/// conjugates.
 /// See the module docs for the diagonal convention and for how schemes layer
 /// multi-dimensional packings on top.
 #[derive(Clone, Debug)]
 pub struct Diagonals<T> {
     slots: usize,
+    /// One period of each diagonal, by rotation in `[0, slots)`.
     map: BTreeMap<i64, Vec<T>>,
 }
 
 impl<T> Diagonals<T> {
-    /// Creates an empty map for a `slots × slots` matrix.
+    /// Creates an empty map for a `slots × slots` matrix, `slots` a power of two.
     pub fn new(slots: usize) -> Self {
-        assert!(slots > 0, "diagonals require a non-zero slot count");
+        assert!(slots.is_power_of_two(), "diagonals require a power-of-two slot count");
         Self {
             slots,
             map: BTreeMap::new(),
@@ -155,35 +166,36 @@ impl<T> Diagonals<T> {
         self.slots
     }
 
-    /// Sets the diagonal at `index` (normalized modulo `slots`) from one period
-    /// of its values: `values.len()` divides `slots` and the diagonal reads
+    /// Sets the diagonal of the Galois element `galois` (its rotation taken modulo `slots`) from
+    /// one period of its values: `values.len()` divides `slots` and the diagonal reads
     /// `diag[j] = values[j % values.len()]`. A full-length vector is a dense
     /// diagonal; a shorter one stores a periodic diagonal once.
-    pub fn set(&mut self, index: i64, values: Vec<T>) {
+    pub fn set(&mut self, galois: i64, values: Vec<T>) {
         assert!(
             !values.is_empty() && self.slots.is_multiple_of(values.len()),
             "diagonal length ({}) must divide slots ({})",
             values.len(),
             self.slots,
         );
-        self.map.insert(index.rem_euclid(self.slots as i64), values);
+        self.map.insert(galois_rotation(galois, self.slots), values);
     }
 
-    /// Returns one period of the diagonal at `index` (normalized modulo
-    /// `slots`), if present: `diag[j] = v[j % v.len()]`.
-    pub fn get(&self, index: i64) -> Option<&Vec<T>> {
-        self.map.get(&index.rem_euclid(self.slots as i64))
+    /// Returns one period of the diagonal of the Galois element `galois` (its rotation taken
+    /// modulo `slots`), if present: `diag[j] = v[j % v.len()]`.
+    pub fn get(&self, galois: i64) -> Option<&Vec<T>> {
+        self.map.get(&galois_rotation(galois, self.slots))
     }
 
-    /// The slot count after which the diagonal at `index` repeats, the length
+    /// The slot count after which the diagonal of `galois` repeats, the length
     /// of its stored period; `None` when the diagonal is absent.
-    pub fn period(&self, index: i64) -> Option<usize> {
-        self.get(index).map(Vec::len)
+    pub fn period(&self, galois: i64) -> Option<usize> {
+        self.get(galois).map(Vec::len)
     }
 
-    /// The (normalized, sorted) indexes of the stored non-zero diagonals.
-    pub fn indexes(&self) -> Vec<i64> {
-        self.map.keys().copied().collect()
+    /// The Galois elements of the stored non-zero diagonals, by increasing rotation in
+    /// `[0, slots)`.
+    pub fn galois(&self) -> Vec<i64> {
+        self.map.keys().map(|&rotation| galois_of_rotation(rotation)).collect()
     }
 
     /// True when no diagonal is stored.
@@ -196,12 +208,12 @@ impl<T: DiagonalArithmetic> Diagonals<T> {
     /// The diagonals of the map whose output slot `i + q period` sums `w x[(j + q period) mod slots]` over the
     /// `terms` `(i, j, w)`, for every `q < slots / period`: a map that repeats under a common shift of its input and
     /// output by `period`, given by the terms of its first `period` outputs. Term `(i, j, w)` adds `w` at position `i`
-    /// of diagonal `(j - i) mod slots`, so terms on one entry add up. Every diagonal a term reaches is stored over
-    /// `period` slots, whatever its values.
+    /// of the diagonal of the rotation `(j - i) mod slots`, so terms on one entry add up. Every diagonal a term reaches
+    /// is stored over `period` slots, whatever its values.
     ///
     /// # Panics
     ///
-    /// When `slots` is zero, `period` is zero or does not divide `slots`, or a term has `i >= period` or
+    /// When `slots` is not a power of two, `period` is zero or does not divide `slots`, or a term has `i >= period` or
     /// `j >= slots`.
     pub fn from_slot_map(slots: usize, period: usize, terms: impl IntoIterator<Item = (usize, usize, T)>) -> Self {
         let mut diagonals = Self::new(slots);
@@ -266,8 +278,8 @@ impl<T> Diagonals<T> {
     /// Transposes the underlying matrix in place.
     ///
     /// Uses the identity `diag_i(Mᵀ) = rot(diag_(-i)(M), i)`: every
-    /// `(j, diag_j(M))` entry is rebucketed to `((-j) mod slots,
-    /// rot(diag_j(M), -j))`. The diagonal vectors are rotated in place via
+    /// `(5^j, diag_j(M))` entry is rebucketed to `(5^(-j), rot(diag_j(M), -j))`, the inverse
+    /// Galois element. The diagonal vectors are rotated in place via
     /// [`slice::rotate_left`] and the map's value storage is reused — no
     /// per-element clones, no extra `Vec<T>` allocations.
     ///
@@ -297,7 +309,7 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
         let slots = self.slots;
         assert_eq!(input.len(), slots, "input length must equal slots");
         let index = LinearTransformationLayout {
-            indexes: self.indexes(),
+            galois: self.galois(),
             slots,
             strategy,
         }
@@ -308,12 +320,14 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
         let mut rot_in = vec![T::zero(); slots];
         let mut rot_diag = vec![T::zero(); slots];
 
-        for (g, &giant_rot) in index.giant_steps.iter().enumerate() {
+        for (g, &giant) in index.giant_galois.iter().enumerate() {
             buff.iter_mut().for_each(|x| *x = T::zero());
             for &baby in &index.index[g] {
-                let diag = self.get(giant_rot + baby).expect("schedule references a missing diagonal");
+                let diag = self
+                    .get(galois_compose(giant, baby, slots))
+                    .expect("schedule references a missing diagonal");
                 rotate_slots_into(input, baby, &mut rot_in);
-                rotate_slots_into(diag, -giant_rot, &mut rot_diag);
+                rotate_slots_into(diag, galois_inverse(giant, slots), &mut rot_diag);
                 for j in 0..slots {
                     let mut p = rot_in[j].clone();
                     p = p.mul(&rot_diag[j]);
@@ -321,8 +335,9 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
                 }
             }
             // Giant rotation, folded straight into the output.
+            let giant_rot = galois_rotation(giant, slots) as usize;
             for j in 0..slots {
-                out[j].add_assign(&buff[(j as i64 + giant_rot).rem_euclid(slots as i64) as usize]);
+                out[j].add_assign(&buff[(j + giant_rot) % slots]);
             }
         }
         out
@@ -344,7 +359,7 @@ mod tests {
         for i in 0..s {
             let col: Vec<f64> = (0..s).map(|j| m[j][(j + i) % s]).collect();
             if col.iter().any(|&x| x != 0.0) {
-                d.set(i as i64, col);
+                d.set(galois_of_rotation(i as i64), col);
             }
         }
         d
@@ -403,41 +418,42 @@ mod tests {
         // Two terms on entry (1, 5) add up, and the zero term stores diagonal 1 all the same.
         let terms = [(0, 3, 2), (1, 5, 4), (1, 5, -1), (2, 2, 7), (5, 0, 3), (7, 1, -2), (6, 7, 0)];
         let d = Diagonals::from_slot_map(8, 8, terms);
-        assert_eq!(d.indexes(), vec![0, 1, 2, 3, 4]);
-        assert!(d.indexes().iter().all(|&i| d.period(i) == Some(8)));
+        assert_eq!(d.galois(), (0..5).map(galois_of_rotation).collect::<Vec<_>>());
+        assert!(d.galois().iter().all(|&p| d.period(p) == Some(8)));
         assert_evaluates(&d, &dense_of(8, 8, &terms));
     }
 
     #[test]
     fn from_slot_map_repeats_over_the_period() {
         let terms = [(0, 1, 5), (1, 11, -3), (2, 2, 1), (3, 7, 2)];
-        let d = Diagonals::from_slot_map(12, 4, terms);
-        assert!(d.indexes().iter().all(|&i| d.period(i) == Some(4)));
-        assert_evaluates(&d, &dense_of(12, 4, &terms));
+        let d = Diagonals::from_slot_map(16, 4, terms);
+        assert!(d.galois().iter().all(|&p| d.period(p) == Some(4)));
+        assert_evaluates(&d, &dense_of(16, 4, &terms));
     }
 
     #[test]
     fn shrink_period_stores_the_common_smallest_period() {
-        let mut d = Diagonals::new(12);
-        d.set(0, vec![1, 2, 3, 1, 2, 3]);
-        d.set(1, vec![4, 5, 4, 5]);
-        d.set(5, vec![6; 12]);
-        let m: Vec<Vec<i64>> = (0..12)
+        let rot = galois_of_rotation;
+        let mut d = Diagonals::new(16);
+        d.set(rot(0), vec![1, 2, 3, 4, 1, 2, 3, 4]);
+        d.set(rot(1), vec![4, 5]);
+        d.set(rot(5), vec![6; 16]);
+        let m: Vec<Vec<i64>> = (0..16)
             .map(|r| {
-                (0..12)
-                    .map(|c| d.get(c as i64 - r as i64).map_or(0, |v| v[r % v.len()]))
+                (0..16)
+                    .map(|c| d.get(rot(c as i64 - r as i64)).map_or(0, |v| v[r % v.len()]))
                     .collect()
             })
             .collect();
         d.shrink_period();
-        assert_eq!(d.get(0), Some(&vec![1, 2, 3, 1, 2, 3]));
-        assert_eq!(d.get(1), Some(&vec![4, 5, 4, 5, 4, 5]));
-        assert_eq!(d.get(5), Some(&vec![6; 6]));
+        assert_eq!(d.get(rot(0)), Some(&vec![1, 2, 3, 4]));
+        assert_eq!(d.get(rot(1)), Some(&vec![4, 5, 4, 5]));
+        assert_eq!(d.get(rot(5)), Some(&vec![6; 4]));
         assert_evaluates(&d, &m);
 
         let mut powers = Diagonals::from_slot_map(16, 16, (0..16).map(|i| (i, (i + 3) % 16, (i % 4) as i64)));
         powers.shrink_period();
-        assert_eq!(powers.get(3), Some(&vec![0, 1, 2, 3]));
+        assert_eq!(powers.get(rot(3)), Some(&vec![0, 1, 2, 3]));
 
         let mut empty = Diagonals::<i64>::new(8);
         empty.shrink_period();
@@ -447,25 +463,25 @@ mod tests {
     #[test]
     #[should_panic(expected = "slot map period must divide the slots")]
     fn from_slot_map_rejects_a_period_not_dividing_the_slots() {
-        Diagonals::from_slot_map(12, 5, [(0, 0, 1i64)]);
+        Diagonals::from_slot_map(16, 5, [(0, 0, 1i64)]);
     }
 
     #[test]
     #[should_panic(expected = "slot map period must divide the slots")]
     fn from_slot_map_rejects_a_zero_period() {
-        Diagonals::from_slot_map(12, 0, [(0, 0, 1i64)]);
+        Diagonals::from_slot_map(16, 0, [(0, 0, 1i64)]);
     }
 
     #[test]
     #[should_panic(expected = "slot map term out of range")]
     fn from_slot_map_rejects_an_output_past_the_period() {
-        Diagonals::from_slot_map(12, 4, [(4, 0, 1i64)]);
+        Diagonals::from_slot_map(16, 4, [(4, 0, 1i64)]);
     }
 
     #[test]
     #[should_panic(expected = "slot map term out of range")]
     fn from_slot_map_rejects_an_input_past_the_slots() {
-        Diagonals::from_slot_map(12, 4, [(0, 12, 1i64)]);
+        Diagonals::from_slot_map(16, 4, [(0, 16, 1i64)]);
     }
 
     #[test]
