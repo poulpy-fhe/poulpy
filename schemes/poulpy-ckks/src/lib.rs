@@ -558,17 +558,6 @@ where
     get_mul_pt_params(op, res, a, pt)
 }
 
-/// Whether a limb-wise op can read `a` into `res` without normalizing: `res`
-/// holds every limb of a non-canonical `a` (its carries may sit beyond `a.k()`).
-pub(crate) fn ckks_holds_limbs<BE, R, A, Rg: Ring>(res: &R, a: &A) -> bool
-where
-    BE: Backend,
-    R: GLWEToBackendRef<BE, Rg>,
-    A: GLWEToBackendRef<BE, Rg>,
-{
-    a.is_canonical() || res.to_backend_ref().max_size() >= a.to_backend_ref().max_size()
-}
-
 /// Whether a limb-wise unary op can write `src` into `dst` without normalizing.
 pub(crate) fn ckks_unary_exact<BE, R, A, Rg: Ring>(res: &R, a: &A) -> bool
 where
@@ -576,7 +565,7 @@ where
     R: GLWEToBackendRef<BE, Rg> + CKKSInfos,
     A: GLWEToBackendRef<BE, Rg> + CKKSInfos,
 {
-    ckks_offset_unary(res, a) == 0 && ckks_holds_limbs(res, a)
+    ckks_offset_unary(res, a) == 0 && res.holds_limbs(a)
 }
 
 /// Shared unary-op preamble: stamps `src`'s metadata with the budget charged

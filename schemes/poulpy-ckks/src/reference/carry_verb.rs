@@ -107,7 +107,7 @@ macro_rules! ckks_carry_verb_reference {
                     let min_budget = a.log_budget().min(b.log_budget());
                     let shift_a = a.log_budget() - min_budget + offset;
                     let shift_b = b.log_budget() - min_budget + offset;
-                    if shift_a == 0 && shift_b == 0 && $crate::ckks_holds_limbs(dst, a) && $crate::ckks_holds_limbs(dst, b) {
+                    if shift_a == 0 && shift_b == 0 && dst.holds_limbs(a) && dst.holds_limbs(b) {
                         self.$glwe_into(dst, a, b);
                     } else {
                         self.glwe_lsh(dst, a, shift_a, scratch);
@@ -152,7 +152,7 @@ macro_rules! ckks_carry_verb_reference {
                     }
                     let shift_a = a.log_budget().saturating_sub(dst_log_budget);
                     // The shift-accumulate normalizes `a` over all its limbs.
-                    if shift_a == 0 && $crate::ckks_holds_limbs(dst, a) {
+                    if shift_a == 0 && dst.holds_limbs(a) {
                         self.$glwe_assign(dst, a);
                     } else {
                         self.$glwe_lsh_verb(dst, a, shift_a, scratch);
