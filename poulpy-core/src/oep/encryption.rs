@@ -12,9 +12,8 @@ use crate::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedSeedMut,
         GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut,
         GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos,
-        GLWEPublicKeyToBackendMut, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
-        TorusPrecision,
+        GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement, TorusPrecision,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -466,32 +465,6 @@ pub unsafe trait EncryptionImpl<Rg: Ring = Standard>:
         S1: GLWESecretToBackendRef<Self, Rg> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self, Rg> + GetDistribution + GLWEInfos;
 
-    /// Scratch bound of [`Self::glwe_switching_key_encrypt_sk_encapsulation`] at every gap; may report less than
-    /// the reference, never less than the body takes.
-    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A>(module: &Module<Self>, dense_to_sparse_infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    /// Reproduces
-    /// [`glwe_switching_key_encrypt_sk_encapsulation_reference`](crate::reference::encryption::GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_encapsulation_reference)
-    /// bit for bit, draws and refusals included, within [`Self::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes`];
-    /// free in kernels and scratch use before the wipe.
-    fn glwe_switching_key_encrypt_sk_encapsulation<R, S1, S2>(
-        module: &Module<Self>,
-        dense_to_sparse: &mut R,
-        sk_sparse: &mut S2,
-        sk_dense: &S1,
-        log_gap: usize,
-        hamming_weight: usize,
-        source_xs: &mut Source,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGLWEToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: GLWESecretToBackendRef<Self, Rg> + GetDistribution + GLWEInfos,
-        S2: GLWESecretToBackendMut<Self, Rg> + GetDistribution + GetDistributionMut + GLWEInfos;
-
     /// Default body: `glwe_tensor_key_encrypt_sk_tmp_bytes_derived`, the prepared secret and its tensor plus the
     /// larger of the tensor preparation and [`Self::gglwe_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
@@ -833,37 +806,6 @@ macro_rules! impl_encryption_reference_full {
         S1: $crate::layouts::GLWESecretToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
         S2: $crate::layouts::GLWESecretToBackendRef<$be, $ring> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWESwitchingKeyEncryptSkReference<$be, $ring>>::glwe_switching_key_encrypt_sk_reference::<R, S1, S2>(module, res, sk_in, sk_out, source_xe, source_xa, scratch)
-        }
-
-    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, dense_to_sparse_infos: &A) -> usize
-    where
-        A: $crate::layouts::GGLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWESwitchingKeyEncryptSkReference<$be, $ring>>::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes_reference::<A>(module, dense_to_sparse_infos)
-        }
-
-    fn glwe_switching_key_encrypt_sk_encapsulation<R, S1, S2>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        dense_to_sparse: &mut R,
-        sk_sparse: &mut S2,
-        sk_dense: &S1,
-        log_gap: usize,
-        hamming_weight: usize,
-        source_xs: &mut ::poulpy_hal::source::Source,
-        source_xe: &mut ::poulpy_hal::source::Source,
-        source_xa: &mut ::poulpy_hal::source::Source,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GGLWEToBackendMut<$be, $ring>
-            + $crate::layouts::GLWESwitchingKeyDegreesMut
-            + $crate::layouts::GGLWEInfos,
-        S1: $crate::layouts::GLWESecretToBackendRef<$be, $ring> + $crate::GetDistribution + $crate::layouts::GLWEInfos,
-        S2: $crate::layouts::GLWESecretToBackendMut<$be, $ring>
-            + $crate::GetDistribution
-            + $crate::GetDistributionMut
-            + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWESwitchingKeyEncryptSkReference<$be, $ring>>::glwe_switching_key_encrypt_sk_encapsulation_reference::<R, S1, S2>(
-                module, dense_to_sparse, sk_sparse, sk_dense, log_gap, hamming_weight, source_xs, source_xe, source_xa, scratch,
-            )
         }
 
     fn ggsw_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

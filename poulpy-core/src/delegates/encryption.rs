@@ -17,8 +17,8 @@ use crate::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedSeedMut,
         GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut,
         GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos,
-        GLWEPublicKeyToBackendMut, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -409,41 +409,6 @@ impl_encryption_delegate!(
         S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         BE::glwe_switching_key_encrypt_sk(self, res, sk_in, sk_out, source_xe, source_xa, scratch)
-    },
-    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A>(&self, dense_to_sparse_infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes(self, dense_to_sparse_infos)
-    },
-    fn glwe_switching_key_encrypt_sk_encapsulation<R, S1, S2>(
-        &self,
-        dense_to_sparse: &mut R,
-        sk_sparse: &mut S2,
-        sk_dense: &S1,
-        log_gap: usize,
-        hamming_weight: usize,
-        source_xs: &mut Source,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
-        S2: GLWESecretToBackendMut<BE, Rg> + GetDistribution + GetDistributionMut + GLWEInfos,
-    {
-        BE::glwe_switching_key_encrypt_sk_encapsulation(
-            self,
-            dense_to_sparse,
-            sk_sparse,
-            sk_dense,
-            log_gap,
-            hamming_weight,
-            source_xs,
-            source_xe,
-            source_xa,
-            scratch,
-        )
     }
 );
 

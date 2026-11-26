@@ -220,8 +220,6 @@ macro_rules! core_backend_test_suite {
                 glwe_linear_transformation_rejects_mixed_diagonal_degrees =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_mixed_diagonal_degrees,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
-                glwe_switching_key_encrypt_sk_encapsulation =>
-                    $crate::test_suite::noise::encryption::test_glwe_switching_key_encrypt_sk_encapsulation,
                 gglwe_switching_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_switching_key_compressed_encrypt_sk,
                 gglwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_compressed_encrypt_sk,

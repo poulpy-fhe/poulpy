@@ -274,35 +274,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend<Rg>, BT: Encryptio
             ],
             bytes: vec![],
         });
-        // The encapsulation key, on the subring of a gap: the sparse secret is a sampled draw.
-        let mut xs = Source::new([163; 32]);
-        let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&key);
-        poison_gglwe::<B, _, Rg>(&mut dense_to_sparse);
-        let mut sk_sparse = secret(module, n, rank);
-        module.glwe_switching_key_encrypt_sk_encapsulation(
-            &mut dense_to_sparse,
-            &mut sk_sparse,
-            &sk,
-            1,
-            2,
-            &mut xs,
-            &mut e,
-            &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes(&key)).arena(),
-        );
-        // The label skips the fresh-noise check, which reads the secret a key is encrypted under: a key under the
-        // encapsulated secret records no distribution.
-        assert_eq!(
-            dense_to_sparse.noise().unwrap().secret_distribution().base(),
-            Distribution::NONE
-        );
-        result.push(gglwe_snapshot::<B, _, Rg>("encapsulation_dense_to_sparse", &dense_to_sparse));
-        result.push(Snapshot {
-            label: "encapsulation_secret",
-            metadata: vec![],
-            bytes: [B::to_host_bytes(sk_sparse.data.data()), xs.new_seed().to_vec()].concat(),
-        });
-        result.push(source_snapshot("encapsulation_sources", &mut e, &mut a));
         let mut compact = module.glwe_switching_key_compressed_alloc_from_infos(&key);
         poison_compressed::<B, _, Rg>(&mut compact);
         module.glwe_switching_key_compressed_encrypt_sk(

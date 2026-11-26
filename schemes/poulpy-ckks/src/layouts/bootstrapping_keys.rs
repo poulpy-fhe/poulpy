@@ -485,8 +485,8 @@ impl BootstrappingKeysLayout {
     }
 
     /// The encryption of the rotation and raise keys: the encapsulation keys beside the sparse
-    /// secret, the dense-to-sparse one with the draw of that secret, a first-factor key beside the
-    /// rotated secret it is carved with, and beside the sparse secret too under encapsulation.
+    /// secret, a first-factor key beside the rotated secret it is carved with, and beside the
+    /// sparse secret too under encapsulation.
     fn linear_keys_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
     where
         BE: Backend,
@@ -498,12 +498,8 @@ impl BootstrappingKeysLayout {
         for layout in self.rotation_key_layouts() {
             bytes = bytes.max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&layout));
         }
-        if let Some(encapsulation) = &self.encapsulation {
-            bytes =
-                bytes.max(sparse + module.glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes(&encapsulation.dense_to_sparse));
-            if let Some(layout) = &encapsulation.sparse_to_dense {
-                bytes = bytes.max(sparse + module.glwe_switching_key_encrypt_sk_tmp_bytes(layout));
-            }
+        for layout in self.raise_key_layouts() {
+            bytes = bytes.max(sparse + module.glwe_switching_key_encrypt_sk_tmp_bytes(&layout));
         }
         if let Some(layout) = &self.first_factor_key {
             bytes = bytes.max(sparse + secret + module.glwe_switching_key_encrypt_sk_tmp_bytes(layout));
@@ -956,15 +952,31 @@ impl KeyRecipe {
             (Some(hamming_weight), Some(encaps)) => {
                 let keys = {
                     let (mut sk_sparse, mut scratch) = scratch.borrow().take_glwe_secret_scratch(sk_dense.n(), sk_dense.rank());
+                    if self.log_gap == 0 {
+                        module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
+                    } else {
+                        let rank = sk_dense.rank();
+                        // The secret of the subring, `s(X^g)`: its weight is spent on the subring's coefficients.
+                        let subring = (sk_dense.n().as_usize() >> self.log_gap).into();
+                        {
+                            let scratch = scratch.borrow();
+                            let (mut sk_subring, _) = scratch.take_glwe_secret_scratch(subring, rank);
+                            module.glwe_secret_fill_ternary_hw(&mut sk_subring, hamming_weight, source_xs);
+                            let sk_subring = GLWESecretToBackendRef::<BE>::to_backend_ref(&sk_subring);
+                            let sk = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_subring.data());
+                            let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_sparse.data_mut());
+                            for col in 0..rank.as_usize() {
+                                module.vec_znx_switch_ring(&mut res, col, &sk, col);
+                            }
+                        }
+                    }
+                    *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
+
                     let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encaps.dense_to_sparse);
-                    // The sparse secret, on the subring of the plan's gap, and the keys under it.
-                    module.glwe_switching_key_encrypt_sk_encapsulation(
+                    module.glwe_switching_key_encrypt_sk(
                         &mut dense_to_sparse,
-                        &mut sk_sparse,
                         sk_dense,
-                        self.log_gap,
-                        hamming_weight,
-                        source_xs,
+                        &sk_sparse,
                         source_xe,
                         source_xa,
                         &mut scratch,
