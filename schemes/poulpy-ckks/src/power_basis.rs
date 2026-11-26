@@ -1,9 +1,12 @@
+use std::marker::PhantomData;
+
 use crate::layouts::CKKSCiphertextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, split_degree,
+    GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    POWER_BASIS_TRACKED_ENTRIES, PowerBasisProducts, Rank, power_basis_gen_count, split_degree,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, Standard, ZnxWord};
 
@@ -135,6 +138,40 @@ pub(crate) fn power_layout<A: GLWEInfos>(a: &A, k: usize) -> GLWELayout {
     }
 }
 
+/// The CKKS products of a monomial basis, split by [`split_degree`]: `X^a X^b` by `ckks_mul_into`.
+struct MonomialProducts<'m, BE: Backend, H, Rg> {
+    module: &'m Module<BE>,
+    tsk: &'m H,
+    ring: PhantomData<Rg>,
+}
+
+impl<'a, BE, A, H, Rg: Ring> PowerBasisProducts<A, ScratchArena<'a, BE>> for MonomialProducts<'_, BE, H, Rg>
+where
+    BE: Backend,
+    A: PowerStorage<'a, BE, Rg>,
+    Module<BE>: CKKSMulOps<BE, Rg>,
+    H: GetTensorKey<BE, Rg>,
+{
+    fn split(&self, n: usize) -> (usize, usize) {
+        split_degree(n)
+    }
+
+    fn product(
+        &self,
+        basis: &PowerBasis<A>,
+        a: usize,
+        b: usize,
+        scratch: ScratchArena<'a, BE>,
+    ) -> Result<(A, ScratchArena<'a, BE>)> {
+        let a_val = basis.get_stored(a).expect("the generator stores a first");
+        let b_val = basis.get_stored(b).expect("the generator stores b first");
+        let k = mul_ct_k("ckks_mul_into", a_val, b_val)?;
+        let (mut result, mut scratch) = A::carve(self.module, &power_layout(a_val, k), scratch);
+        self.module.ckks_mul_into(&mut result, a_val, b_val, self.tsk, &mut scratch)?;
+        Ok((result, scratch))
+    }
+}
+
 fn gen_monomial<'a, BE, A, H, Rg: Ring>(
     basis: &mut PowerBasis<A>,
     n: usize,
@@ -152,24 +189,71 @@ where
         basis.basis() == Basis::Monomial,
         "PowerBasis::gen_power only supports the monomial basis; use gen_power_chebyshev for Chebyshev"
     );
+    ensure!(
+        n >= 2 || basis.contains_power(n),
+        "gen_power: n={n} < 2; X^1 must be provided at construction"
+    );
+    MonomialProducts {
+        module,
+        tsk,
+        ring: PhantomData::<Rg>,
+    }
+    .gen_power(basis, n, scratch)
+}
 
-    if basis.contains_power(n) {
-        return Ok(scratch);
+/// The CKKS products of a Chebyshev basis, split by [`split_degree`]: `2 T_a T_b - T_|a - b|`, normalized once.
+struct ChebyshevProducts<'m, BE: Backend, H, Rg> {
+    module: &'m Module<BE>,
+    tsk: &'m H,
+    ring: PhantomData<Rg>,
+}
+
+impl<'a, BE, A, H, Rg: Ring> PowerBasisProducts<A, ScratchArena<'a, BE>> for ChebyshevProducts<'_, BE, H, Rg>
+where
+    BE: Backend,
+    A: PowerStorage<'a, BE, Rg>,
+    Module<BE>: CKKSPow2Ops<BE, Rg> + CKKSMulOps<BE, Rg> + CKKSSubOps<BE, Rg> + GLWENormalize<BE, Rg>,
+    H: GetTensorKey<BE, Rg>,
+{
+    fn split(&self, n: usize) -> (usize, usize) {
+        split_degree(n)
     }
 
-    ensure!(n >= 2, "gen_power: n={n} < 2; X^1 must be provided at construction");
+    fn product(
+        &self,
+        basis: &PowerBasis<A>,
+        a: usize,
+        b: usize,
+        scratch: ScratchArena<'a, BE>,
+    ) -> Result<(A, ScratchArena<'a, BE>)> {
+        let (module, tsk) = (self.module, self.tsk);
+        let a_val = basis.get_stored(a).expect("the generator stores a first");
+        let b_val = basis.get_stored(b).expect("the generator stores b first");
+        let k = mul_ct_k(if a == b { "ckks_square_into" } else { "ckks_mul_into" }, a_val, b_val)?;
+        let layout = power_layout(a_val, k);
+        let (mut result, mut scratch) = A::carve(module, &layout, scratch);
 
-    let (a, b) = split_degree(n);
-    let scratch = gen_monomial(basis, a, module, tsk, scratch)?;
-    let scratch = gen_monomial(basis, b, module, tsk, scratch)?;
+        // `2·T_a·T_b − T_c`, normalized once at the end.
+        scratch.scope(|scratch| -> Result<()> {
+            let (mut product, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, GLWEPlaintextMeta::default());
+            if a == b {
+                module.ckks_square_into(&mut product, a_val, tsk, &mut scratch)?;
+            } else {
+                module.ckks_mul_into(&mut product, a_val, b_val, tsk, &mut scratch)?;
+            }
+            module.ckks_double_into(&mut result, &product, &mut scratch)?;
 
-    let a_val = basis.get_stored(a).expect("gen_power(a) just succeeded");
-    let b_val = basis.get_stored(b).expect("gen_power(b) just succeeded");
-    let k = mul_ct_k("ckks_mul_into", a_val, b_val)?;
-    let (mut result, mut scratch) = A::carve(module, &power_layout(a_val, k), scratch);
-    module.ckks_mul_into(&mut result, a_val, b_val, tsk, &mut scratch)?;
-    basis.set_power(n, result);
-    Ok(scratch)
+            if a == b {
+                module.ckks_sub_one_assign(&mut result, &mut scratch)?;
+            } else {
+                let c_val = basis.get_stored(a.abs_diff(b)).expect("the generator stores |a - b| first");
+                module.ckks_sub_assign(&mut result, c_val, &mut scratch)?;
+            }
+            module.glwe_normalize_assign(&mut result, &mut scratch);
+            Ok(())
+        })?;
+        Ok((result, scratch))
+    }
 }
 
 fn gen_chebyshev<'a, BE, A, H, Rg: Ring>(
@@ -189,52 +273,16 @@ where
         basis.basis() == Basis::Chebyshev,
         "gen_power_chebyshev requires a Chebyshev PowerBasis"
     );
-
-    if basis.contains_power(n) {
-        return Ok(scratch);
+    ensure!(
+        n >= 2 || basis.contains_power(n),
+        "gen_power_chebyshev: n={n} < 2; T_1 must be provided at construction"
+    );
+    ChebyshevProducts {
+        module,
+        tsk,
+        ring: PhantomData::<Rg>,
     }
-
-    ensure!(n >= 2, "gen_power_chebyshev: n={n} < 2; T_1 must be provided at construction");
-
-    let (a, b) = split_degree(n);
-    let scratch = gen_chebyshev(basis, a, module, tsk, scratch)?;
-    let scratch = gen_chebyshev(basis, b, module, tsk, scratch)?;
-
-    let c = a.abs_diff(b);
-    let scratch = if c != 0 {
-        gen_chebyshev(basis, c, module, tsk, scratch)?
-    } else {
-        scratch
-    };
-
-    let a_val = basis.get_stored(a).expect("gen_power_chebyshev(a) just succeeded");
-    let b_val = basis.get_stored(b).expect("gen_power_chebyshev(b) just succeeded");
-    let k = mul_ct_k(if a == b { "ckks_square_into" } else { "ckks_mul_into" }, a_val, b_val)?;
-    let layout = power_layout(a_val, k);
-    let (mut result, mut scratch) = A::carve(module, &layout, scratch);
-
-    // `2·T_a·T_b − T_c`, normalized once at the end.
-    scratch.scope(|scratch| -> Result<()> {
-        let (mut product, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, GLWEPlaintextMeta::default());
-        if a == b {
-            module.ckks_square_into(&mut product, a_val, tsk, &mut scratch)?;
-        } else {
-            module.ckks_mul_into(&mut product, a_val, b_val, tsk, &mut scratch)?;
-        }
-        module.ckks_double_into(&mut result, &product, &mut scratch)?;
-
-        if c == 0 {
-            module.ckks_sub_one_assign(&mut result, &mut scratch)?;
-        } else {
-            let c_val = basis.get_stored(c).expect("gen_power_chebyshev(c) just succeeded");
-            module.ckks_sub_assign(&mut result, c_val, &mut scratch)?;
-        }
-        module.glwe_normalize_assign(&mut result, &mut scratch);
-        Ok(())
-    })?;
-
-    basis.set_power(n, result);
-    Ok(scratch)
+    .gen_power(basis, n, scratch)
 }
 
 /// The powers a basis computes directly for a polynomial of `degree`: its largest power of two, then its baby steps.
@@ -253,44 +301,16 @@ fn populate_targets(degree: usize, log_split: usize, parity: Parity) -> impl Ite
         .chain((first..baby_limit).step_by(step))
 }
 
-/// Largest baby-step range [`populated_powers`] replays: `log_split` 12, a degree around `2^24`.
-const MAX_BABY_STEPS: usize = 1 << 12;
-
-/// Powers [`populate_in`] adds to a `basis` of a polynomial of `degree`, replaying [`split_degree`] on the stack: a query
-/// reads this, and a step runs its query at entry. Past [`MAX_BABY_STEPS`] it bounds the count by the whole schedule.
+/// Powers [`populate_in`] adds to a `basis` of a polynomial of `degree`, replaying [`split_degree`] on the stack through
+/// core's [`power_basis_gen_count`]: a query reads this, and a step runs its query at entry. Past the entries it tracks, a
+/// `log_split` of 12 and a degree around `2^24`, it bounds the count by the whole schedule.
 pub(crate) fn populated_powers(degree: usize, log_split: usize, parity: Parity, basis: Basis) -> usize {
-    struct Seen {
-        pow2: u64,
-        rest: [u64; MAX_BABY_STEPS / 64],
-    }
-    fn add(seen: &mut Seen, n: usize, basis: Basis) -> usize {
-        if n < 2 {
-            return 0;
-        }
-        let (word, bit) = if n.is_power_of_two() {
-            (&mut seen.pow2, n.trailing_zeros())
-        } else {
-            (&mut seen.rest[n / 64], (n % 64) as u32)
-        };
-        if *word >> bit & 1 == 1 {
-            return 0;
-        }
-        *word |= 1 << bit;
-        let (a, b) = split_degree(n);
-        let c = if basis == Basis::Chebyshev { a.abs_diff(b) } else { 0 };
-        1 + add(seen, a, basis) + add(seen, b, basis) + add(seen, c, basis)
-    }
     let baby_limit = (1usize << log_split).min(degree + 1);
-    if baby_limit > MAX_BABY_STEPS {
+    if baby_limit > POWER_BASIS_TRACKED_ENTRIES {
         return baby_limit + usize::BITS as usize;
     }
-    let mut seen = Seen {
-        pow2: 0,
-        rest: [0; MAX_BABY_STEPS / 64],
-    };
-    populate_targets(degree, log_split, parity)
-        .map(|n| add(&mut seen, n, basis))
-        .sum()
+    power_basis_gen_count(populate_targets(degree, log_split, parity), split_degree, basis)
+        .expect("the baby steps lie within the tracked entries")
 }
 
 /// Computes every power of a polynomial of `degree` into `basis`, in the storage of its entries, and returns what is left
