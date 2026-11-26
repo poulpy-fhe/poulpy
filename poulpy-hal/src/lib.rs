@@ -166,6 +166,20 @@ fn is_aligned_custom<T>(ptr: *const T, align: usize) -> bool {
     (ptr as usize).is_multiple_of(align)
 }
 
+/// `rev_m(r)` of the [`api`] notation: the `log2(m)` low bits of `r` reversed, for `m` a
+/// power of two and `r < m`.
+pub fn bit_reverse(r: usize, m: usize) -> usize {
+    debug_assert!(
+        m.is_power_of_two() && r < m,
+        "bit_reverse: r must be below the power of two m"
+    );
+    if m == 1 {
+        0
+    } else {
+        r.reverse_bits() >> (usize::BITS - m.ilog2())
+    }
+}
+
 /// Returns `true` if `ptr` is aligned to [`DEFAULTALIGN`] bytes.
 pub fn is_aligned<T>(ptr: *const T) -> bool {
     is_aligned_custom(ptr, DEFAULTALIGN)
@@ -297,4 +311,17 @@ pub fn alloc_aligned<T: Copy + bytemuck::Zeroable>(size: usize) -> AlignedVec<T>
         (size * size_of::<T>()).next_multiple_of(DEFAULTALIGN) / size_of::<T>(),
         DEFAULTALIGN,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bit_reverse;
+
+    #[test]
+    fn bit_reverse_reverses_the_low_bits() {
+        assert_eq!(bit_reverse(0, 1), 0);
+        assert_eq!(bit_reverse(1, 2), 1);
+        assert_eq!(bit_reverse(0b001, 8), 0b100);
+        assert_eq!(bit_reverse(0b0011, 16), 0b1100);
+    }
 }

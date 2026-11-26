@@ -11,6 +11,7 @@ documentation = "https://docs.rs/poulpy-hal"
 
 [dependencies]
 dashu-float = {workspace = true}
+dashu-int = {workspace = true}
 itertools = {workspace = true}
 rand = {workspace = true}
 rand_distr = {workspace = true}

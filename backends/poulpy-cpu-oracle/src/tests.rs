@@ -694,3 +694,24 @@ mod bin_fhe_tests {
     poulpy_bin_fhe::bin_fhe_reference_test_suite!(mod ntt4x30, backend = crate::NTT4x30Oracle);
     poulpy_bin_fhe::bin_fhe_parity_test_suite!(mod parity, backend_ref = crate::FFT64Oracle, backend_test = crate::NTT4x30Oracle);
 }
+
+mod zq {
+    use poulpy_hal::test_suite::zq::{test_zq_new_rejects, test_zq_ntt, test_zq_ntt_rejects_wrong_length};
+
+    use crate::ZqOracle;
+
+    #[test]
+    fn test_zq_ntt_oracle() {
+        test_zq_ntt::<ZqOracle>();
+    }
+
+    #[test]
+    fn test_zq_ntt_rejects_wrong_length_oracle() {
+        test_zq_ntt_rejects_wrong_length::<ZqOracle>();
+    }
+
+    #[test]
+    fn test_zq_new_rejects_oracle() {
+        test_zq_new_rejects::<ZqOracle>();
+    }
+}

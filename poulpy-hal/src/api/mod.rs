@@ -128,6 +128,9 @@
 //! - `rev_m(r)` reverses the `log2(m)` bits of `r`, with `rev_1(0) = 0`.
 //! - `omega(m,r) = exp(2*pi*I*(rev_m(r) + 1/4)/m)` is evaluation root `r`
 //!   of the raw complex transform.
+//! - For a transform over `Z/q`, `n` is the table degree returned by `n()`, and
+//!   `q` and `psi` are the odd modulus and the root, with `psi^n = -1 mod q`,
+//!   the table was built for.
 //!
 //! # Canonical form
 //!
@@ -241,6 +244,7 @@ mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
 mod vmp_pmat;
+mod zq;
 
 pub use convolution::*;
 pub use mat_znx::*;
@@ -253,3 +257,4 @@ pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
 pub use vmp_pmat::*;
+pub use zq::*;
