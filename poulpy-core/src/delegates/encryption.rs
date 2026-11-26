@@ -410,22 +410,15 @@ impl_encryption_delegate!(
     {
         BE::glwe_switching_key_encrypt_sk(self, res, sk_in, sk_out, source_xe, source_xa, scratch)
     },
-    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A, B>(
-        &self,
-        dense_to_sparse_infos: &A,
-        sparse_to_dense_infos: Option<&B>,
-        log_gap: usize,
-    ) -> usize
+    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A>(&self, dense_to_sparse_infos: &A) -> usize
     where
         A: GGLWEInfos,
-        B: GGLWEInfos,
     {
-        BE::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes(self, dense_to_sparse_infos, sparse_to_dense_infos, log_gap)
+        BE::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes(self, dense_to_sparse_infos)
     },
-    fn glwe_switching_key_encrypt_sk_encapsulation<R1, R2, S1, S2>(
+    fn glwe_switching_key_encrypt_sk_encapsulation<R, S1, S2>(
         &self,
-        dense_to_sparse: &mut R1,
-        sparse_to_dense: Option<&mut R2>,
+        dense_to_sparse: &mut R,
         sk_sparse: &mut S2,
         sk_dense: &S1,
         log_gap: usize,
@@ -435,15 +428,13 @@ impl_encryption_delegate!(
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R1: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        R2: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
         S1: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
         S2: GLWESecretToBackendMut<BE, Rg> + GetDistribution + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_switching_key_encrypt_sk_encapsulation(
             self,
             dense_to_sparse,
-            sparse_to_dense,
             sk_sparse,
             sk_dense,
             log_gap,

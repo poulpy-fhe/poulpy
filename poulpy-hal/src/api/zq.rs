@@ -6,7 +6,7 @@
 /// mutation   none
 /// domain     -
 /// ensures    returns the positive power-of-two transform degree n
-/// test       none
+/// test       test_zq_ntt
 /// ```
 pub trait ZqN {
     /// Returns the transform degree `n`.

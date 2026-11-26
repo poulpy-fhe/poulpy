@@ -10,10 +10,13 @@ use poulpy_hal::{
 pub use crate::api::GLWESwitchingKeyEncryptSk;
 use crate::layouts::operand_degree;
 use crate::{
-    GetDistribution, ScratchArenaTakeGLWESecret, ScratchArenaTakeGLWESecretPrepared,
-    api::GLWESecretPreparedFactory,
+    Distribution, GetDistribution, GetDistributionMut, ScratchArenaTakeGLWESecret, ScratchArenaTakeGLWESecretPrepared,
+    api::{GLWESecretPreparedFactory, GLWESecretSampling},
     encryption::gglwe::GGLWEEncryptSk,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, LWEInfos},
+    layouts::{
+        GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
+        LWEInfos,
+    },
 };
 
 /// Portable implementation using HAL operations.
@@ -36,6 +39,36 @@ pub trait GLWESwitchingKeyEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
         R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
         S1: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
+
+    /// Scratch of [`Self::glwe_switching_key_encrypt_sk_encapsulation_reference`] at every gap: the larger of the
+    /// subring secret of the smallest gap, half the key's degree, and the key's encryption.
+    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes_reference<A>(&self, dense_to_sparse_infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+        Self: GLWESwitchingKeyEncryptSk<BE, Rg>;
+
+    /// Implements
+    /// [`EncryptionImpl::glwe_switching_key_encrypt_sk_encapsulation`](crate::oep::EncryptionImpl::glwe_switching_key_encrypt_sk_encapsulation),
+    /// which `impl_encryption_reference_full!` forwards here: checks every operand, draws `sk_sparse` on the subring
+    /// of the gap with `glwe_secret_fill_ternary_hw`, embeds it with `vec_znx_switch_ring`, tags it encapsulated,
+    /// encrypts `dense_to_sparse` with `glwe_switching_key_encrypt_sk` and wipes its budget.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_switching_key_encrypt_sk_encapsulation_reference<R, S1, S2>(
+        &self,
+        dense_to_sparse: &mut R,
+        sk_sparse: &mut S2,
+        sk_dense: &S1,
+        log_gap: usize,
+        hamming_weight: usize,
+        source_xs: &mut Source,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
+        S2: GLWESecretToBackendMut<BE, Rg> + GetDistribution + GetDistributionMut + GLWEInfos,
+        Self: GLWESwitchingKeyEncryptSk<BE, Rg> + GLWESecretSampling<BE, Rg>;
 }
 
 impl<BE: Backend, Rg: Ring> GLWESwitchingKeyEncryptSkReference<BE, Rg> for Module<BE>
@@ -109,6 +142,83 @@ where
             *res.input_degree() = sk_in.n();
             *res.output_degree() = sk_out_ref.n();
         }
+        scratch.wipe(tmp_bytes);
+    }
+
+    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes_reference<A>(&self, dense_to_sparse_infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+        Self: GLWESwitchingKeyEncryptSk<BE, Rg>,
+    {
+        let n: usize = operand_degree(self.n(), &[dense_to_sparse_infos.n()]);
+        let subring: usize = BE::scratch_aligned(BE::scalar_znx_bytes_of(n / 2, dense_to_sparse_infos.rank_out().into()));
+        subring.max(self.glwe_switching_key_encrypt_sk_tmp_bytes(dense_to_sparse_infos))
+    }
+
+    fn glwe_switching_key_encrypt_sk_encapsulation_reference<R, S1, S2>(
+        &self,
+        dense_to_sparse: &mut R,
+        sk_sparse: &mut S2,
+        sk_dense: &S1,
+        log_gap: usize,
+        hamming_weight: usize,
+        source_xs: &mut Source,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
+        S2: GLWESecretToBackendMut<BE, Rg> + GetDistribution + GetDistributionMut + GLWEInfos,
+        Self: GLWESwitchingKeyEncryptSk<BE, Rg> + GLWESecretSampling<BE, Rg>,
+    {
+        crate::layouts::assert_secret_set(sk_dense.dist());
+        assert!(
+            sk_sparse.n() == sk_dense.n() && sk_sparse.rank() == sk_dense.rank(),
+            "the sparse secret's degree or rank differs from the dense secret's"
+        );
+        operand_degree(self.n(), &[dense_to_sparse.n()]);
+        assert!(
+            sk_dense.n() <= dense_to_sparse.n(),
+            "the dense secret's degree exceeds the key's"
+        );
+        assert!(
+            dense_to_sparse.rank_in() == sk_dense.rank() && dense_to_sparse.rank_out() == sk_dense.rank(),
+            "the key's ranks differ from the secrets' rank"
+        );
+        let subring_n: usize = u32::try_from(log_gap)
+            .ok()
+            .and_then(|shift| sk_dense.n().as_usize().checked_shr(shift))
+            .unwrap_or(0);
+        assert!(subring_n >= 1, "the subring of the gap has no coefficient");
+        assert!(hamming_weight <= subring_n, "the Hamming weight exceeds the subring's degree");
+        let tmp_bytes: usize =
+            GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes_reference(
+                self,
+                dense_to_sparse,
+            );
+        assert!(
+            scratch.available() >= tmp_bytes,
+            "scratch.available() < GLWESwitchingKeyEncryptSk::glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes"
+        );
+        if log_gap == 0 {
+            self.glwe_secret_fill_ternary_hw(sk_sparse, hamming_weight, source_xs);
+        } else {
+            // The secret of the subring, `s(X^(2^log_gap))`: its weight is spent on the subring's coefficients.
+            let (mut sk_subring, _) = scratch
+                .borrow()
+                .take_glwe_secret_scratch::<Rg>(subring_n.into(), sk_dense.rank());
+            self.glwe_secret_fill_ternary_hw(&mut sk_subring, hamming_weight, source_xs);
+            let sk_subring = GLWESecretToBackendRef::<BE, Rg>::to_backend_ref(&sk_subring);
+            let a = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(&sk_subring.data);
+            let mut sk_sparse = sk_sparse.to_backend_mut();
+            let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(&mut sk_sparse.data);
+            for col in 0..sk_dense.rank().as_usize() {
+                self.vec_znx_switch_ring(&mut res, col, &a, col);
+            }
+        }
+        *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
+        self.glwe_switching_key_encrypt_sk(dense_to_sparse, sk_dense, &*sk_sparse, source_xe, source_xa, scratch);
         scratch.wipe(tmp_bytes);
     }
 }

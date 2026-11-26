@@ -189,10 +189,6 @@ where
         basis.basis() == Basis::Monomial,
         "PowerBasis::gen_power only supports the monomial basis; use gen_power_chebyshev for Chebyshev"
     );
-    ensure!(
-        n >= 2 || basis.contains_power(n),
-        "gen_power: n={n} < 2; X^1 must be provided at construction"
-    );
     MonomialProducts {
         module,
         tsk,
@@ -272,10 +268,6 @@ where
     ensure!(
         basis.basis() == Basis::Chebyshev,
         "gen_power_chebyshev requires a Chebyshev PowerBasis"
-    );
-    ensure!(
-        n >= 2 || basis.contains_power(n),
-        "gen_power_chebyshev: n={n} < 2; T_1 must be provided at construction"
     );
     ChebyshevProducts {
         module,

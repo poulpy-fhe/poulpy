@@ -558,12 +558,13 @@ pub type HypercubeSchedule = BTreeMap<HypercubeCoordinate, Vec<(HypercubeCoordin
 
 /// The rotation of the automorphism at `(i, j)`, in the convention of
 /// [`galois_element`](poulpy_hal::layouts::galois_element), `X -> X^(sign(r) 5^|r|)`: `j` or
-/// `-j`, and `-MAX_RING_DEGREE / 2` for `X -> X^-1`, which is `X -> X^-1` at every degree `N` a
-/// module serves, as `5^(N / 2) = 1` modulo `2N` and `N / 2` divides `MAX_RING_DEGREE / 2`.
+/// `-j`, and `-MAX_RING_DEGREE` for `X -> X^-1`, which is `X -> X^-1` at every degree `N` a
+/// module serves, on both rings: 5 has order dividing `N` modulo the cyclotomic order, at most
+/// `4N`, and `N` divides `MAX_RING_DEGREE`.
 pub fn hypercube_rotation((i, j): HypercubeCoordinate) -> i64 {
     match (i, j) {
         (0, j) => j,
-        (_, 0) => -((MAX_RING_DEGREE / 2) as i64),
+        (_, 0) => -(MAX_RING_DEGREE as i64),
         (_, j) => -j,
     }
 }
@@ -576,10 +577,21 @@ pub fn hypercube_rotation((i, j): HypercubeCoordinate) -> i64 {
 /// not cover every automorphism, the whole group is split: one dimension of the powers of 5 and
 /// `X -> X^-1` when needed. Each automorphism goes to the first baby, then giant, in increasing
 /// order of their coordinates, that covers it.
+///
+/// # Panics
+///
+/// When `order` is not a power of two at most `MAX_RING_DEGREE`, or a coordinate is outside
+/// `{0, 1} x [0, order)`.
 pub fn hypercube_bsgs_schedule(coordinates: &BTreeSet<HypercubeCoordinate>, order: i64) -> HypercubeSchedule {
     assert!(
-        order > 0 && (order as u64).is_power_of_two(),
-        "hypercube schedule: the order must be a power of two"
+        order > 0 && (order as u64).is_power_of_two() && order as u64 <= MAX_RING_DEGREE,
+        "hypercube schedule: the order must be a power of two at most MAX_RING_DEGREE"
+    );
+    assert!(
+        coordinates
+            .iter()
+            .all(|&(i, j)| (0..2).contains(&i) && (0..order).contains(&j)),
+        "hypercube schedule: a coordinate is outside {{0, 1}} x [0, order)"
     );
     if let Some(schedule) = hypercube_assign(
         coordinates,
@@ -751,12 +763,13 @@ mod hypercube_tests {
     #[test]
     fn hypercube_rotation_follows_the_galois_convention() {
         for n in [8usize, 512, 1 << 17] {
-            let two_n: i64 = 2 * n as i64;
-            let galois = |c: HypercubeCoordinate| galois_element(hypercube_rotation(c), two_n).rem_euclid(two_n);
-            assert_eq!(galois((0, 0)), 1);
-            assert_eq!(galois((0, 3)), 125 % two_n);
-            assert_eq!(galois((1, 0)), two_n - 1, "X -> X^-1 at degree {n}");
-            assert_eq!(galois((1, 2)), two_n - 25 % two_n);
+            for order in [2 * n as i64, 4 * n as i64] {
+                let galois = |c: HypercubeCoordinate| galois_element(hypercube_rotation(c), order).rem_euclid(order);
+                assert_eq!(galois((0, 0)), 1);
+                assert_eq!(galois((0, 3)), 125 % order);
+                assert_eq!(galois((1, 0)), order - 1, "X -> X^-1 at degree {n}, order {order}");
+                assert_eq!(galois((1, 2)), order - 25 % order);
+            }
         }
     }
 

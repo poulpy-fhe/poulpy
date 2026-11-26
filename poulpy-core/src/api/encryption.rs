@@ -398,37 +398,31 @@ pub trait GLWESwitchingKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
         S1: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 
-    /// Scratch of [`Self::glwe_switching_key_encrypt_sk_encapsulation`] for keys of these layouts and the gap
-    /// `log_gap`.
-    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A, B>(
-        &self,
-        dense_to_sparse_infos: &A,
-        sparse_to_dense_infos: Option<&B>,
-        log_gap: usize,
-    ) -> usize
+    /// Scratch of [`Self::glwe_switching_key_encrypt_sk_encapsulation`] for a key of this layout, at every gap.
+    fn glwe_switching_key_encrypt_sk_encapsulation_tmp_bytes<A>(&self, dense_to_sparse_infos: &A) -> usize
     where
-        A: GGLWEInfos,
-        B: GGLWEInfos;
+        A: GGLWEInfos;
 
-    /// Encrypts the keys of a sparse-secret encapsulation (<https://eprint.iacr.org/2022/024>):
-    /// `dense_to_sparse` switches a ciphertext from the dense secret to an ephemeral sparse one, and
-    /// `sparse_to_dense`, when given, switches it back.
+    /// Encrypts the key of a sparse-secret encapsulation (<https://eprint.iacr.org/2022/024>):
+    /// `dense_to_sparse` switches a ciphertext from the dense secret to an ephemeral sparse one.
     ///
     /// In order: `sk_sparse` is drawn from `source_xs`, ternary of Hamming weight `hamming_weight` on the
     /// subring of degree `n / 2^log_gap`, as `s(X^(2^log_gap))`, the whole ring when `log_gap` is zero, and
-    /// tagged [`Distribution::ENCAPSULATED`](crate::Distribution::ENCAPSULATED); then `dense_to_sparse`
-    /// and `sparse_to_dense` are encrypted from `source_xe` and `source_xa` by
-    /// [`Self::glwe_switching_key_encrypt_sk`]. `sk_sparse` stays with the caller, who keeps it within its
-    /// call: an encapsulated secret backs no public key and does not serialize.
+    /// tagged [`Distribution::ENCAPSULATED`](crate::Distribution::ENCAPSULATED); then `dense_to_sparse` is
+    /// encrypted from `source_xe` and `source_xa` by [`Self::glwe_switching_key_encrypt_sk`]. The key
+    /// switching back is [`Self::glwe_switching_key_encrypt_sk`] from `sk_sparse` to `sk_dense`, called next on
+    /// the same sources. `sk_sparse` stays with the caller, who keeps it within its call: an encapsulated
+    /// secret backs no public key and does not serialize.
     ///
     /// # Panics
     ///
-    /// Before any draw or write, when the secrets differ in degree or rank, the subring of the gap has no
-    /// coefficient, or the arena is below the query.
-    fn glwe_switching_key_encrypt_sk_encapsulation<R1, R2, S1, S2>(
+    /// Before any draw or write, with `dense_to_sparse`, `sk_sparse` and the sources unchanged: when
+    /// `sk_dense` has the `NONE` distribution, the secrets differ in degree or rank, the key's ranks differ
+    /// from theirs, its degree is below theirs or above the module's, the subring of the gap has no
+    /// coefficient, the Hamming weight exceeds the subring's degree, or the arena is below the query.
+    fn glwe_switching_key_encrypt_sk_encapsulation<R, S1, S2>(
         &self,
-        dense_to_sparse: &mut R1,
-        sparse_to_dense: Option<&mut R2>,
+        dense_to_sparse: &mut R,
         sk_sparse: &mut S2,
         sk_dense: &S1,
         log_gap: usize,
@@ -438,8 +432,7 @@ pub trait GLWESwitchingKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R1: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        R2: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
         S1: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
         S2: GLWESecretToBackendMut<BE, Rg> + GetDistribution + GetDistributionMut + GLWEInfos;
 }

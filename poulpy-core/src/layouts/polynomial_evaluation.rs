@@ -82,9 +82,14 @@ pub enum SplitStrategy {
 }
 
 impl SplitStrategy {
-    /// The `log_split`, at least 1, this strategy picks for a polynomial of `degree >= 1`: the
-    /// one [`Polynomial::decompose_bsgs_with`] decomposes with.
+    /// The `log_split`, at least 1, this strategy picks for a polynomial of `degree`: the one
+    /// [`Polynomial::decompose_bsgs_with`] decomposes with.
+    ///
+    /// # Panics
+    ///
+    /// When `degree` is zero.
     pub fn log_split(self, degree: usize, parity: Parity, basis: Basis) -> usize {
+        assert!(degree >= 1, "log_split: the degree must be at least 1");
         split_for_strategy(self, degree, parity, basis)
     }
 }
