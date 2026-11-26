@@ -216,6 +216,24 @@ impl GGLWELayout {
 }
 
 impl GGLWELayout {
+    /// The smallest key layout covering an input of the layout of `a`, one digit per limb, of
+    /// its rank: it sizes the scratch of an operation that looks up no key, as any key covering
+    /// `a` sizes at least as much.
+    pub fn covering<A: GLWEInfos>(a: &A) -> Self {
+        let k_digit = TorusPrecision(a.base2k().0);
+        GGLWELayout {
+            n: a.n(),
+            base2k: a.base2k(),
+            dnum: Self::dnum_for_input(a.k(), k_digit),
+            k_aux: k_digit,
+            rank_in: a.rank(),
+            rank_out: a.rank(),
+            k_digit,
+            k_offset: TorusPrecision(0),
+            stride: 1,
+        }
+    }
+
     /// Number of gadget digits a key needs to cover an input ciphertext of
     /// precision `input_k`: `ceil(input_k / k_digit)`.
     ///
