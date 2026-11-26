@@ -193,7 +193,6 @@
 - **Breaking:** `NTT4x30Gpu<RT>` and its aliases `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` lose their ring parameter, and `handle::<RT, R>` becomes `handle::<RT>`: one type serves both rings, `Module::new` uploading for every degree `n` from `MIN_DEGREE` the twiddles both rings read and, beside them, the basis change of the conjugate-invariant ring, `alpha^-k` modulo each prime for `k < n`.
 - **Breaking:** `AutomorphismPlan` takes the ring: `AutomorphismPlan<R>` is the `HalVecZnxDftImpl<R>::AutomorphismPlan` of `NTT4x30Gpu<RT>`. The PaCo and SHIP coefficient-encoding hooks take a plan of degree up to the module's.
 - Replicated CKKS layouts use device kernels for shaped-rounding corrections on both rings, with shaping coefficients and their inverses cached by the module. Add/subtract-one caches the unit plaintext of `ckks_plaintext_one` by radix, slot layout and scale, building it with no scratch arena of its own. Replicated parity suites compare both rings against the portable CPU backend. `replicated_bootstrapping_presets_meet_precision` runs the replicated presets on the device, with `NTT4x30Portable` as the client.
-- **Fix:** a buffer dropped by another thread-local's destructor at thread exit, after the crate's own thread-locals are destroyed, is released instead of panicking (which aborted the process): a cache of the caller's, such as `poulpy-bench`'s current point, may hold device buffers.
 
 ### `poulpy-bench`
 
