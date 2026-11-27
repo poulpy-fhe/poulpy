@@ -28,6 +28,19 @@ pub fn galois_of_rotation(rotation: i64) -> i64 {
 
 /// The conjugation bit and the rotation, in `[0, MAX_RING_DEGREE)`, of the Galois element `p`.
 ///
+/// # Algorithm
+///
+/// The conjugation bit `c` is set when `p = 3` modulo 4, as 5 is 1 there. The rotation is the
+/// discrete logarithm in base 5 of `x = (-1)^c p`, found one bit at a time from the least
+/// significant, as Pohlig-Hellman does in a group whose order is a power of two:
+/// `5^(2^k) = 1 + 2^(k + 2)` modulo `2^(k + 3)`, so once the power of the lower bits equals `x`
+/// modulo `2^(k + 2)`, bit `k` is set exactly when the two differ modulo `2^(k + 3)`.
+///
+/// # Complexity
+///
+/// `log2(MAX_RING_DEGREE)` iterations, each one squaring and at most one multiplication modulo
+/// [`GALOIS_ORDER`], on machine words and with no table.
+///
 /// # Panics
 ///
 /// When `p` is even.
@@ -35,7 +48,6 @@ pub fn galois_parts(p: i64) -> (bool, i64) {
     assert!(p & 1 == 1, "a Galois element is odd");
     let q: i64 = p.rem_euclid(GALOIS_ORDER);
     let (conjugate, x) = if q & 3 == 1 { (false, q) } else { (true, GALOIS_ORDER - q) };
-    // Bit `k` of the rotation fixes the residue modulo `2^(k + 3)`, as `5^(2^k) = 1 + 2^(k + 2)` there.
     let (mut rotation, mut power, mut step): (i64, i64, i64) = (0, 1, 5);
     for k in 0..MAX_RING_DEGREE.trailing_zeros() {
         if (power - x).rem_euclid(1 << (k + 3)) != 0 {
