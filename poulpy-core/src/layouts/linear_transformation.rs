@@ -801,7 +801,7 @@ fn hypercube_split(dims: &[HypercubeDimension], order: i64) -> HypercubeSplit {
 mod hypercube_tests {
     use std::collections::BTreeSet;
 
-    use poulpy_hal::GALOIS_CONJUGATION;
+    use poulpy_hal::GALOIS_GENERATOR_CONJUGATION;
 
     use super::{
         HypercubeCoordinate, HypercubeSchedule, LinearTransformationLayout, LinearTransformationStrategy, diagonal_parts,
@@ -855,7 +855,9 @@ mod hypercube_tests {
         let mut want: Vec<(bool, i64)> = galois.iter().map(|&p| diagonal_parts(p, slots)).collect();
         want.sort_unstable();
         assert_eq!(covered, want);
-        assert!(plan.giant_galois.contains(&GALOIS_CONJUGATION) || plan.baby_galois.contains(&GALOIS_CONJUGATION));
+        assert!(
+            plan.giant_galois.contains(&GALOIS_GENERATOR_CONJUGATION) || plan.baby_galois.contains(&GALOIS_GENERATOR_CONJUGATION)
+        );
     }
 
     #[test]

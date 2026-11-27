@@ -150,21 +150,21 @@ pub mod doc {
     }
 }
 
-/// Generator of the rotations of the Galois group `(Z/2NZ)*` of the cyclotomic ring
+/// Generator of the rotation subgroup of the Galois group `(Z/2NZ)*` of the cyclotomic ring
 /// `Z[X]/(X^N + 1)`, `N >= 4`: the cyclic subgroup `<5>` of order `N/2`, whose
 /// automorphisms are `X -> X^{5^k}`.
 ///
-/// The group is the direct product of `<5>` and of the subgroup `<-1>` that
-/// [`GALOIS_CONJUGATION`] generates: the two share only the identity, so neither generator is
-/// a power of the other and every element is `(-1)^c 5^k` for one `c` and one `k`.
-pub const GALOISGENERATOR: u64 = 5;
+/// The group is the direct product of two distinct subgroups, `<5>` and the conjugation
+/// subgroup `<-1>` that [`GALOIS_GENERATOR_CONJUGATION`] generates: they share only the
+/// identity, so every element is `(-1)^c 5^k` for one `c` and one `k`.
+pub const GALOIS_GENERATOR_ROTATION: u64 = 5;
 
-/// Generator of the conjugation of the Galois group: the subgroup `<-1>` of order two, whose
-/// automorphism is `X -> X^-1`.
+/// Generator of the conjugation subgroup of the Galois group: the subgroup `<-1>` of order
+/// two, whose automorphism is `X -> X^-1`.
 ///
-/// It is disjoint from the rotations `<5>` that [`GALOISGENERATOR`] generates, and the two
-/// generate the group together.
-pub const GALOIS_CONJUGATION: i64 = -1;
+/// It is distinct from the rotation subgroup `<5>` that [`GALOIS_GENERATOR_ROTATION`]
+/// generates, and the two generate the group together.
+pub const GALOIS_GENERATOR_CONJUGATION: i64 = -1;
 
 /// Default memory alignment in bytes for all allocated buffers.
 ///

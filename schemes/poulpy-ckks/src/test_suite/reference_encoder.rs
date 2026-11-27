@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use anyhow::Result;
 use num_traits::{Float, FloatConst, NumCast};
 use poulpy_hal::{
-    GALOISGENERATOR,
+    GALOIS_GENERATOR_ROTATION,
     api::{ReimFFT, ReimIFFT, ReimNew},
 };
 
@@ -46,7 +46,7 @@ impl ReferenceEncodingPlan {
         let mut exp = 1usize;
         for _ in 0..m {
             slot_map.push(((exp - 1) / 2).reverse_bits() >> (usize::BITS - log_n));
-            exp = (exp * GALOISGENERATOR as usize) & (two_n - 1);
+            exp = (exp * GALOIS_GENERATOR_ROTATION as usize) & (two_n - 1);
         }
         slot_map
     }

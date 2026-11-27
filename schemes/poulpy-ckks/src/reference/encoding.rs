@@ -9,7 +9,7 @@ use anyhow::{Context, Result, ensure};
 use num_traits::NumCast;
 use poulpy_core::layouts::{GLWEInfos, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
-    GALOISGENERATOR,
+    GALOIS_GENERATOR_ROTATION,
     api::{ReimFFT, ReimIFFT},
     layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, Ring, Standard, ZnxViewMut, encode_i128_by_limb},
 };
@@ -44,7 +44,7 @@ impl EncodingPermutation {
         let mut exponent = 1usize;
         for _ in 0..slots {
             slot_map.push(((exponent - 1) / 2).reverse_bits() >> (usize::BITS - log_n));
-            exponent = (exponent * GALOISGENERATOR as usize) & (two_n - 1);
+            exponent = (exponent * GALOIS_GENERATOR_ROTATION as usize) & (two_n - 1);
         }
 
         let mut seen = vec![false; slots];

@@ -113,7 +113,7 @@ pub fn galois_at(p: i64, cyclotomic_order: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_hal::{GALOIS_CONJUGATION, layouts::galois_element};
+    use poulpy_hal::{GALOIS_GENERATOR_CONJUGATION, layouts::galois_element};
 
     use super::*;
 
@@ -126,7 +126,7 @@ mod tests {
                 assert_eq!(galois_parts(p + 4 * GALOIS_ORDER), (conjugate, rotation));
             }
         }
-        assert_eq!(galois_parts(GALOIS_CONJUGATION), (true, 0));
+        assert_eq!(galois_parts(GALOIS_GENERATOR_CONJUGATION), (true, 0));
     }
 
     #[test]
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(galois_rotation(galois_inverse(p), slots), 24);
         assert_eq!(galois_rotation(galois_of_rotation(-3), slots), 61);
         let conjugated = galois_from_parts(true, 40);
-        assert_eq!(galois_compose(GALOIS_CONJUGATION, p), conjugated);
+        assert_eq!(galois_compose(GALOIS_GENERATOR_CONJUGATION, p), conjugated);
         assert_eq!(galois_inverse(conjugated), galois_from_parts(true, -40));
         assert_eq!(galois_compose(conjugated, galois_inverse(conjugated)), 1);
     }

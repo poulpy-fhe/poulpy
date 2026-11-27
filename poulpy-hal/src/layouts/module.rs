@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::layouts::{Data, Location, MatZnx, PrepareHint, ScalarZnx, VecZnx, checked_product, vec_znx_alloc_zeroed};
 use crate::{
-    GALOISGENERATOR,
+    GALOIS_GENERATOR_ROTATION,
     api::{ModuleLogN, ModuleN},
 };
 
@@ -608,7 +608,7 @@ pub fn check_degree<BE: Backend>(module_n: usize, n: usize) {
     );
 }
 
-/// Computes [`GALOISGENERATOR`]`^|generator| * sign(generator) mod cyclotomic_order`.
+/// Computes [`GALOIS_GENERATOR_ROTATION`]`^|generator| * sign(generator) mod cyclotomic_order`.
 ///
 /// Returns `1` when `generator == 0`.
 ///
@@ -626,7 +626,7 @@ pub fn galois_element(generator: i64, cyclotomic_order: i64) -> i64 {
         return 1;
     }
 
-    let g_exp: u64 = mod_exp_u64(GALOISGENERATOR, generator.unsigned_abs() as usize) & (cyclotomic_order - 1) as u64;
+    let g_exp: u64 = mod_exp_u64(GALOIS_GENERATOR_ROTATION, generator.unsigned_abs() as usize) & (cyclotomic_order - 1) as u64;
     g_exp as i64 * generator.signum()
 }
 
@@ -664,7 +664,7 @@ pub trait GaloisElement
 where
     Self: CyclotomicOrder,
 {
-    /// Returns [`GALOISGENERATOR`]`^|generator| * sign(generator) mod cyclotomic_order`.
+    /// Returns [`GALOIS_GENERATOR_ROTATION`]`^|generator| * sign(generator) mod cyclotomic_order`.
     fn galois_element<Rg: Ring>(&self, generator: i64) -> i64 {
         galois_element(generator, self.cyclotomic_order::<Rg>())
     }

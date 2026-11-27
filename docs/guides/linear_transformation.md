@@ -26,7 +26,7 @@ No homomorphic arithmetic lives in the CKKS layer.
 ## Galois elements
 
 The API names every automorphism of a transform, a diagonal, a baby step and a giant step, by its Galois element `p = (-1)^c 5^j`, the automorphism `X -> X^p` (`poulpy_core::layouts::galois_parts` gives `c` and `j`).
-The rotation by `i` slots is `5^i` (`galois_of_rotation(i)`), and `X -> X^-1` is `-1` (`poulpy_hal::GALOIS_CONJUGATION`, beside the generator `GALOISGENERATOR`).
+The rotation by `i` slots is `5^i` (`galois_of_rotation(i)`), and `X -> X^-1` is `-1` (`poulpy_hal::GALOIS_GENERATOR_CONJUGATION`, which generates the conjugation subgroup, distinct from the rotations of `GALOIS_GENERATOR_ROTATION`).
 A transform holds its elements at `GALOIS_ORDER = 4 * MAX_RING_DEGREE`, which the cyclotomic order of every operand divides on both rings, and an evaluation looks up the key of `p` reduced at the operand's order (`galois_at`).
 Rotations are taken modulo the slot count of the transform, a power of two, so a diagonal is the composition of its giant and baby steps there (`galois_compose(giant, baby, slots)`).
 
