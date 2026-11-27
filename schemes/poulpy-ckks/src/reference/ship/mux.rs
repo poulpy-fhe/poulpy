@@ -40,7 +40,7 @@ where
         + GGLWEProductReference<BE>,
 {
     let a_size = ct.size();
-    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
+    let output_size = gglwe_product_accumulation_output_size(ct, ct, key, term_count, 0);
     let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
     let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
     let layout = gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
@@ -124,7 +124,7 @@ where
 {
     ensure_mux_group("ckks_ship_bootstrap_into", ct.k(), ct.base2k(), keys)?;
     let a_size = ct.size();
-    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &keys[0].key, keys.len());
+    let output_size = gglwe_product_accumulation_output_size(ct, ct, &keys[0].key, keys.len(), 0);
     let base2k = ct.base2k().as_usize();
     let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());
     let key_base2k = keys[0].key.base2k();

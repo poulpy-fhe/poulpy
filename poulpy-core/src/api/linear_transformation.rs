@@ -50,7 +50,7 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes required by [`Self::glwe_linear_transformation_eval_into`] when
     /// the RHS is *streamed* (an unprepared plaintext-diagonal `P`): the streamed
     /// inner product additionally holds one resident `CnvPVecR` diagonal slot. `plan`
-    /// as in [`Self::glwe_linear_transformation_eval_tmp_bytes`].
+    /// as in [`Self::glwe_linear_transformation_eval_tmp_bytes`], `pt` the narrowest diagonal.
     fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
         &self,
         res: &R,
@@ -119,7 +119,7 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::glwe_linear_transformation_rhs_prepare`].
+    /// Scratch bytes required by [`Self::glwe_linear_transformation_rhs_prepare`], `pt_infos` the narrowest diagonal.
     fn glwe_linear_transformation_rhs_prepare_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
         P: GLWEInfos;
@@ -130,8 +130,8 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// `prepared` must have been sized via
     /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
-    /// diagonals' degree, which may be below the ring degree;
-    /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
+    /// diagonals' degree, which may be below the ring degree, a plaintext diagonal below `MIN_DEGREE` being embedded
+    /// at it; `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
     fn glwe_linear_transformation_rhs_prepare<P>(
         &self,
         prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>,
@@ -183,10 +183,10 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Before writing `res`, if `rhs` has no diagonal or a giant step
     /// without one, if a giant step's first diagonal is not as wide as the
-    /// transform's first diagonal, or if `lhs` lacks a baby rotation that `rhs`
-    /// reads. The other plaintext diagonals are not checked: every diagonal of a
-    /// transform shares one width, scale and degree, as the encoder produces
-    /// them, and preparing asserts the degree. Ciphertext diagonals are each checked against the degree, `base2k` and
+    /// transform's first diagonal, if a diagonal's degree raised to `MIN_DEGREE`
+    /// differs from the first diagonal's, or if `lhs` lacks a baby rotation that `rhs`
+    /// reads. The width and scale of the other plaintext diagonals are not checked: every diagonal of a
+    /// transform shares them, as the encoder produces them. Ciphertext diagonals are each checked against the degree, `base2k` and
     /// rank of `res` and the first one's width, and `lhs` against the rank of `res`, and `keys` must hold the tensor
     /// key, also before writing `res`.
     fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<BE, Rg>>(
@@ -219,10 +219,10 @@ pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// long, if a transform has no diagonal or a giant step without one, or if
     /// a cache lacks a baby rotation that its transform reads. Also before
     /// writing `res`, unless every term shares the first one's giant schedule,
-    /// source layout, and first diagonal's layout, width and scale, and every
-    /// giant step's first diagonal has that width. The other plaintext diagonals are not checked:
-    /// every diagonal of a transform shares one width, scale and degree, as the
-    /// encoder produces them, and preparing asserts the degree. Ciphertext diagonals and caches are checked as by
+    /// source layout, and first diagonal's layout, width and scale, every
+    /// giant step's first diagonal has that width, and every diagonal's degree raised to `MIN_DEGREE` equals its term's
+    /// first diagonal's. The width and scale of the other plaintext diagonals are not checked:
+    /// every diagonal of a transform shares them, as the encoder produces them. Ciphertext diagonals and caches are checked as by
     /// [`Self::glwe_linear_transformation_eval_into`], every cache at the first one's width.
     fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,

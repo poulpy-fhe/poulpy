@@ -275,16 +275,10 @@ where
         return false;
     }
     // Preserve the extra live product limb without widening the key input window.
-    let widened = GLWELayout {
-        n: res.n(),
-        base2k: res.base2k(),
-        k: (res.k().as_usize() + prod_size.saturating_sub(res.size()) * base).into(),
-        rank: res.rank(),
-    };
     let output_size = giant_keys
         .iter()
         .flatten()
-        .map(|key| gglwe_product_accumulation_output_size::<BE, _, _, _>(&widened, res, key, term_count))
+        .map(|key| gglwe_product_accumulation_output_size(res, res, key, term_count, prod_size.saturating_sub(res.size())))
         .max()
         .unwrap_or(res.size());
     let lazy_size = output_size.max(prod_size);

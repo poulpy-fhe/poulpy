@@ -294,7 +294,7 @@ pub fn test_glwe_keyswitch_dft_add<BE: crate::test_suite::noise::TestBackend<Rg>
             k: (k_offset + dnum * k_digit).into(),
             rank: rank_out.into(),
         };
-        let acc_size: usize = gglwe_product_accumulation_output_size::<BE, _, _, _>(&out_infos, &in_infos, &ksk_infos, terms);
+        let acc_size: usize = gglwe_product_accumulation_output_size(&out_infos, &in_infos, &ksk_infos, terms, 0);
 
         let mut setup: ScratchOwned<BE> = ScratchOwned::alloc(
             module

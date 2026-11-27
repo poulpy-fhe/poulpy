@@ -132,7 +132,7 @@ where
 {
     let cols = a_infos.rank().as_usize() + 1;
     let a_size = a_infos.size();
-    let key_size = gglwe_product_output_size::<BE, _, _, _>(a_infos, a_infos, key_infos);
+    let key_size = gglwe_product_output_size(a_infos, a_infos, key_infos);
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_pvec_left_prepare_tmp_bytes(a_infos.size(), a_infos.size());
 
@@ -301,10 +301,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L, Rg: Rin
         key_refs.iter().flatten().next().is_some() && key_refs.iter().flatten().all(|key| key.base2k() == a.base2k());
     let key_sizes: Vec<usize> = key_refs
         .iter()
-        .map(|key| {
-            key.as_ref()
-                .map_or(a_size, |key| gglwe_product_output_size::<BE, _, _, _>(a, a, key))
-        })
+        .map(|key| key.as_ref().map_or(a_size, |key| gglwe_product_output_size(a, a, key)))
         .collect();
 
     if use_hoisted {
@@ -465,7 +462,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L, Rg: Ring>(
     let operand_size = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>| {
         gglwe_gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size)
     };
-    let key_size = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>| gglwe_product_output_size::<BE, _, _, _>(a, a, key);
+    let key_size = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>| gglwe_product_output_size(a, a, key);
     let hoisted_passes = || passes.iter().zip(&pass_keys).filter(|(_, key)| hoisted(key));
     let widest = hoisted_passes().map(|((_, pairs), _)| pairs.len()).max().unwrap_or(0);
     let operand_max = hoisted_passes().map(|(_, key)| operand_size(key)).max().unwrap_or(0);
@@ -712,7 +709,7 @@ where
 {
     let (n, cols, a_size) = (a.n().as_usize(), a.rank().as_usize() + 1, a.size());
     let operand_size = gglwe_gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
-    let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
+    let key_size = gglwe_product_output_size(a, a, key);
     sources
         * (BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols - 1, operand_size))
             + BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, key_size))

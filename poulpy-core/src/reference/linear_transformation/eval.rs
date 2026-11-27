@@ -433,7 +433,7 @@ where
 
 /// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`] over streamed transforms:
 /// the sum's budget plus the resident `CnvPVecR` diagonal slot and the `cnv_pvec_right_prepare` scratch of the streamed
-/// inner product, sized at the diagonals' degree.
+/// inner product, sized at the narrowest diagonal's degree, at least `MIN_DEGREE`.
 pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
@@ -477,8 +477,7 @@ where
     T: GGLWEInfos,
 {
     glwe_linear_transformation_eval_sum_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key)
-        + module.cnv_pvec_right_bytes_of(pt.n().as_usize(), 1, pt.size(), PrepareHint::OneShot)
-        + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
+        + streamed_diagonal_tmp_bytes(module, pt)
 }
 
 /// Reference impl: `res = Σ_t M_t(a_t)` for resident transforms sharing one giant schedule.
@@ -557,8 +556,7 @@ pub fn glwe_linear_transformation_eval_sum_into_reference<BE, R, P, H, L: BabySt
 ///
 /// The streamed inner product additionally holds one resident `CnvPVecR`
 /// diagonal slot and a `cnv_pvec_right_prepare` scratch on top of the prepared
-/// evaluation budget, both sized at the module degree, an upper bound for a
-/// diagonal of any degree.
+/// evaluation budget, the slot at the narrowest diagonal's degree, at least `MIN_DEGREE`.
 pub fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
@@ -602,6 +600,15 @@ where
     T: GGLWEInfos,
 {
     glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key)
-        + module.cnv_pvec_right_bytes_of(pt.n().as_usize(), 1, pt.size(), PrepareHint::OneShot)
-        + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
+        + streamed_diagonal_tmp_bytes(module, pt)
+}
+
+/// The streamed diagonal's slot, at its degree raised to `MIN_DEGREE`, and its `cnv_pvec_right_prepare` scratch.
+fn streamed_diagonal_tmp_bytes<BE: Backend, M: CnvPVecBytesOf + CnvOps<BE, Rg>, B: GLWEInfos, Rg: Ring>(
+    module: &M,
+    pt: &B,
+) -> usize {
+    let size = pt.size();
+    BE::scratch_aligned(module.cnv_pvec_right_bytes_of(pt.n().as_usize().max(BE::MIN_DEGREE), 1, size, PrepareHint::OneShot))
+        + module.cnv_pvec_right_prepare_tmp_bytes(size, size)
 }

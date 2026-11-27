@@ -37,7 +37,7 @@ impl<BE: Backend, Rg: Ring> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, 
 
     /// Pre-allocates a resident transform sized for an explicit BSGS `index`.
     ///
-    /// Each slot takes the diagonal's degree, `base2k`, `k` and `rank + 1` columns, so a degree-`n`
+    /// Each slot takes the diagonal's degree, at least `MIN_DEGREE`, `base2k`, `k` and `rank + 1` columns, so a degree-`n`
     /// diagonal gets a degree-`n` slot and a ciphertext diagonal a slot of its columns; the convolution buffers are
     /// zeroed and populated by `glwe_linear_transformation_rhs_prepare`. The
     /// per-diagonal `log_scale` and real-slot claim are left at `0` and `false`
@@ -49,7 +49,7 @@ impl<BE: Backend, Rg: Ring> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, 
     {
         let cols = pt_infos.rank().as_usize() + 1;
         let pt_size = pt_infos.size();
-        let pt_n = pt_infos.n().as_usize();
+        let pt_n = pt_infos.n().as_usize().max(BE::MIN_DEGREE);
         let base2k = pt_infos.base2k();
         let k = pt_infos.k();
 
@@ -112,7 +112,8 @@ where
 }
 
 /// Reference impl: encodes every diagonal of `lt` into the matching
-/// pre-allocated `CnvPVecR` slot in `prepared`.
+/// pre-allocated `CnvPVecR` slot in `prepared`, the right preparation embedding a plaintext diagonal below
+/// `MIN_DEGREE` at that degree.
 ///
 /// `prepared` must have been sized via
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
@@ -171,9 +172,13 @@ pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P, Rg: Ring>(
                     "linear transformation plaintext size does not match its effective precision"
                 );
             }
+            // Only a plaintext diagonal is embedded at the floor; a ciphertext diagonal is prepared at its degree.
+            let prepared_n = match plaintext.rank().as_usize() {
+                0 => plaintext.n().as_usize().max(BE::MIN_DEGREE),
+                _ => plaintext.n().as_usize(),
+            };
             assert_eq!(
-                plaintext.n().as_usize(),
-                pt_n,
+                prepared_n, pt_n,
                 "linear transformation diagonal degree does not match prepared cache"
             );
             assert_eq!(
