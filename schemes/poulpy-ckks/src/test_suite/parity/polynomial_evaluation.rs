@@ -22,7 +22,7 @@ use crate::{
 use poulpy_core::{
     GLWEFill,
     api::GLWETensorKeyPreparedFactory,
-    layouts::{GGLWELayout, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
+    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module, Ring, Standard},
@@ -383,7 +383,13 @@ where
     let poly = plan.bind::<CKKSPlaintextOwned<BE, Rg>>(vec![]).unwrap();
     let mut outputs = Vec::new();
     for n in [module.n(), module.n() / 2] {
-        let key = key_layout(n, params.base2k, 12 * params.base2k + 1, params.rank, 1, 1);
+        let key_params = CKKSTestParams {
+            n,
+            k: 12 * params.base2k + 1,
+            dsize: 1,
+            ..params
+        };
+        let key = key_params.tsk_layout().gglwe_layout();
         let tsk = prepared_tensor_key(module, &key, 113);
         for slots in [
             SlotLayout::Full,
