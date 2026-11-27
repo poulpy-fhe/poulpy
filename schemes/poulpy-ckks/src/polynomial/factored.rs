@@ -44,6 +44,8 @@ pub enum FactorUpdate {
     AddConstant((usize, usize)),
     /// Add the product of a value and a coefficient in one operation.
     MulAddConstant(usize, (usize, usize)),
+    /// Multiply the value by its real coefficient at accumulator width, multiply by i, and add.
+    MulAddImaginaryConstant(usize, (usize, usize)),
     MulPow2(u32),
     /// Multiply by the imaginary unit in the standard ring.
     MulI,
@@ -72,9 +74,11 @@ pub struct FactoredPolynomial<Rg: Ring = Standard> {
     pub(crate) inputs: usize,
     pub(crate) table_sizes: Vec<usize>,
     pub(crate) steps: Vec<FactorStep>,
+    pub(crate) coefficients_read: Vec<Vec<usize>>,
     pub(crate) reuse: Vec<Option<usize>>,
     pub(crate) release: Vec<Vec<usize>>,
     pub(crate) temporaries: usize,
+    pub(crate) bsgs: Option<super::bsgs_program::BsgsBudget>,
     ring: PhantomData<Rg>,
 }
 
@@ -87,11 +91,13 @@ impl<Rg: Ring> FactoredPolynomial<Rg> {
         let mut last_use: Vec<usize> = (0..steps.len()).collect();
         let is_prepared = |v: usize| v >= inputs && matches!(steps[v - inputs].factor, Factor::PrepareRight(_));
         let mut candidates = Vec::with_capacity(steps.len());
-        let coefficient = |table: usize, idx: usize| {
+        let mut coefficients_read = vec![Vec::new(); table_sizes.len()];
+        let mut coefficient = |table: usize, idx: usize| {
             ensure!(
                 table_sizes.get(table).is_some_and(|&n| idx < n),
                 "missing coefficient ({table}, {idx})"
             );
+            coefficients_read[table].push(idx);
             Ok(())
         };
         for (i, step) in steps.iter().enumerate() {
@@ -140,18 +146,21 @@ impl<Rg: Ring> FactoredPolynomial<Rg> {
                 }
             };
             for update in &step.updates {
+                if matches!(update, FactorUpdate::MulI | FactorUpdate::MulAddImaginaryConstant(..)) {
+                    ensure!(
+                        TypeId::of::<Rg>() == TypeId::of::<Standard>(),
+                        "the imaginary unit requires the standard ring"
+                    );
+                }
                 match *update {
                     FactorUpdate::Add(v) | FactorUpdate::Sub(v) => read(v, false)?,
-                    FactorUpdate::MulAddConstant(v, (t, c)) => {
+                    FactorUpdate::MulAddConstant(v, (t, c)) | FactorUpdate::MulAddImaginaryConstant(v, (t, c)) => {
                         read(v, false)?;
                         coefficient(t, c)?;
                     }
                     FactorUpdate::AddConstant((t, c)) => coefficient(t, c)?,
                     FactorUpdate::MulPow2(bits) => ensure!(i32::try_from(bits).is_ok(), "exponent exceeds the signed range"),
-                    FactorUpdate::MulI => ensure!(
-                        TypeId::of::<Rg>() == TypeId::of::<Standard>(),
-                        "the imaginary unit requires the standard ring"
-                    ),
+                    FactorUpdate::MulI => {}
                 }
             }
             // An operand read by an update must still contain its value after the initial factor.
@@ -171,15 +180,42 @@ impl<Rg: Ring> FactoredPolynomial<Rg> {
             temporaries = temporaries.max(live);
             live -= release[i].iter().filter(|&&v| Some(v) != *reuse && !is_prepared(v)).count();
         }
+        for indices in &mut coefficients_read {
+            indices.sort_unstable();
+            indices.dedup();
+        }
         Ok(Self {
+            coefficients_read,
             inputs,
             table_sizes,
             steps,
             reuse: candidates,
             release,
             temporaries,
+            bsgs: None,
             ring: PhantomData,
         })
+    }
+
+    /// Number of borrowed ciphertexts, in value order.
+    pub fn input_count(&self) -> usize {
+        self.inputs
+    }
+
+    /// Factors and updates in evaluation order.
+    pub fn steps(&self) -> &[FactorStep] {
+        &self.steps
+    }
+
+    /// Number of scalar coefficients read from each encoded table.
+    pub fn table_sizes(&self) -> &[usize] {
+        &self.table_sizes
+    }
+
+    /// Whether this program runs under the polynomial-independent BSGS scratch bound.
+    /// Its final copy writes at the caller's width before applying its trailing updates.
+    pub fn uses_bsgs_workspace(&self) -> bool {
+        self.bsgs.is_some()
     }
 
     /// Longest dependency cost with unit scales, counting encoded coefficient products.
@@ -189,6 +225,9 @@ impl<Rg: Ring> FactoredPolynomial<Rg> {
 
     /// Budget above the output scale for equally scaled inputs and coefficient tables.
     pub fn required_budget_bits(&self, input_log_delta: usize, coefficient_log_delta: usize) -> usize {
+        if let Some(budget) = self.bsgs {
+            return budget.required(input_log_delta, coefficient_log_delta);
+        }
         self.budget_cost(vec![0; self.inputs], input_log_delta, |_| coefficient_log_delta)
     }
 
@@ -208,7 +247,9 @@ impl<Rg: Ring> FactoredPolynomial<Rg> {
             for u in &step.updates {
                 match *u {
                     FactorUpdate::Add(v) | FactorUpdate::Sub(v) => cost = cost.max(used[v]),
-                    FactorUpdate::MulAddConstant(v, (table, _)) => cost = cost.max(used[v].saturating_add(scale(table))),
+                    FactorUpdate::MulAddConstant(v, (table, _)) | FactorUpdate::MulAddImaginaryConstant(v, (table, _)) => {
+                        cost = cost.max(used[v].saturating_add(scale(table)))
+                    }
                     _ => {}
                 }
             }

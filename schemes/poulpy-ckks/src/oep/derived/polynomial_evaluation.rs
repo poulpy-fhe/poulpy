@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
+use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSFactoredPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
 use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::GLWENormalize;
 use poulpy_core::glwe_left_operand_prepare_tmp_bytes;
@@ -16,14 +16,14 @@ use crate::{
     CKKSCtBounds, CKKSLayout, SetCKKSInfos,
     api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSRoundOps, CKKSSubOps, PolynomialInputTransform},
     layouts::validation::ensure_masked_constants,
+    layouts::validation::{ensure_baby_steps, ensure_complex_schedules, ensure_power_basis},
     layouts::{CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext},
     polynomial::ComplexBSGSPolynomial,
     power_basis::{CKKSPowerBasisGen, PowerBasis, PowerStorage, populate_in, power_layout, square_ct_k},
-    reference::polynomial_evaluation::{ensure_baby_steps, ensure_complex_schedules},
     shaping::MAX_PASS_BITS,
 };
 
-/// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
+/// Scratch upper bound for the fused full-layout baby step: the constant combination
 /// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
 pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE, Rg: Ring>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
 where
@@ -249,4 +249,108 @@ where
         module.ckks_mul_assign(dst, src, tsk, scratch)?;
     }
     Ok(())
+}
+
+pub(crate) fn ckks_eval_poly_real_const_coeffs_from_power_basis_derived<BE, R, B, A, G, H, Rg: Ring>(
+    module: &Module<BE>,
+    res: &mut R,
+    basis: &G,
+    poly: &B,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSFactoredPolynomialEvaluationOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    B: BSGSPolynomialInfos<BE, Rg>,
+    B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
+    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
+    G: crate::api::PowerBasisHelper<BE, A, Rg>,
+    H: GetTensorKey<BE, Rg>,
+{
+    let op = "ckks_eval_poly_real_const_coeffs_from_power_basis";
+    ensure_baby_steps(op, poly)?;
+    ensure_power_basis(op, poly.basis(), basis.basis())?;
+    let tables = (0..poly.baby_steps()).map(|i| poly.baby_step(i)).collect();
+    eval_compiled(module, res, basis, poly, tables, false, tsk, scratch)
+}
+
+pub(crate) fn ckks_eval_poly_complex_const_coeffs_from_power_basis_derived<BE, R, C, A, G, H>(
+    module: &Module<BE>,
+    res: &mut R,
+    basis: &G,
+    poly: &ComplexBSGSPolynomial<C>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSFactoredPolynomialEvaluationOps<BE>,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+    G: crate::api::PowerBasisHelper<BE, A>,
+    H: GetTensorKey<BE>,
+{
+    let op = "ckks_eval_poly_complex_const_coeffs_from_power_basis";
+    ensure_complex_schedules::<BE, C>(op, poly)?;
+    ensure_power_basis(op, poly.re.basis(), basis.basis())?;
+    let tables = poly
+        .re
+        .baby_steps()
+        .iter()
+        .zip(poly.im.baby_steps())
+        .flat_map(|(r, i)| [r, i])
+        .collect();
+    eval_compiled(module, res, basis, &poly.re, tables, true, tsk, scratch)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn eval_compiled<BE, R, B, A, G, H, Rg: Ring>(
+    module: &Module<BE>,
+    res: &mut R,
+    basis: &G,
+    poly: &B,
+    tables: Vec<&B::Coeffs>,
+    complex: bool,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSFactoredPolynomialEvaluationOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    B: BSGSPolynomialInfos<BE, Rg>,
+    B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
+    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
+    G: crate::api::PowerBasisHelper<BE, A, Rg>,
+    H: GetTensorKey<BE, Rg>,
+{
+    use crate::polynomial::bsgs_program::{BsgsBudget, compile};
+    let op = if complex {
+        "ckks_eval_poly_complex_const_coeffs_from_power_basis"
+    } else {
+        "ckks_eval_poly_real_const_coeffs_from_power_basis"
+    };
+    let x = basis.get(1)?;
+    crate::ensure_operand_degrees(op, module, [res.n(), x.n()])?;
+    ensure_masked_constants::<BE, Rg, _>(op, x.slot_layout(), tables.iter().copied())?;
+    let sizes: Vec<_> = tables.iter().map(|t| t.n().as_usize()).collect();
+    let fold = poly.baby_steps() >= 2 && sizes.last() == Some(&1) && basis.has_power(poly.degree());
+    let budget = BsgsBudget {
+        degree: poly.degree(),
+        basis: poly.basis(),
+        parity: poly.parity(),
+        strategy: poly.split_strategy(),
+        transform: poly.input_transform(),
+        op,
+    };
+    let (program, degrees) = compile(budget, &sizes, complex, fold)?;
+    let inputs = degrees
+        .into_iter()
+        .map(|n| if n == 1 { Ok(x) } else { basis.get(n) })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let encoded = program.bind(tables)?;
+    module.ckks_eval_poly_factored(res, &inputs, &encoded, tsk, scratch)
 }

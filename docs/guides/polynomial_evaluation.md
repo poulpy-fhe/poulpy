@@ -92,7 +92,7 @@ The multiplication by the imaginary unit is the capacity free monomial map provi
 
 Both a prepared entry point and a one-shot entry point are available.
 The prepared entry point takes a power basis that the caller has already built, which allows reuse across several evaluations.
-The one-shot entry point builds and populates the power basis internally from the input ciphertext.
+The one-shot entry point builds and populates the power basis internally from the input ciphertext. Both real and complex BSGS evaluation compile the baby steps and giant products into a factored program at evaluation time. The program borrows the supplied powers and encoded plaintext tables. Equal giant powers within a run share one prepared operand. The BSGS entry points use the shared scratch bound and allocate their live intermediate ciphertexts on the heap.
 
 Chebyshev interpolation of a real function is also provided, which produces the Chebyshev coefficients of the interpolating polynomial.
 

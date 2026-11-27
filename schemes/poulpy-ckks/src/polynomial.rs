@@ -1,3 +1,4 @@
+pub(crate) mod bsgs_program;
 mod factored;
 pub use factored::{EncodedFactoredPolynomial, Factor, FactorStep, FactorUpdate, FactoredPolynomial};
 

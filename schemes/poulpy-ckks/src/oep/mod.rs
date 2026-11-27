@@ -98,7 +98,8 @@ pub use paco::{CKKSPaCoCoeffEncodingImpl, CKKSPaCoImpl, impl_ckks_paco_reference
 pub use plaintext::CKKSPlaintextVecImpl;
 pub use plaintext::impl_ckks_plaintext_vec_reference_full;
 pub use polynomial_evaluation::{
-    CKKSComplexPolynomialEvaluationImpl, CKKSPolynomialEvaluationImpl, impl_ckks_complex_polynomial_evaluation_reference_full,
+    CKKSComplexPolynomialEvaluationImpl, CKKSPolynomialEvaluationImpl, impl_ckks_complex_polynomial_evaluation_derived_full,
+    impl_ckks_complex_polynomial_evaluation_reference_full, impl_ckks_polynomial_evaluation_derived_full,
     impl_ckks_polynomial_evaluation_reference_full,
 };
 pub use pow2::CKKSPow2Impl;
@@ -145,7 +146,7 @@ macro_rules! impl_ckks_reference_full {
         $crate::impl_ckks_dot_product_reference_full!($be, $ring);
         $crate::impl_ckks_linear_transformation_reference_full!($be, $ring);
         $crate::impl_ckks_factored_polynomial_evaluation_reference_full!($be, $ring);
-        $crate::impl_ckks_polynomial_evaluation_reference_full!($be, $ring);
+        $crate::impl_ckks_polynomial_evaluation_derived_full!($be, $ring);
         $crate::impl_ckks_eval_mod_reference_full!($be, $ring);
         $crate::impl_ckks_add_many_reference_full!($be, $ring);
         $crate::impl_ckks_mul_add_derived_full!($be, $ring);

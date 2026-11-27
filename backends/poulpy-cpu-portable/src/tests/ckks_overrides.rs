@@ -42,6 +42,7 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Sta
 use poulpy_hal::source::Source;
 use std::cell::{Cell, RefCell};
 thread_local! {
+ static FACTORED_CALLS: Cell<usize> = const { Cell::new(0) };
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
@@ -139,7 +140,46 @@ unsafe impl CKKSRoundImpl<Standard> for OverrideBackend {
 // the addition aside.
 poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_sub_reference_full!(OverrideBackend, ConjugateInvariant);
-poulpy_ckks::impl_ckks_factored_polynomial_evaluation_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_factored_polynomial_evaluation_reference_full!(OverrideBackend, ConjugateInvariant);
+
+unsafe impl poulpy_ckks::oep::CKKSFactoredPolynomialEvaluationImpl for OverrideBackend {
+    fn ckks_eval_poly_factored_tmp_bytes<R, A, P, T>(
+        module: &Module<Self>,
+        res: &R,
+        a: &[&A],
+        poly: &poulpy_ckks::polynomial::EncodedFactoredPolynomial<'_, P>,
+        tsk: &T,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSCtBounds + CKKSMaskedConstants<Self>,
+        T: GGLWEInfos,
+    {
+        poulpy_ckks::reference::CKKSFactoredPolynomialEvaluationReference::ckks_eval_poly_factored_tmp_bytes_reference(
+            module, res, a, poly, tsk,
+        )
+    }
+    fn ckks_eval_poly_factored<R, A, P, H>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &[&A],
+        poly: &poulpy_ckks::polynomial::EncodedFactoredPolynomial<'_, P>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<Self>,
+        H: GetTensorKey<Self>,
+    {
+        FACTORED_CALLS.set(FACTORED_CALLS.get() + 1);
+        poulpy_ckks::reference::CKKSFactoredPolynomialEvaluationReference::ckks_eval_poly_factored_reference(
+            module, res, a, poly, tsk, scratch,
+        )
+    }
+}
 poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_eval_mod_reference_full!(OverrideBackend, ConjugateInvariant);
 
@@ -322,11 +362,13 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     .unwrap();
     let mut dst = fixture_ciphertext(&module_test, &layout, 62);
     REAL_CALLS.set(0);
+    FACTORED_CALLS.set(0);
     with_scratch::<OverrideBackend, _>(bytes, |s| {
         module_test.ckks_eval_poly_real_const_coeffs(&mut dst, &src, &real, &NoTensorKey, s)
     })
     .unwrap();
     assert_eq!(REAL_CALLS.get(), 1);
+    assert_eq!(FACTORED_CALLS.get(), 1);
     assert_eq!(
         snapshot::<OverrideBackend, _, Standard>(&dst),
         snapshot::<FFT64Oracle, _, Standard>(&want),
@@ -340,11 +382,13 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     .unwrap();
     let mut dst = fixture_ciphertext(&module_test, &layout, 62);
     COMPLEX_CALLS.set(0);
+    FACTORED_CALLS.set(0);
     with_scratch::<OverrideBackend, _>(bytes, |s| {
         module_test.ckks_eval_poly_complex_const_coeffs(&mut dst, &src, &complex, &NoTensorKey, s)
     })
     .unwrap();
     assert_eq!(COMPLEX_CALLS.get(), 1);
+    assert_eq!(FACTORED_CALLS.get(), 1);
     assert_eq!(
         snapshot::<OverrideBackend, _, Standard>(&dst),
         snapshot::<FFT64Oracle, _, Standard>(&want),

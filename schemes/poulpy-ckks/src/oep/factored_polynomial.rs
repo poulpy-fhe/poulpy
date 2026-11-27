@@ -7,6 +7,8 @@ use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 ///
 /// The operation reproduces the reference's values, metadata and refusals. Its query must
 /// cover its scratch use. The backend memory, aliasing and synchronization contract applies.
+/// For a program compiled by BSGS, the implementation must fit the shared BSGS scratch bound.
+/// [`FactoredPolynomial::uses_bsgs_workspace`](crate::polynomial::FactoredPolynomial::uses_bsgs_workspace) identifies those calls.
 pub unsafe trait CKKSFactoredPolynomialEvaluationImpl<Rg: Ring = Standard>: Backend {
     /// Sizes the simultaneously live intermediate ciphertexts and the largest selected operation.
     fn ckks_eval_poly_factored_tmp_bytes<R, A, P, T>(
