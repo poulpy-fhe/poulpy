@@ -794,10 +794,12 @@ fn hypercube_split(dims: &[HypercubeDimension], order: i64) -> HypercubeSplit {
 mod hypercube_tests {
     use std::collections::BTreeSet;
 
+    use poulpy_hal::GALOIS_CONJUGATION;
+
     use super::{
         HypercubeCoordinate, HypercubeSchedule, LinearTransformationLayout, LinearTransformationStrategy, hypercube_bsgs_schedule,
     };
-    use crate::layouts::{GALOIS_CONJUGATION, galois_compose, galois_from_parts};
+    use crate::layouts::{galois_compose, galois_from_parts};
 
     /// Every coordinate is covered once, by a baby and a giant that add up to it.
     fn assert_covers(coordinates: &BTreeSet<HypercubeCoordinate>, schedule: &HypercubeSchedule, order: i64) {

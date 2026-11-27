@@ -19,9 +19,6 @@ pub const GALOIS_ORDER: i64 = 4 * MAX_RING_DEGREE as i64;
 /// The order of 5 modulo [`GALOIS_ORDER`]: rotations are taken modulo it.
 pub const GALOIS_ROTATIONS: i64 = GALOIS_ORDER / 4;
 
-/// The Galois element of `X -> X^-1`.
-pub const GALOIS_CONJUGATION: i64 = -1;
-
 /// The Galois element `(-1)^conjugate 5^rotation`, `rotation` of any sign.
 pub fn galois_from_parts(conjugate: bool, rotation: i64) -> i64 {
     let power: i64 = pow5(rotation.rem_euclid(GALOIS_ROTATIONS));
@@ -133,7 +130,7 @@ fn pow5(e: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_hal::layouts::galois_element;
+    use poulpy_hal::{GALOIS_CONJUGATION, layouts::galois_element};
 
     use super::*;
 

@@ -103,6 +103,8 @@ pub trait Evaluate<In, Out> {
 /// whenever both periods do, and is their maximum when both are powers of
 /// two.
 pub fn period_lcm(a: usize, b: usize) -> usize {
+    // A public free function: it combines two bare lengths, so no type carries it without a
+    // parameter its callers cannot infer, and the diagonal flavors of scheme crates call it.
     fn gcd(mut a: usize, mut b: usize) -> usize {
         while b != 0 {
             let r = a % b;

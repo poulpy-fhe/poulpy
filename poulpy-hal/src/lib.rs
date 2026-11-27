@@ -156,6 +156,10 @@ pub mod doc {
 /// Used to compute Galois automorphisms `X -> X^{5^k}` and their inverses.
 pub const GALOISGENERATOR: u64 = 5;
 
+/// The generator of order two of the Galois group, beside [`GALOISGENERATOR`]: the Galois
+/// element of the conjugation `X -> X^-1`.
+pub const GALOIS_CONJUGATION: i64 = -1;
+
 /// Default memory alignment in bytes for all allocated buffers.
 ///
 /// Set to 64 bytes to match the cache-line size of modern x86 processors
