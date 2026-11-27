@@ -29,7 +29,7 @@ use std::collections::BTreeSet;
 use poulpy_core::layouts::{
     DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
     LinearTransformationLayout, LinearTransformationStrategy, galois_compose, galois_inverse, galois_of_rotation,
-    galois_rotation, period_lcm,
+    galois_rotation,
 };
 
 /// A complex slot-matrix linear map for CKKS.
@@ -70,18 +70,18 @@ impl<T> ComplexDiagonals<T> {
     }
 
     /// The slot count after which the complex diagonal of `galois` repeats: the
-    /// least common multiple of its two stored periods
-    /// ([`Diagonals::period`]), an absent part counting as constant; `None`
-    /// when neither part carries the diagonal.
+    /// longer of its two stored periods ([`Diagonals::period`]), both powers of
+    /// two, an absent part counting as constant; `None` when neither part
+    /// carries the diagonal.
     pub fn diagonal_period(&self, galois: i64) -> Option<usize> {
         match (self.re.period(galois), self.im.period(galois)) {
             (None, None) => None,
-            (re, im) => Some(period_lcm(re.unwrap_or(1), im.unwrap_or(1))),
+            (re, im) => Some(re.unwrap_or(1).max(im.unwrap_or(1))),
         }
     }
 
-    /// The slot count every diagonal of the map repeats over: the least
-    /// common multiple of the [`Self::diagonal_period`]s, `slots` for an
+    /// The slot count every diagonal of the map repeats over: the longest
+    /// of the [`Self::diagonal_period`]s, `slots` for an
     /// empty map. This is the slot count [`Self::build_transform`] encodes on.
     pub fn period(&self) -> usize {
         let periods: Vec<usize> = self
@@ -92,8 +92,8 @@ impl<T> ComplexDiagonals<T> {
         if periods.is_empty() {
             return self.slots();
         }
-        let period = periods.into_iter().fold(1, period_lcm);
-        // Every stored period divides `slots`, so their least common multiple does.
+        let period = periods.into_iter().fold(1, usize::max);
+        // Every stored period divides `slots`, so the longest does.
         debug_assert!(self.slots().is_multiple_of(period));
         period
     }
@@ -183,9 +183,9 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// (`diag_{a+b}[j] += A_a[j] · B_b[j+a]`, all
     /// complex), so the output carries at most `|A|·|B|` diagonals, fewer when
     /// index sums collide. Each stored period is read modulo its length; a
-    /// term repeats over the least common multiple of its operands' periods
-    /// and an output diagonal is stored at the least common multiple of its
-    /// terms' periods.
+    /// term repeats over the longer of its operands' periods and an output
+    /// diagonal is stored at the longest of its terms' periods, all powers of
+    /// two.
     pub fn compose(&self, rhs: &Self) -> Self {
         let (ta, tb) = (self.slots() as i64, rhs.slots() as i64);
         assert!(
@@ -204,7 +204,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
             for ib in rhs.galois() {
                 let period_b = rhs.diagonal_period(ib).expect("indexed diagonal present");
                 let idx = galois_compose(ia, ib, t as usize);
-                let len = period_lcm(period_lcm(out.diagonal_period(idx).unwrap_or(1), period_a), period_b) as i64;
+                let len = out.diagonal_period(idx).unwrap_or(1).max(period_a).max(period_b) as i64;
                 let mut re: Vec<T> = (0..len).map(|j| read(&out.re, idx, j)).collect();
                 let mut im: Vec<T> = (0..len).map(|j| read(&out.im, idx, j)).collect();
                 for j in 0..len {

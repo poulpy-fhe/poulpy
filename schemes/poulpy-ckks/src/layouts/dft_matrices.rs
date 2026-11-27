@@ -29,7 +29,7 @@
 
 use crate::numerics::CKKSFloat;
 use num_traits::Float;
-use poulpy_core::layouts::{Diagonals, galois_of_rotation, galois_rotation, period_lcm};
+use poulpy_core::layouts::{Diagonals, galois_of_rotation, galois_rotation};
 
 use crate::layouts::{
     ComplexDiagonals,
@@ -192,11 +192,12 @@ fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64) -> Vec<Cpx<F>> {
 
 /// Accumulating insert into a [`ComplexDiagonals`]: `cd[index] += vec` (set if
 /// absent) at the diagonal of the rotation `index`, `vec` being one period of the added term. The
-/// sum is stored at the least common multiple of the two periods, each operand read modulo its
-/// length.
+/// sum is stored at the longer of the two periods, both powers of two, each operand read modulo
+/// its length.
 fn cd_accumulate<F: DftScalar>(cd: &mut ComplexDiagonals<F>, index: i64, vec: &[Cpx<F>]) {
     let galois = galois_of_rotation(index);
-    let len = period_lcm(vec.len(), cd.diagonal_period(galois).unwrap_or(1));
+    debug_assert!(vec.len().is_power_of_two(), "a period is a power of two");
+    let len = vec.len().max(cd.diagonal_period(galois).unwrap_or(1));
     let new_re: Vec<F> = match cd.re.get(galois) {
         Some(cur) => (0..len).map(|j| cur[j % cur.len()] + vec[j % vec.len()].re).collect(),
         None => (0..len).map(|j| vec[j % vec.len()].re).collect(),
@@ -221,7 +222,7 @@ fn empty_cd<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
 }
 
 /// Element-wise `out[i] = multiplier[i mod multiplier.len()] · rotated[(i + k) mod rotated.len()]`
-/// over `out.len() = lcm(rotated.len(), multiplier.len())`.
+/// over `out.len() = max(rotated.len(), multiplier.len())`.
 ///
 /// Both operands are one period of a periodic vector: a rotation keeps a
 /// period and the product of two periodic vectors repeats over the least
@@ -233,7 +234,11 @@ fn empty_cd<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
 fn rotate_and_mul<F: DftScalar>(rotated: &[Cpx<F>], k: i64, multiplier: &[Cpx<F>]) -> Vec<Cpx<F>> {
     let rot_len = rotated.len() as i64;
     let mul_len = multiplier.len();
-    (0..period_lcm(rotated.len(), mul_len))
+    debug_assert!(
+        rotated.len().is_power_of_two() && mul_len.is_power_of_two(),
+        "a period is a power of two"
+    );
+    (0..rotated.len().max(mul_len))
         .map(|i| {
             let m = multiplier[i % mul_len];
             let r = rotated[(i as i64 + k).rem_euclid(rot_len) as usize];

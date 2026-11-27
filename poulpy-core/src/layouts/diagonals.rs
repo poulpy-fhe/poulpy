@@ -98,24 +98,6 @@ pub trait Evaluate<In, Out> {
     fn evaluate(&self, input: In, strategy: LinearTransformationStrategy) -> Out;
 }
 
-/// The period of a slot-wise combination (sum or product) of two periodic
-/// vectors: the least common multiple of their periods. It divides `slots`
-/// whenever both periods do, and is their maximum when both are powers of
-/// two.
-pub fn period_lcm(a: usize, b: usize) -> usize {
-    // A public free function: it combines two bare lengths, so no type carries it without a
-    // parameter its callers cannot infer, and the diagonal flavors of scheme crates call it.
-    fn gcd(mut a: usize, mut b: usize) -> usize {
-        while b != 0 {
-            let r = a % b;
-            a = b;
-            b = r;
-        }
-        a
-    }
-    a / gcd(a, b) * b
-}
-
 /// The non-zero generalized diagonals of a square slot-matrix linear map.
 ///
 /// One-dimensional: the matrix has `slots × slots` shape and every diagonal is a
@@ -240,10 +222,10 @@ impl<T: DiagonalArithmetic> Diagonals<T> {
 }
 
 impl<T: Clone + PartialEq> Diagonals<T> {
-    /// Stores every diagonal at the smallest period they all repeat with: the least common multiple of their smallest
-    /// periods, the slot count an encoder encodes the map on.
+    /// Stores every diagonal at the smallest period they all repeat with: the longest of their smallest periods, all
+    /// powers of two, the slot count an encoder encodes the map on.
     pub fn shrink_period(&mut self) {
-        let period = self.map.values().map(|values| min_period(values)).fold(1, period_lcm);
+        let period = self.map.values().map(|values| min_period(values)).fold(1, usize::max);
         for values in self.map.values_mut() {
             let len = values.len();
             if len > period {
