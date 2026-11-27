@@ -1024,7 +1024,8 @@ pub(crate) fn is_replicated(infos: &impl CKKSInfos) -> bool {
 }
 
 /// Scratch of `plain(res, tensor_k)`, and when `shaped`, of the same op computed
-/// `MAX_PASS_BITS` under the scale into a wider ciphertext and rounded into `res`.
+/// `MAX_PASS_BITS` under the scale into a wider ciphertext and rounded into `res`:
+/// the operands keep their width, the tensor intermediate widens with the result.
 pub(crate) fn with_shaped_bytes<BE, M, Rg: Ring>(
     module: &M,
     res: &impl GLWEInfos,
@@ -1051,5 +1052,6 @@ where
     };
     let round = module.ckks_round_tmp_bytes(&ckks(layout), &ckks(wide));
     let wide_bytes = BE::scratch_aligned(BE::vec_znx_bytes_of(wide.n.as_usize(), wide.rank.as_usize() + 1, wide.size()));
-    plain(&layout, tensor_k).max(wide_bytes + plain(&wide, widen(tensor_k)).max(round))
+    let shaped = plain(&wide, tensor_k).max(plain(&wide, widen(tensor_k)));
+    plain(&layout, tensor_k).max(wide_bytes + shaped.max(round))
 }
