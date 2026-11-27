@@ -8,7 +8,7 @@
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use bytemuck::Pod;
 use num_traits::FloatConst;
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{IntPolyInfos, SlotsKind};
 use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{
@@ -284,6 +284,9 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
     /// invariant, so the conjugate-invariant ring, where `Y = X^(N/R)`, holds the real constant by its first `R`
     /// coefficients and drops `im`, as its slot encoder does.
     ///
+    /// Stamps the slot kind of the constant, `Real` for a zero `im` and on the conjugate-invariant ring, `Complex`
+    /// otherwise, and keeps the rest of the metadata of `pt`.
+    ///
     /// Scratch: [`CKKSEncodingBuffer::bytes_of`] of the degree of `pt`.
     ///
     /// # Errors
@@ -305,6 +308,12 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
             "CKKS coefficient encoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
+        // The coefficient encoder narrows the kind to the ring's.
+        pt.set_slots(if im == F::zero() {
+            SlotsKind::Real
+        } else {
+            SlotsKind::Complex
+        });
         scratch.scope(|arena| -> Result<()> {
             let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(n);
             upload_into_encoding_buffer::<BE, F, _>(&mut values, coeff);

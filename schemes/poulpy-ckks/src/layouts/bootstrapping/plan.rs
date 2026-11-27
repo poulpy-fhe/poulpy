@@ -422,6 +422,8 @@ impl BootstrappingPlan {
             format!("a packed EvalMod needs its two batches of {k} values of period {r} to fit the {slots} slots")
         } else if r > k {
             format!("bootstrapping needs the period {r} to divide the batch size {k}")
+        } else if self.coeffs_to_slots.log_slots() != layout.log_k() {
+            format!("CoeffsToSlots runs on the {k} values of the layout, packed EvalMod or not")
         } else if self.working_bits > self.c2s_guard_bits {
             "the working bits exceed the guard bits of the raise".to_string()
         } else if self

@@ -40,7 +40,8 @@ use crate::{
 ///   stage ([`key_widths`](crate::layouts::BootstrappingPlan::key_widths)), and a tensor key whose layout stops short
 ///   of [`tensor_key_max_input_k`](crate::layouts::BootstrappingPlan::tensor_key_max_input_k).
 /// - [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity): an input
-///   without the budget of SlotsToCoeffs (S2C first), EvalMod or a LUT.
+///   without the budget of SlotsToCoeffs (S2C first), on a replicated layout with the message ratio of EvalMod above
+///   it, EvalMod or a LUT.
 /// - `CKKSError::Internal`: an arena under the query of the call, when the keys report their layout.
 pub trait CKKSBootstrappingOps<BE: Backend> {
     /// Scratch upper bound for [`Self::ckks_bootstrap`], whose arguments it takes, `keys_layout` sizing the

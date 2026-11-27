@@ -576,7 +576,9 @@ where
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
             self.ckks_add_assign(&mut diff, epsilon, &mut scratch_local)?;
             ckks_sign_into(self, true, &mut lower, &diff, composite, tsk, keys, &mut scratch_local)?;
-            self.ckks_sub_into(&mut diff, b, a, &mut scratch_local)?;
+            // `b - a` as `-(a - b)`: `b` may be a plaintext, which only the right operand takes.
+            self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
+            self.ckks_neg_assign(&mut diff)?;
             self.ckks_add_assign(&mut diff, epsilon, &mut scratch_local)?;
             ckks_sign_into(self, true, &mut gate, &diff, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(res, &lower, &gate, tsk, &mut scratch_local)?;

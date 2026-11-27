@@ -9,8 +9,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Subtraction is the additive inverse of addition. Operand dispatch,
 /// normalization and metadata rules are identical to those of
 /// [`CKKSAddOps`](crate::api::CKKSAddOps): `b` (`a` in the assign forms) is a
-/// ciphertext or a plaintext, rank 0 taking the plaintext route; a CKKS
-/// ciphertext has rank at least 1.
+/// ciphertext or a plaintext, rank 0 taking the plaintext route; `dst` and the
+/// `a` of the `_into` forms are ciphertexts.
 ///
 /// # Metadata
 ///

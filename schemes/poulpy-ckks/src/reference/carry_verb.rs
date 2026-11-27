@@ -54,7 +54,8 @@ macro_rules! ckks_carry_verb_reference {
                         .max(self.vec_znx_lsh_tmp_bytes(res_size))
                 }
 
-                /// `b` of rank 0 takes the plaintext route: `a` copied into `dst`, then the plaintext assign route.
+                /// `b` of rank 0 takes the plaintext route: `a` copied into `dst`, then the plaintext assign route. `dst` and `a`
+                /// are ciphertexts.
                 fn [<ckks_ $verb _into_reference>]<Dst, A, B>(
                     &self,
                     dst: &mut Dst,
@@ -65,10 +66,12 @@ macro_rules! ckks_carry_verb_reference {
                 where
                     Self: $GLWEVerb<BE, Rg> + GLWECopy<BE, Rg> + GLWEShift<BE, Rg> + $Ops<BE, Rg> $(+ $PtBound<BE, Rg>)+,
                     Dst: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetCKKSInfos + CKKSInfos,
-                    A: GLWEToBackendRef<BE, Rg> + CKKSInfos,
+                    A: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
                     B: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
                 {
                     const OP: &str = concat!("ckks_", stringify!($verb), "_into");
+                    $crate::layouts::validation::ensure_ciphertext(OP, &*dst)?;
+                    $crate::layouts::validation::ensure_ciphertext(OP, a)?;
                     if b.rank().as_usize() == 0 {
                         let slot_layout = $crate::layouts::validation::product_layout(OP, &[a.slot_layout(), b.slot_layout()])?;
                         if b.log_delta() > a.log_delta() {
@@ -112,7 +115,8 @@ macro_rules! ckks_carry_verb_reference {
                     Ok(())
                 }
 
-                /// `a` of rank 0 takes the plaintext route: aligned to the budget of `dst` and broadcast from its degree.
+                /// `a` of rank 0 takes the plaintext route: aligned to the budget of `dst` and broadcast from its degree. `dst` is
+                /// a ciphertext.
                 fn [<ckks_ $verb _assign_reference>]<Dst, A>(
                     &self,
                     dst: &mut Dst,
@@ -121,10 +125,11 @@ macro_rules! ckks_carry_verb_reference {
                 ) -> Result<()>
                 where
                     Self: $GLWEVerb<BE, Rg> + GLWEShift<BE, Rg> $(+ $PtBound<BE, Rg>)+,
-                    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+                    Dst: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
                 {
                     const OP: &str = concat!("ckks_", stringify!($verb), "_assign");
+                    $crate::layouts::validation::ensure_ciphertext(OP, &*dst)?;
                     if a.rank().as_usize() == 0 {
                         $crate::layouts::validation::check_add_pt(OP, self, &*dst, a)?;
                         $crate::reference::plaintext::[<$verb _pt_raw>](self, OP, dst, a, scratch)?;

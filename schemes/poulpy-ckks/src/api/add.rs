@@ -8,8 +8,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// The operand `b` (`a` in the assign forms) is a ciphertext or a plaintext:
 /// the operations dispatch on its rank, a metadata read. Rank 0 takes the
-/// plaintext route, any other rank the ciphertext route; a CKKS ciphertext has
-/// rank at least 1, which its allocation and carving enforce.
+/// plaintext route, any other rank the ciphertext route. `dst` and the `a` of
+/// the `_into` forms are ciphertexts, of rank at least 1.
 ///
 /// The sum is not normalized: the destination's canonical flag is cleared and
 /// the next operation that reads it through a DFT normalizes it first. An
@@ -84,7 +84,9 @@ pub trait CKKSAddOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// Before any write to `dst`, in this order. A ciphertext `b`:
+    /// Before any write to `dst`, in this order.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `dst`
+    /// or an `a` of rank 0. A ciphertext `b`:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for an
     /// operand above the module's degree, for slot layouts that differ and, on a
     /// replicated layout, for scales that differ, then
@@ -109,7 +111,9 @@ pub trait CKKSAddOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// Before any write to `dst`, in this order. A ciphertext `a`:
+    /// Before any write to `dst`, in this order.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `dst`
+    /// of rank 0. A ciphertext `a`:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for an
     /// operand above the module's degree, for slot layouts that differ and, on a
     /// replicated layout, for scales that differ. A plaintext `a`: `InvalidOperand`

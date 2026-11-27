@@ -376,6 +376,12 @@ pub(crate) fn check_add_pt<M: ModuleN + ?Sized, D: CKKSInfos, P: CKKSInfos>(
     Ok(())
 }
 
+/// `InvalidOperand` for `op` unless `x` is a ciphertext, rank 0 being a plaintext's.
+pub(crate) fn ensure_ciphertext<X: GLWEInfos + ?Sized>(op: &'static str, x: &X) -> CKKSResult<()> {
+    ckks_ensure_operand!(op, x.rank().as_usize() > 0, "takes a ciphertext here, got a plaintext");
+    Ok(())
+}
+
 /// `InvalidOperand` for `op` unless `a` and `res` have rank 1: the steps carve rank-1 working ciphertexts, which a
 /// higher rank would silently truncate.
 pub(crate) fn ensure_rank_one<A: GLWEInfos, R: GLWEInfos>(op: &'static str, a: &A, res: &R) -> CKKSResult<()> {
@@ -552,7 +558,8 @@ pub(crate) fn ensure_chain_input(op: &'static str, plan: &DFTPlan, slot_layout: 
 /// conjugate-invariant ring, an input the lifts of a C2S-first raise do not fit, a working width without the budget of
 /// the stages, the keys of the plan's ring and their coverage of the run's widths, and, when the keys report their
 /// layout, the arena against the query. An input off the layout SlotsToCoeffs reads ([`ensure_chain_input`]) comes
-/// first, then an S2C-first input without the budget SlotsToCoeffs consumes.
+/// first, then an S2C-first input without the budget SlotsToCoeffs consumes, and on a replicated layout the message
+/// ratio of EvalMod above it.
 pub(crate) fn check_bootstrap_entry<BE, F, K>(
     module: &Module<BE>,
     res: &CKKSCiphertextOwned<BE>,
@@ -570,7 +577,12 @@ where
     let run = ctx.run(a.meta());
     ensure_chain_input(OP, ctx.slots_to_coeffs().plan(), crate::GLWEPlaintextInfos::slot_layout(a))?;
     if ctx.pipeline() == BootstrappingPipeline::S2CFirst {
-        checked_log_budget_sub(OP, a.log_budget(), ctx.slots_to_coeffs().consumed_bits())?;
+        // On a replicated layout the raise reads what SlotsToCoeffs leaves above the scale as EvalMod's message ratio.
+        let ratio = match ctx.slots_to_coeffs().plan().slot_layout() {
+            SlotLayout::Full => 0,
+            SlotLayout::Replicated(_) => ctx.plan.eval_mod().log_msg_ratio,
+        };
+        checked_log_budget_sub(OP, a.log_budget(), ctx.slots_to_coeffs().consumed_bits() + ratio)?;
     }
     ckks_ensure_operand!(
         OP,
