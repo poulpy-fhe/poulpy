@@ -236,9 +236,20 @@ where
         let mut values: Vec<Option<CKKSCiphertextViewMut<'_, BE, Rg>>> = (0..plan.steps.len()).map(|_| None).collect();
         let mut prepared: Vec<Option<CKKSRightOperandPrepared<BE, Rg>>> = (0..plan.steps.len()).map(|_| None).collect();
         let mut powers = BabyPowers::new(op);
-        for (i, step) in plan.steps.iter().enumerate() {
-            let finish = plan.bsgs.is_some() && i + 1 == plan.steps.len();
-            let reuse = if finish { None } else { plan.reuse[i] };
+        let (body, folded_output) = if plan.bsgs.is_some() {
+            let (last, body) = plan
+                .steps
+                .split_last()
+                .ok_or_else(|| anyhow::anyhow!("missing BSGS output"))?;
+            let Factor::Value(root) = last.factor else {
+                return Err(anyhow::anyhow!("missing output copy in the compiled program").into());
+            };
+            (body, Some((root, &last.updates)))
+        } else {
+            (plan.steps.as_slice(), None)
+        };
+        for (i, step) in body.iter().enumerate() {
+            let reuse = plan.reuse[i];
             let mut out = reuse.and_then(|v| values[v - plan.inputs].take());
             let get = |v: usize| -> CKKSResult<CKKSCiphertextViewRef<'_, BE, Rg>> {
                 if v < plan.inputs {
@@ -249,14 +260,6 @@ where
                     .map(|ct| ct.to_backend_view_ref())
                     .ok_or_else(|| anyhow::anyhow!("missing live program value {v}").into())
             };
-            if finish {
-                let Factor::Value(root) = step.factor else {
-                    return Err(anyhow::anyhow!("missing output copy in the compiled program").into());
-                };
-                self.ckks_copy(res, &get(root)?, &mut arena)?;
-                res.set_noise(None);
-                return apply_updates(op, self, res, &step.updates, get, poly, &mut arena);
-            }
             if let Factor::PrepareRight(v) = step.factor {
                 prepared[i] = Some(self.ckks_right_operand_prepare_alloc(&get(v)?, PrepareHint::Reuse, &mut arena)?);
             } else {
@@ -329,11 +332,27 @@ where
                 }
             }
         }
-        let result = values
-            .last()
-            .and_then(Option::as_ref)
+        let output = folded_output.map_or(plan.steps.len() - 1, |(root, _)| root - plan.inputs);
+        let result = values[output]
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("missing program output"))?;
-        self.ckks_copy(res, result, &mut arena)
+        self.ckks_copy(res, result, &mut arena)?;
+        if let Some((_, updates)) = folded_output {
+            res.set_noise(None);
+            // The fold reads only caller-supplied powers. Release the baby-step buffers
+            // before the imaginary fold takes its accumulator at the output width.
+            drop(values);
+            drop(free);
+            drop(heap);
+            let input = |v| {
+                inputs
+                    .get(v)
+                    .map(|&a| CKKSCiphertextViewRef::of(a))
+                    .ok_or_else(|| anyhow::anyhow!("missing power for the trailing fold").into())
+            };
+            apply_updates(op, self, res, updates, input, poly, scratch)?;
+        }
+        Ok(())
     }
 }
 
