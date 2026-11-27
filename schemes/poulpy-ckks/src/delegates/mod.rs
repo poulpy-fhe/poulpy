@@ -8,6 +8,7 @@ mod dft;
 mod encoding;
 mod encryption;
 mod eval_mod;
+mod factored_polynomial;
 mod fold;
 mod imag;
 mod inner_sum;

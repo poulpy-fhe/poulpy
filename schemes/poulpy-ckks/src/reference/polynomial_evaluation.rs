@@ -1,3 +1,5 @@
+pub(crate) mod factored;
+
 use crate::{CKKSResult as Result, ckks_ensure_operand};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
@@ -129,7 +131,7 @@ where
             return Ok(false);
         };
         if let SlotLayout::Replicated(_) = seed.slot_layout() {
-            return shaped_baby_linear_combination(self, module, res, terms, coeffs, scratch);
+            return shaped_baby_linear_combination(self, module, res, terms, coeffs, |p| terms[p].1, scratch);
         }
         Ok(full_baby_linear_combination(
             self.op, module, res, terms, seed, coeffs, scratch,
@@ -325,6 +327,7 @@ fn shaped_baby_linear_combination<BE, V, A, P, Rg: Ring>(
     res: &mut V,
     terms: &[(&A, usize)],
     coeffs: &P,
+    power_index: impl Fn(usize) -> usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> anyhow::Result<bool>
 where
@@ -422,7 +425,8 @@ where
     crate::layouts::validation::ensure_scratch(op, scratch, bytes)?;
 
     let mut powers = ops.powers.borrow_mut();
-    for &(t, i) in terms {
+    for (position, &(t, _)) in terms.iter().enumerate() {
+        let i = power_index(position);
         if powers.len() <= i {
             powers.resize_with(i + 1, || None);
         }
@@ -452,16 +456,20 @@ where
         let pt_refs: Vec<_> = running().map(|(_, _, pt, ..)| pt.to_backend_ref()).collect();
         let combination: Vec<PlainTerm<'_, BE, Rg>> = running()
             .zip(pt_refs.iter())
-            .map(|((_, i, _, b, _, off), pt_bk)| {
+            .enumerate()
+            .map(|(position, ((_, _, _, b, _, off), pt_bk))| -> Result<_> {
                 let (shift, cnv_offset) = split(b, off);
-                PlainTerm {
-                    a: powers[i].as_ref().expect("prepared above").to_backend_ref(),
+                Ok(PlainTerm {
+                    a: powers[power_index(position)]
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("missing prepared baby-step power"))?
+                        .to_backend_ref(),
                     b: vec_znx_backend_ref_from_ref::<BE, Rg>(pt_bk.data()),
                     shift,
                     cnv_offset,
-                }
+                })
             })
-            .collect();
+            .collect::<Result<_>>()?;
         let mut wide_bk = wide.to_backend_mut();
         BE::glwe_plain_combination(module, wide_bk.data_mut(), kb, wide_k, acc_size, &combination, &mut scratch);
     }

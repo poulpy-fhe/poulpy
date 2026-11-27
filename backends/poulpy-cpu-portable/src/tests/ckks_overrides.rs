@@ -139,6 +139,7 @@ unsafe impl CKKSRoundImpl<Standard> for OverrideBackend {
 // the addition aside.
 poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_sub_reference_full!(OverrideBackend, ConjugateInvariant);
+poulpy_ckks::impl_ckks_factored_polynomial_evaluation_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_eval_mod_reference_full!(OverrideBackend, ConjugateInvariant);
 

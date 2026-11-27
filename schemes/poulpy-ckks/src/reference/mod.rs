@@ -47,5 +47,6 @@ pub use eval_mod::CKKSEvalModReference;
 pub use first_factor::CKKSModUpFirstFactorReference;
 pub use linear_transformation::CKKSLinearTransformationReference;
 pub use plaintext::CKKSPlaintextVecReference;
+pub use polynomial_evaluation::factored::CKKSFactoredPolynomialEvaluationReference;
 pub use polynomial_evaluation::{CKKSComplexPolynomialEvaluationReference, CKKSPolynomialEvaluationReference};
 pub use sub::CKKSSubReference;

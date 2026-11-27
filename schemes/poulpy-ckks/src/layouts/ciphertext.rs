@@ -248,6 +248,14 @@ pub struct CKKSCiphertextViewRef<'a, BE: Backend + 'a, Rg: Ring = Standard> {
     inner: GLWEViewRef<'a, BE, Rg>,
 }
 
+impl<'a, BE: Backend + 'a, Rg: Ring> CKKSCiphertextViewRef<'a, BE, Rg> {
+    pub(crate) fn of<C: GLWEToBackendRef<BE, Rg>>(ct: &'a C) -> Self {
+        Self {
+            inner: GLWEViewRef::from_inner(ct.to_backend_ref()),
+        }
+    }
+}
+
 impl<'a, BE: Backend + 'a, Rg: Ring> Deref for CKKSCiphertextViewRef<'a, BE, Rg> {
     type Target = GLWEViewRef<'a, BE, Rg>;
 

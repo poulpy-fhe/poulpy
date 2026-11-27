@@ -27,6 +27,9 @@
 //! | [`test_replicated_ci_bootstrap`] | the bootstrapping of a conjugate-invariant replicated layout through the standard ring |
 //! | [`test_replicated_transforms_apply_matrices`] | a complex matrix onto the data slots, and gathered then traced back to period `k` |
 
+mod factored;
+pub use factored::test_factored_polynomial;
+
 use std::collections::HashMap;
 
 use anyhow::Result;

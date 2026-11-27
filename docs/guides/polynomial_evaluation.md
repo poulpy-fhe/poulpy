@@ -96,6 +96,26 @@ The one-shot entry point builds and populates the power basis internally from th
 
 Chebyshev interpolation of a real function is also provided, which produces the Chebyshev coefficients of the interpolating polynomial.
 
+### Factored real polynomials
+
+A `FactoredPolynomial` holds a sequence of operations on ciphertexts. Inputs come first in value order, followed by the result of each step. This program computes `(x² + 1)(x² − 1)` with a shared square and two coefficients from table 0.
+
+```rust
+use poulpy_ckks::polynomial::{Factor, FactorStep, FactorUpdate, FactoredPolynomial};
+use poulpy_hal::layouts::Standard;
+
+let plan = FactoredPolynomial::<Standard>::new(1, vec![2], vec![
+    FactorStep::new(Factor::Square(0), []),
+    FactorStep::new(Factor::Value(1), [FactorUpdate::AddConstant((0, 0))]),
+    FactorStep::new(Factor::Value(1), [FactorUpdate::AddConstant((0, 1))]),
+    FactorStep::new(Factor::Product(2, 3), []),
+])?;
+```
+
+Pass `&[&[1.0, -1.0]]` to `plan.encode` for full packing or `plan.encode_replicated` for masked constants. To borrow existing backend plaintext tables, use `plan.bind`. Import `CKKSFactoredPolynomialEvaluationOps` from `poulpy_ckks::api`, size the arena with `module.ckks_eval_poly_factored_tmp_bytes(&res, &[&x], &encoded, &key_layout)`, then call `module.ckks_eval_poly_factored(&mut res, &[&x], &encoded, &keys, scratch)`.
+
+A prepared right operand can supply several products. The evaluator recycles ciphertext storage at the final use of each value. A `MulI` update requires the standard ring.
+
 ## Modulus consumption
 
 The table reports the modulus consumed by one evaluation, expressed in multiples of `log_delta`.

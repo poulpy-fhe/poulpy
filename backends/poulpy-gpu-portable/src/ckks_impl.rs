@@ -374,6 +374,7 @@ macro_rules! impl_ckks {
         ::poulpy_ckks::impl_ckks_mul_reference_full!($be);
         ::poulpy_ckks::impl_ckks_dot_product_reference_full!($be);
         ::poulpy_ckks::impl_ckks_linear_transformation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_factored_polynomial_evaluation_reference_full!($be);
         ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!($be);
         ::poulpy_ckks::impl_ckks_eval_mod_reference_full!($be);
         ::poulpy_ckks::impl_ckks_add_many_reference_full!($be);
