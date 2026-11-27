@@ -11,7 +11,7 @@ use poulpy_core::{
     layouts::{
         Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendRef, GetAutomorphismKey,
         GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation, TorusPrecision, galois_at, galois_is_identity,
-        galois_rotation, prepared::GGLWEPreparedToBackendRef,
+        prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, Ring};
@@ -473,8 +473,8 @@ pub(crate) fn transform_key_lookups<BE: Backend, Rg: Ring>(
     bsgs_key_lookups(factors, input_k)
 }
 
-/// The key of Galois element `p` at width `k`, its layout, or `MissingAutomorphismKey` for `op` naming `rotation`.
-fn automorphism_key_layout<BE, Rg, H>(op: &'static str, keys: &H, p: i64, rotation: i64, k: usize) -> CKKSResult<GGLWELayout>
+/// The key of Galois element `p` at width `k`, its layout, or `MissingAutomorphismKey` for `op` naming `p`.
+fn automorphism_key_layout<BE, Rg, H>(op: &'static str, keys: &H, p: i64, k: usize) -> CKKSResult<GGLWELayout>
 where
     BE: Backend,
     Rg: Ring,
@@ -486,7 +486,7 @@ where
         .map_err(|source| {
             CKKSCompositionError::MissingAutomorphismKey {
                 op,
-                rotation,
+                rotation: p,
                 k: k.into(),
                 source,
             }
@@ -495,7 +495,7 @@ where
 }
 
 /// `MissingAutomorphismKey` for `op` unless `keys` cover each `(Galois element, k)` of `lookups` on operands of degree
-/// `n`, the error naming the element's slot rotation; otherwise the layouts of the keys, for the scratch queries.
+/// `n`, the error naming the element at their order; otherwise the layouts of the keys, for the scratch queries.
 pub(crate) fn ensure_rotation_keys<BE, Rg, H>(
     op: &'static str,
     module: &Module<BE>,
@@ -512,8 +512,7 @@ where
         .into_iter()
         .map(|(galois, k)| {
             let order = crate::operand_cyclotomic_order::<_, Rg>(op, module, n)?;
-            let rotation = galois_rotation(galois, (order / 4) as usize);
-            automorphism_key_layout(op, keys, galois_at(galois, order), rotation, k)
+            automorphism_key_layout(op, keys, galois_at(galois, order), k)
         })
         .collect()
 }
@@ -1338,7 +1337,7 @@ where
 {
     lookups
         .into_iter()
-        .map(|(p, k)| automorphism_key_layout(op, keys, p, p, k))
+        .map(|(p, k)| automorphism_key_layout(op, keys, p, k))
         .collect()
 }
 

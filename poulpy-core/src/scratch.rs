@@ -16,7 +16,7 @@ use crate::{
         Degree, GGLWE, GGLWEInfos, GGLWEPreparedViewMut, GGLWEViewMut, GGSW, GGSWInfos, GGSWPreparedViewMut, GGSWViewMut, GLWE,
         GLWEInfos, GLWEPlaintext, GLWEPlaintextViewMut, GLWESecret, GLWESecretPreparedViewMut, GLWESecretTensor,
         GLWESecretTensorViewMut, GLWESecretViewMut, GLWETensor, GLWETensorViewMut, GLWEViewMut, LWE, LWEInfos, LWEPlaintext,
-        LWEPlaintextViewMut, LWEViewMut, LinearTransformationPlan, Rank,
+        LWEPlaintextViewMut, LWEViewMut, LinearTransformationPlan, Rank, galois_parts,
         prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared, LinearTransformationBabySteps},
     },
 };
@@ -49,7 +49,7 @@ pub trait ScratchArenaTakeGLWELinearTransformationBabySteps<'a, B: Backend>: Scr
         let mut values = BTreeMap::new();
         let mut scratch = self;
         for &galois in &plan.baby_galois {
-            if let Entry::Vacant(entry) = values.entry(galois) {
+            if let Entry::Vacant(entry) = values.entry(galois_parts(galois)) {
                 let (operand, rest) = scratch.take_cnv_pvec_left_scratch(n, cols, size, PrepareHint::Reuse);
                 entry.insert(operand);
                 scratch = rest;

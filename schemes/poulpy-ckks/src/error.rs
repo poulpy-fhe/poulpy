@@ -166,6 +166,9 @@ pub enum CKKSCompositionError {
     /// the one it holds (for instance one too narrow for `k`), as `source` says.
     MissingAutomorphismKey {
         op: &'static str,
+        /// The slot rotation of the missing key, that a conjugation composes with (0 alone), or its Galois element
+        /// at the operand's order where `op` looks keys up by element: linear transformations, replicated
+        /// conversions, bootstrapping and folds.
         rotation: i64,
         k: u32,
         source: poulpy_core::CoreError,

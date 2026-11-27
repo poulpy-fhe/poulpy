@@ -46,7 +46,9 @@ use crate::{
 };
 
 use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPlan};
-use crate::layouts::{ModuleCoreAlloc, digits_aligned, galois_is_identity, galois_of_rotation, galois_parts, operand_galois};
+use crate::layouts::{
+    ModuleCoreAlloc, digits_aligned, galois_from_parts, galois_is_identity, galois_of_rotation, galois_parts, operand_galois,
+};
 
 const BABY_ROTATION_WORKERS: usize = 4;
 
@@ -77,9 +79,9 @@ impl<BE: Backend, Rg: Ring> LinearTransformationBabySteps<BE, Rg, CnvPVecLOwned<
         let cols = a.rank().as_usize() + 1;
         let size = a.size();
         let mut values = BTreeMap::new();
-        for rot in rotations.baby_closure(baby_galois.iter().copied()) {
+        for galois in rotations.baby_closure(baby_galois.iter().copied()) {
             values
-                .entry(rot)
+                .entry(galois_parts(galois))
                 .or_insert_with(|| module.cnv_pvec_left_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse));
         }
         Self {
@@ -273,9 +275,8 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L, Rg: Rin
     // its own key. A shared width would evaluate one key's product against
     // another key's output size, a pair the per-key scratch query never sizes.
     let key_refs: Vec<Option<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>>> = cache
-        .values
-        .keys()
-        .map(|&galois| {
+        .baby_galois()
+        .map(|galois| {
             (!galois_is_identity(galois)).then(|| {
                 keys.get_automorphism_key(operand_galois::<Rg>(a.n().as_usize(), galois), a.k())
                     .unwrap_or_else(|e| panic!("baby step of Galois element {galois}: {e}"))
@@ -324,7 +325,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L, Rg: Rin
         let mut entries: Vec<Option<_>> = cache
             .values
             .iter_mut()
-            .map(|(&rot, prepared)| Some((rot, prepared)))
+            .map(|(&(conjugate, rotation), prepared)| Some((galois_from_parts(conjugate, rotation), prepared)))
             .collect();
         for (pass, &representative) in representatives.iter().enumerate() {
             let class_key = key_refs[representative].as_ref().unwrap();
@@ -395,10 +396,10 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L, Rg: Rin
             });
         }
     } else {
-        for ((&rot, prepared), key) in cache.values.iter_mut().zip(&key_refs) {
+        for ((&(conjugate, rotation), prepared), key) in cache.values.iter_mut().zip(&key_refs) {
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
-            if galois_is_identity(rot) {
+            if galois_is_identity(galois_from_parts(conjugate, rotation)) {
                 module.cnv_pvec_left_prepare(&mut prepared.to_backend_mut(), &a_ref.data, scratch);
             } else {
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
@@ -448,9 +449,8 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L, Rg: Ring>(
     let n = a.n().as_usize();
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
-    // By rotation, so that a doubling's source precedes its target.
-    let mut rotations: Vec<i64> = cache.values.keys().copied().collect();
-    rotations.sort_by_key(|&p| galois_parts(p));
+    // By rotation, the cache's order, so that a doubling's source precedes its target.
+    let rotations: Vec<i64> = cache.baby_galois().collect();
     let passes = cache.rotations.baby_passes(rotations.iter().copied());
     let pass_keys: Vec<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> = passes
         .iter()
@@ -664,13 +664,12 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L, Rg: Ring>(
     }
     // The prepared cache, a task per baby step on a parallel executor, in the cache's order.
     let sources: Vec<GLWEBackendRef<'_, BE, Rg>> = cache
-        .values
-        .keys()
-        .map(|&rot| {
-            if galois_is_identity(rot) {
+        .baby_galois()
+        .map(|galois| {
+            if galois_is_identity(galois) {
                 crate::layouts::glwe_backend_ref_from_ref::<BE, Rg>(a)
             } else {
-                rotated[index(rot)].to_backend_ref()
+                rotated[index(galois)].to_backend_ref()
             }
         })
         .collect();

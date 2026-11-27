@@ -24,7 +24,7 @@ use crate::{
     gadget::prod_dft_size,
     layouts::{
         Base2K, Degree, DiagonalOperand, GLWEBackendRef, GLWEInfos, LWEInfos, LinearTransformation,
-        LinearTransformationGiantStep, Rank, TorusPrecision,
+        LinearTransformationGiantStep, Rank, TorusPrecision, galois_from_parts, galois_parts,
     },
 };
 
@@ -133,7 +133,8 @@ impl<BE: Backend, T, Rg: Ring> BabyStepOperand<BE, Rg> for T where
 {
 }
 
-/// Prepared left operands for the baby steps of one input ciphertext, by Galois element.
+/// Prepared left operands for the baby steps of one input ciphertext, in the order plans list
+/// their Galois elements: by conjugation bit, then rotation.
 ///
 /// The values are populated by `glwe_linear_transformation_baby_steps_prepare`. A cache
 /// a caller keeps is allocated by [`LinearTransformationBabySteps::alloc`], and a cache
@@ -143,8 +144,8 @@ impl<BE: Backend, T, Rg: Ring> BabyStepOperand<BE, Rg> for T where
 // Generic over the operand rather than its storage `D`: hal gives backend views of a `CnvPVecL` of owned storage
 // and of its scratch wrapper, and a pair of impls over `BE::OwnedBuf` and `BE::BufMut<'_>` would overlap.
 pub struct LinearTransformationBabySteps<BE: Backend, Rg: Ring = Standard, L = CnvPVecLOwned<BE, Rg>> {
-    /// The prepared operands, by Galois element.
-    pub(crate) values: BTreeMap<i64, L>,
+    /// The prepared operands, by the [`galois_parts`] of their Galois element.
+    pub(crate) values: BTreeMap<(bool, i64), L>,
     /// How the preparation reaches the baby steps.
     pub(crate) rotations: crate::layouts::BsgsRotations,
     /// Width of the source the baby steps were prepared from.
@@ -178,14 +179,17 @@ impl<BE: Backend, L: BabyStepOperand<BE, Rg>, Rg: Ring> LinearTransformationBaby
         cnv_pvec.cols()
     }
 
-    /// The Galois elements of the baby steps this prepared cache holds.
+    /// The Galois elements of the baby steps this prepared cache holds, in the order plans list
+    /// them: by conjugation bit, then rotation.
     pub fn baby_galois(&self) -> impl ExactSizeIterator<Item = i64> + '_ {
-        self.values.keys().copied()
+        self.values
+            .keys()
+            .map(|&(conjugate, rotation)| galois_from_parts(conjugate, rotation))
     }
 
     /// Returns true when the baby step of `galois` is available in this prepared cache.
     pub fn contains_baby_galois(&self, galois: i64) -> bool {
-        self.values.contains_key(&galois)
+        self.values.contains_key(&galois_parts(galois))
     }
 
     /// Number of prepared baby steps.
@@ -201,24 +205,24 @@ impl<BE: Backend, L: BabyStepOperand<BE, Rg>, Rg: Ring> LinearTransformationBaby
     /// Returns the prepared left operand `sigma_b(v)` for the baby step of the Galois element `b`.
     pub fn baby(&self, galois: i64) -> &L {
         self.values
-            .get(&galois)
+            .get(&galois_parts(galois))
             .unwrap_or_else(|| panic!("missing prepared baby step of Galois element {galois}"))
     }
 
     /// Borrows an allocated operand for preparation, as a view that cannot change its shape.
     pub fn baby_mut(&mut self, galois: i64) -> CnvPVecLBackendMut<'_, BE, Rg> {
         self.values
-            .get_mut(&galois)
+            .get_mut(&galois_parts(galois))
             .unwrap_or_else(|| panic!("missing prepared baby step of Galois element {galois}"))
             .to_backend_mut()
     }
 
-    /// Borrows all allocated operands, by increasing Galois element, as views that can change
-    /// neither the cache keys nor the operand shapes.
+    /// Borrows all allocated operands, in the order of [`Self::baby_galois`], as views that can
+    /// change neither the cache keys nor the operand shapes.
     pub fn babies_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE, Rg>)> + '_ {
         self.values
             .iter_mut()
-            .map(|(&galois, operand)| (galois, operand.to_backend_mut()))
+            .map(|(&(conjugate, rotation), operand)| (galois_from_parts(conjugate, rotation), operand.to_backend_mut()))
     }
 }
 

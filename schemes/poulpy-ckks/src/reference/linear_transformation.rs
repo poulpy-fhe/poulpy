@@ -7,9 +7,7 @@
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use crate::{GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind};
-use poulpy_core::layouts::{
-    BabyStepOperand, GLWEPlaintextInfos, LinearTransformationPlan, galois_at, galois_is_identity, galois_rotation,
-};
+use poulpy_core::layouts::{BabyStepOperand, GLWEPlaintextInfos, LinearTransformationPlan, galois_at, galois_is_identity};
 use poulpy_core::{
     CoreError, GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
@@ -319,10 +317,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: M
             operand_cyclotomic_order::<_, Rg>("ckks_linear_transformation_baby_steps_prepare", self, src.n().as_usize())?;
         let src_k = src.k();
         for galois in babies.rotations().baby_key_galois(babies.baby_galois()) {
-            if let Err(source) = keys.get_automorphism_key(galois_at(galois, cyclotomic_order), src_k) {
+            let p = galois_at(galois, cyclotomic_order);
+            if let Err(source) = keys.get_automorphism_key(p, src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "ckks_linear_transformation_baby_steps_prepare",
-                    rotation: galois_rotation(galois, (cyclotomic_order / 4) as usize),
+                    rotation: p,
                     k: src_k.into(),
                     source,
                 }
@@ -575,10 +574,11 @@ where
         rotations => rotations.giant_key_galois(giants),
     };
     for galois in elements {
-        keys.get_automorphism_key(galois_at(galois, cyclotomic_order), giant_k)
+        let p = galois_at(galois, cyclotomic_order);
+        keys.get_automorphism_key(p, giant_k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op,
-                rotation: galois_rotation(galois, (cyclotomic_order / 4) as usize),
+                rotation: p,
                 k: giant_k.into(),
                 source,
             })?;
