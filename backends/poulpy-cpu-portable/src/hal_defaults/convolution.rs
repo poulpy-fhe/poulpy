@@ -33,6 +33,7 @@ use crate::kernels::{
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
     },
+    vec_znx::embedding_gap_portable,
 };
 use poulpy_hal::{
     api::{HostBufMut, ModuleN, VecZnxDftBytesOf},
@@ -98,7 +99,7 @@ where
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "cnv_pvec_right_prepare: a.n():{} != res.n():{n}", a.n());
+        embedding_gap_portable(n, a.n());
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);

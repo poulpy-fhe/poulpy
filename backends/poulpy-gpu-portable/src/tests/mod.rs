@@ -451,6 +451,7 @@ backend_test_suite! {
         test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
         test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
+        test_convolution_embed_right_prepare => poulpy_hal::test_suite::convolution::test_convolution_embed_right_prepare,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
     },
@@ -543,6 +544,7 @@ fn ci_embed_convolution() {
             base2k: 10,
         };
         poulpy_hal::test_suite::convolution::test_convolution_embed::<_, ConjugateInvariant>(&params, &module);
+        poulpy_hal::test_suite::convolution::test_convolution_embed_right_prepare::<_, ConjugateInvariant>(&params, &module);
         poulpy_hal::test_suite::convolution::test_convolution_galois::<_, ConjugateInvariant>(&params, &module);
         poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub::<_, ConjugateInvariant>(&params, &module);
         poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub::<_, ConjugateInvariant>(&params, &module);

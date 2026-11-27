@@ -17,9 +17,12 @@ use std::sync::Arc;
 use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_hal::execution::TaskExecutor;
 
-use crate::kernels::ntt4x30::{
-    ntt::modq_pow_portable,
-    primes::{PrimeSet, PrimeSetCrt4, Primes30},
+use crate::kernels::{
+    ntt4x30::{
+        ntt::modq_pow_portable,
+        primes::{PrimeSet, PrimeSetCrt4, Primes30},
+    },
+    spread_embedded_portable,
 };
 
 use super::packed::{Q, QINV, R1};
@@ -564,7 +567,8 @@ fn from_i64(dst: &mut [i32], src: &[i64], c: &ConvConst, q: i32) {
     }
 }
 
-/// Forward transform of plane `p` of a packed limb from `n` coefficients.
+/// Forward transform of plane `p` of a packed limb from `n` coefficients, or from fewer, a power of two, read as
+/// their image under `X -> X^(n / src.len())`.
 ///
 /// `dst` is the plane itself, `n` words.
 /// The residues are canonical, multiplied by `2^32` when `prepared` is set.
@@ -572,7 +576,9 @@ fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[i64], prepa
     let n = table.n;
     let dst: &mut [i32] = cast_slice_mut(&mut dst[..n]);
     let q = Q[p] as i32;
-    from_i64(dst, &src[..n], &table.conv[prepared as usize][p], q);
+    let len = src.len().min(n);
+    from_i64(&mut dst[..len], &src[..len], &table.conv[prepared as usize][p], q);
+    spread_embedded_portable(dst, 1, n / len);
     if let Some(ci) = &table.ci {
         ci.forward(p, dst);
     }
@@ -616,7 +622,7 @@ fn planes_mut(n: usize, limb: &mut [u32]) -> [&mut [u32]; 4] {
     [p0, p1, p2, p3]
 }
 
-/// Forward transform of `n` coefficients into one packed limb.
+/// Forward transform of `n` coefficients into one packed limb, or of fewer as [`ntt32_plane`] reads them.
 ///
 /// The residues are canonical, multiplied by `2^32` when `prepared` is set.
 pub(crate) fn ntt32<E: TaskExecutor>(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: bool) {

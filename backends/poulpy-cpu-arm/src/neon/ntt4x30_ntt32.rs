@@ -21,9 +21,12 @@ use core::arch::aarch64::{
 
 use std::sync::Arc;
 
-use poulpy_cpu_portable::kernels::ntt4x30::{
-    ntt::modq_pow_portable,
-    primes::{PrimeSet, PrimeSetCrt4, Primes30},
+use poulpy_cpu_portable::kernels::{
+    ntt4x30::{
+        ntt::modq_pow_portable,
+        primes::{PrimeSet, PrimeSetCrt4, Primes30},
+    },
+    spread_embedded_portable,
 };
 
 use super::ntt4x30_packed::{Q, R1, mont_mul, plane, sub_mod};
@@ -531,12 +534,13 @@ unsafe fn split_i64(src: *const i64) -> (int32x4_t, int32x4_t, int32x4_t) {
     }
 }
 
-/// Reduces `n` signed coefficients into four planes of signed residues, multiplied by `2^32` when `prepared` is set.
-unsafe fn from_i64(dst: *mut i32, src: *const i64, n: usize, conv: &[ConvConst; 4]) {
+/// Reduces the `src.len()` signed coefficients, a multiple of four, into the front of four planes of `n` signed
+/// residues, multiplied by `2^32` when `prepared` is set.
+unsafe fn from_i64(dst: *mut i32, src: &[i64], n: usize, conv: &[ConvConst; 4]) {
     unsafe {
         let mut i = 0;
-        while i < n {
-            let (lo, hi, carry) = split_i64(src.add(i));
+        while i < src.len() {
+            let (lo, hi, carry) = split_i64(src.as_ptr().add(i));
             for (p, c) in conv.iter().enumerate() {
                 vst1q_s32(dst.add(p * n + i), residues(lo, hi, carry, c, vdupq_n_s32(Q[p] as i32)));
             }
@@ -545,16 +549,36 @@ unsafe fn from_i64(dst: *mut i32, src: *const i64, n: usize, conv: &[ConvConst; 
     }
 }
 
-/// Forward transform of `n` coefficients into one packed limb.
+/// The first `n` coefficients of `src`, or all of them when fewer, zero-padded to one load of four, and the gap
+/// `n / len` that embeds the `len` read ones.
+fn load_lanes<'a>(src: &'a [i64], n: usize, padded: &'a mut [i64; 4]) -> (&'a [i64], usize) {
+    let len = src.len().min(n);
+    assert!(
+        len > 0 && n.is_multiple_of(len),
+        "ntt32: source of {len} coefficients does not divide degree {n}"
+    );
+    if len >= 4 {
+        return (&src[..len], n / len);
+    }
+    padded[..len].copy_from_slice(&src[..len]);
+    (padded, n / len)
+}
+
+/// Forward transform of `n` coefficients into one packed limb, or of fewer, a power of two, read as their image under
+/// `X -> X^(n / src.len())`.
 ///
 /// The residues are canonical, multiplied by `2^32` when `prepared` is set.
 pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: bool) {
     let n = table.n;
     assert!(dst.len() >= 4 * n);
-    assert!(src.len() >= n);
+    let mut padded = [0i64; 4];
+    let (src, gap) = load_lanes(src, n, &mut padded);
     let d = dst.as_mut_ptr() as *mut i32;
     unsafe {
-        from_i64(d, src.as_ptr(), n, &table.conv[prepared as usize]);
+        from_i64(d, src, n, &table.conv[prepared as usize]);
+        for p in 0..4 {
+            spread_embedded_portable(std::slice::from_raw_parts_mut(d.add(p * n), n), 1, gap);
+        }
         for (p, &q) in Q.iter().enumerate() {
             if let Some(ci) = &table.ci {
                 ci.forward(p, d.add(p * n), n);
@@ -570,17 +594,19 @@ pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: 
 pub(crate) fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
     let n = table.n;
     assert!(dst.len() >= n);
-    assert!(src.len() >= n);
+    let mut padded = [0i64; 4];
+    let (src, gap) = load_lanes(src, n, &mut padded);
     let d = dst.as_mut_ptr() as *mut i32;
     let c = &table.conv[prepared as usize][p];
     unsafe {
         let q = vdupq_n_s32(Q[p] as i32);
         let mut i = 0;
-        while i < n {
+        while i < src.len() {
             let (lo, hi, carry) = split_i64(src.as_ptr().add(i));
             vst1q_s32(d.add(i), residues(lo, hi, carry, c, q));
             i += 4;
         }
+        spread_embedded_portable(std::slice::from_raw_parts_mut(d, n), 1, gap);
         if let Some(ci) = &table.ci {
             ci.forward(p, d, n);
         }

@@ -10,6 +10,7 @@ use poulpy_cpu_portable::kernels::ntt4x30::{
     primes::{PrimeSet, Primes30},
     vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},
 };
+use poulpy_cpu_portable::kernels::spread_embedded_portable;
 use poulpy_cpu_portable::ntt4x30::drivers::for_each_limb;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
@@ -111,11 +112,14 @@ pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
 }
 
 /// Forward transform of `src` into `dst`, one `u64` per residue.
+///
+/// `src` holds `n` coefficients, or a power-of-two divisor of `n` of them read as their image at degree `n`.
 pub(crate) fn dft_limb_wide<R: Ring>(module: &Module<NTT4x30Avx>, n: usize, dst: &mut [u64], src: &[i64])
 where
     NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     NTT4x30Avx::ntt_from_znx64(dst, src);
+    spread_embedded_portable(&mut dst[..4 * n], 4, n / src.len());
     NTT4x30Avx::ntt_dft_execute(NttModuleHandle::<R>::get_ntt_table_for(module, n), dst);
 }
 

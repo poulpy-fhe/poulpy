@@ -17,6 +17,12 @@ pub unsafe fn znx_switch_ring_avx(res: &mut [i64], a: &[i64]) {
             return;
         }
 
+        // The vector paths step four coefficients on each side.
+        if n_in.min(n_out) < 4 {
+            poulpy_cpu_portable::kernels::znx::znx_switch_ring_portable(res, a);
+            return;
+        }
+
         if n_in > n_out {
             // Downsample: res[k] = a[k * gap_in], contiguous stores
             let gap_in: usize = n_in / n_out;

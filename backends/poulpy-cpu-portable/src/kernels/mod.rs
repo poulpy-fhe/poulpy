@@ -34,6 +34,22 @@ pub fn embed_log_gap_portable(module_n: usize, n: usize, min_degree: usize) -> u
     (module_n / n).trailing_zeros() as usize
 }
 
+/// Spreads the elements of `width` words a load wrote at the front of `buf` to every `gap`-th element and zeroes
+/// the others, in place: the load of the image under `X -> X^gap` of the first `buf.len() / (width * gap)` of them.
+pub fn spread_embedded_portable<T: Copy + Default>(buf: &mut [T], width: usize, gap: usize) {
+    if gap == 1 {
+        return;
+    }
+    let count = buf.len() / (width * gap);
+    // Backwards, so that no element is overwritten before it moves.
+    for k in (1..count).rev() {
+        buf.copy_within(k * width..(k + 1) * width, k * gap * width);
+    }
+    for k in 0..count {
+        buf[(k * gap + 1) * width..(k + 1) * gap * width].fill(T::default());
+    }
+}
+
 /// A pointer shared by tasks that write distinct ranges behind it.
 ///
 /// Shared by the CPU backends and their Rayon variants.

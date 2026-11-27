@@ -22,9 +22,9 @@ use crate::{
 };
 
 /// The embedded degrees exercised under a module of degree `n`: `n/2` down to
-/// `n/16`, never below 8 (the CPU floor).
-fn embedded_degrees(n: usize) -> Vec<usize> {
-    (1..=4).map(|g| n >> g).filter(|&d| d >= 8).collect()
+/// `floor`, every degree for the coefficient domain, from `MIN_DEGREE` for big operands.
+fn embedded_degrees(n: usize, floor: usize) -> Vec<usize> {
+    (1..=n.ilog2()).map(|g| n >> g).filter(|&d| d >= floor).collect()
 }
 
 /// The (a_size, b_size, res_size) triples: overlap, longer operand, shorter destination.
@@ -165,10 +165,10 @@ where
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([7u8; 32]);
-    for embed_n in embedded_degrees(n) {
+    for embed_n in embedded_degrees(n, 1) {
         for (a_size, b_size, res_size) in SIZES {
             for (a_n, b_n) in [(embed_n, n), (n, embed_n), (embed_n, embed_n), (embed_n, embed_n / 2)] {
-                if b_n < 8 {
+                if b_n == 0 {
                     continue;
                 }
                 let mut a = module.vec_znx_alloc(a_n, cols, a_size);
@@ -351,6 +351,8 @@ type BigBin<'m, BE, Rg> = &'m dyn Fn(
 );
 type BigAssign<'m, BE, Rg> = &'m dyn Fn(&mut VecZnxBigBackendMut<'_, BE, Rg>, usize, &VecZnxBigBackendRef<'_, BE, Rg>, usize);
 type SmallAssign<'m, BE, Rg> = &'m dyn Fn(&mut VecZnxBigBackendMut<'_, BE, Rg>, usize, &VecZnxBackendRef<'_, BE, Rg>, usize);
+type SmallBin<'m, BE, Rg> =
+    &'m dyn Fn(&mut VecZnxBigBackendMut<'_, BE, Rg>, &VecZnxBigBackendRef<'_, BE, Rg>, &VecZnxBackendRef<'_, BE, Rg>, usize);
 
 /// The `VecZnxBig` add and sub families with a degree-`n` operand in each
 /// embedding slot, Big or small, equal the same operation on the embedded
@@ -411,8 +413,19 @@ where
             module.vec_znx_big_sub_small_negate_assign(r, rc, x, xc)
         }),
     ];
+    let small_bin: [(&str, SmallBin<'_, BE, Rg>); 3] = [
+        ("vec_znx_big_add_small", &|r, big, small, col| {
+            module.vec_znx_big_add_small(r, col, big, col, small, col)
+        }),
+        ("vec_znx_big_sub_small_a", &|r, big, small, col| {
+            module.vec_znx_big_sub_small_a(r, col, small, col, big, col)
+        }),
+        ("vec_znx_big_sub_small_b", &|r, big, small, col| {
+            module.vec_znx_big_sub_small_b(r, col, big, col, small, col)
+        }),
+    ];
 
-    for embed_n in embedded_degrees(n) {
+    for embed_n in embedded_degrees(n, BE::MIN_DEGREE) {
         for (a_size, b_size, res_size) in SIZES {
             for (a_n, b_n) in [(embed_n, n), (n, embed_n)] {
                 let mut a = module.vec_znx_alloc(a_n, cols, a_size);
@@ -421,7 +434,7 @@ where
                 module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
                 let (a_dense, b_dense) = (big_embedded(module, n, &a), big_embedded(module, n, &b));
                 let (a_own, b_own) = (big_at_own_degree(module, &a), big_at_own_degree(module, &b));
-                let (a_small_dense, b_small_dense) = (embed(module, n, &a), embed(module, n, &b));
+                let b_small_dense = embed(module, n, &b);
 
                 for (what, op) in big_bin.iter() {
                     let mut want: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(params.n, cols, res_size);
@@ -451,78 +464,30 @@ where
                     );
                 }
 
-                // Big with a small operand: add_small and sub_small_b take the small `b`, sub_small_a the small `a`.
-                let mut want: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(params.n, cols, res_size);
-                let mut have: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(params.n, cols, res_size);
-                for col in 0..cols {
-                    module.vec_znx_big_add_small(
-                        &mut want.to_backend_mut(),
-                        col,
-                        &a_dense.to_backend_ref(),
-                        col,
-                        &vec_znx_backend_ref::<BE, Rg>(&b_small_dense),
-                        col,
-                    );
-                    module.vec_znx_big_add_small(
-                        &mut have.to_backend_mut(),
-                        col,
-                        &a_own.to_backend_ref(),
-                        col,
-                        &vec_znx_backend_ref::<BE, Rg>(&b),
-                        col,
-                    );
-                }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
-                    "vec_znx_big_add_small: a.n()={a_n} b.n()={b_n}"
-                );
-                for col in 0..cols {
-                    module.vec_znx_big_sub_small_a(
-                        &mut want.to_backend_mut(),
-                        col,
-                        &vec_znx_backend_ref::<BE, Rg>(&a_small_dense),
-                        col,
-                        &b_dense.to_backend_ref(),
-                        col,
-                    );
-                    module.vec_znx_big_sub_small_a(
-                        &mut have.to_backend_mut(),
-                        col,
-                        &vec_znx_backend_ref::<BE, Rg>(&a),
-                        col,
-                        &b_own.to_backend_ref(),
-                        col,
+                // Big with a small operand: the Big `a` and the small `b`.
+                for (what, op) in small_bin.iter() {
+                    let mut want: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(params.n, cols, res_size);
+                    let mut have: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(params.n, cols, res_size);
+                    for col in 0..cols {
+                        op(
+                            &mut want.to_backend_mut(),
+                            &a_dense.to_backend_ref(),
+                            &vec_znx_backend_ref::<BE, Rg>(&b_small_dense),
+                            col,
+                        );
+                        op(
+                            &mut have.to_backend_mut(),
+                            &a_own.to_backend_ref(),
+                            &vec_znx_backend_ref::<BE, Rg>(&b),
+                            col,
+                        );
+                    }
+                    assert_eq!(
+                        normalized(module, base2k, &want, &mut scratch),
+                        normalized(module, base2k, &have, &mut scratch),
+                        "{what}: a.n()={a_n} b.n()={b_n} sizes=({a_size}, {b_size}, {res_size})"
                     );
                 }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
-                    "vec_znx_big_sub_small_a: a.n()={a_n} b.n()={b_n}"
-                );
-                for col in 0..cols {
-                    module.vec_znx_big_sub_small_b(
-                        &mut want.to_backend_mut(),
-                        col,
-                        &a_dense.to_backend_ref(),
-                        col,
-                        &vec_znx_backend_ref::<BE, Rg>(&b_small_dense),
-                        col,
-                    );
-                    module.vec_znx_big_sub_small_b(
-                        &mut have.to_backend_mut(),
-                        col,
-                        &a_own.to_backend_ref(),
-                        col,
-                        &vec_znx_backend_ref::<BE, Rg>(&b),
-                        col,
-                    );
-                }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
-                    "vec_znx_big_sub_small_b: a.n()={a_n} b.n()={b_n}"
-                );
             }
 
             // In-place forms: the destination is a random degree-N Big, the operand is embedded.
@@ -581,6 +546,67 @@ where
                     normalized(module, base2k, &want, &mut scratch),
                     normalized(module, base2k, &have, &mut scratch),
                     "{what}: a.n()={embed_n} sizes=({a_size}, {res_size})"
+                );
+            }
+        }
+    }
+
+    // A small operand below the floor, down to degree 1, beside a Big at the floor: the small embedding slot.
+    let floor = BE::MIN_DEGREE.min(n);
+    for small_n in embedded_degrees(n, 1).into_iter().filter(|&d| d < BE::MIN_DEGREE) {
+        for (big_size, small_size, res_size) in SIZES {
+            let mut big = module.vec_znx_alloc(floor, cols, big_size);
+            module.vec_znx_fill_uniform_source_all(base2k, big_size * base2k, &mut big, &mut source);
+            let mut small = module.vec_znx_alloc(small_n, cols, small_size);
+            module.vec_znx_fill_uniform_source_all(base2k, small_size * base2k, &mut small, &mut source);
+            let (big_dense, big_own) = (big_embedded(module, n, &big), big_at_own_degree(module, &big));
+            let small_dense = embed(module, n, &small);
+            let label = |what: &str| format!("{what}: small.n()={small_n} sizes=({big_size}, {small_size}, {res_size})");
+            for (what, op) in small_bin.iter() {
+                let mut dirty = || {
+                    let mut digits = module.vec_znx_alloc(n, cols, res_size);
+                    module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut digits, &mut source);
+                    big_embedded(module, n, &digits)
+                };
+                let (mut want, mut have) = (dirty(), dirty());
+                for col in 0..cols {
+                    op(
+                        &mut want.to_backend_mut(),
+                        &big_dense.to_backend_ref(),
+                        &vec_znx_backend_ref::<BE, Rg>(&small_dense),
+                        col,
+                    );
+                    op(
+                        &mut have.to_backend_mut(),
+                        &big_own.to_backend_ref(),
+                        &vec_znx_backend_ref::<BE, Rg>(&small),
+                        col,
+                    );
+                }
+                assert_eq!(
+                    normalized(module, base2k, &want, &mut scratch),
+                    normalized(module, base2k, &have, &mut scratch),
+                    "{}",
+                    label(what)
+                );
+            }
+            for (what, op) in small_assign.iter() {
+                let mut want = big_embedded(module, n, &big);
+                let mut have = big_embedded(module, n, &big);
+                for col in 0..cols {
+                    op(
+                        &mut want.to_backend_mut(),
+                        col,
+                        &vec_znx_backend_ref::<BE, Rg>(&small_dense),
+                        col,
+                    );
+                    op(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&small), col);
+                }
+                assert_eq!(
+                    normalized(module, base2k, &want, &mut scratch),
+                    normalized(module, base2k, &have, &mut scratch),
+                    "{}",
+                    label(what)
                 );
             }
         }

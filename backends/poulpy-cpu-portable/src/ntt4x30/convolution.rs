@@ -17,6 +17,7 @@ use std::mem::size_of;
 use super::packed::{DotState, ROW, SendPtr, limb_to_prepared, scatter_centered_limb, stage_flush, stage_store};
 use super::vec_znx_dft::prepare_tmp_words;
 use crate::kernels::ntt4x30::primes::Primes30;
+use crate::kernels::vec_znx::embedding_gap_portable;
 use crate::kernels::{RightRead, right_read_ntt};
 
 /// Blocks per parallel task.
@@ -255,9 +256,9 @@ unsafe fn zero_prepared_limb(col: *mut u32, n: usize, size: usize, limb: usize) 
     }
 }
 
-/// Prepares `a` into `left`, `right`, or both.
+/// Prepares `a` into `left`, `right`, or both; `right` alone takes `a` of any power-of-two degree dividing its own.
 ///
-/// `dft(n, dst, src, prepared)` is the forward transform of `src` into the packed limb `dst`,
+/// `dft(n, dst, src, prepared)` is the forward transform of `src`, embedded at degree `n`, into the packed limb `dst`,
 /// multiplied by `2^32` when `prepared` is set.
 fn prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
@@ -279,7 +280,11 @@ fn prepare<BE, E: TaskExecutor, Rg: Ring>(
         (res.n(), res.cols(), res.size())
     };
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    if left.is_some() {
+        assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    } else {
+        embedding_gap_portable(n, a.n());
+    }
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
         assert_eq!(r.n(), n, "prepare: right.n():{} != left.n():{n}", r.n());

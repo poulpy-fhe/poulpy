@@ -14,7 +14,7 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
 };
-use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt, spread_embedded_portable, vec_znx::embedding_gap_portable};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{Backend, CnvDftAccTerm, Ring};
 use poulpy_hal::layouts::{
@@ -1510,6 +1510,19 @@ pub(crate) fn cnv_pvec_left_prepare<R: Ring, E: TaskExecutor>(
     }
 }
 
+/// Moves the three planes of `a_n` residues a conversion leaves at the front of `limb` to their stride-`n` places, each
+/// spread to every `n / a_n`-th residue: the load of the image at degree `n` of a degree-`a_n` limb.
+fn spread_planes(limb: &mut [u64], n: usize, a_n: usize) {
+    if a_n == n {
+        return;
+    }
+    // From the last plane, whose target lies past every compact plane.
+    for p in (0..3).rev() {
+        limb.copy_within(p * a_n..(p + 1) * a_n, p * n);
+        spread_embedded_portable(&mut limb[p * n..(p + 1) * n], 1, n / a_n);
+    }
+}
+
 /// Scratch bytes required by [`cnv_pvec_right_prepare`]: one three-prime NTT limb.
 pub(crate) fn cnv_pvec_right_prepare_tmp_bytes(n: usize) -> usize {
     3 * n * size_of::<u64>()
@@ -1526,7 +1539,7 @@ pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
     poulpy_hal::layouts::assert_dense(a, "cnv_pvec_right_prepare");
     let n = res.n();
     check_degree::<NTT3x42Ifma>(module.n(), n);
-    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    embedding_gap_portable(n, a.n());
     let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
@@ -1545,6 +1558,7 @@ pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
             let dst = unsafe { res_ptr.get().add(col * col_stride) };
             if j < min_size {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                spread_planes(limb_b, n, a.n());
                 <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
                     table, limb_b,
                 );
@@ -1565,6 +1579,7 @@ pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
         let dst = col_slice_mut(res_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
             NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+            spread_planes(limb_b, n, a.n());
             // Packing also reduces the lazy transform output.
             <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(table, limb_b);
             unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, res_size - 1 - j, std::ptr::null_mut()) };
