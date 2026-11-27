@@ -768,6 +768,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
             run_ring_test_result!(
+                factored_polynomial,
+                $crate::test_suite::replicated::test_factored_polynomial
+            );
+            run_ring_test_result!(
                 replicated_polynomials_are_shaped,
                 $crate::test_suite::replicated::test_replicated_polynomials_are_shaped
             );

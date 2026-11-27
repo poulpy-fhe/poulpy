@@ -1,3 +1,7 @@
+pub(crate) mod bsgs_program;
+mod factored;
+pub use factored::{EncodedFactoredPolynomial, Factor, FactorStep, FactorUpdate, FactoredPolynomial};
+
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow};

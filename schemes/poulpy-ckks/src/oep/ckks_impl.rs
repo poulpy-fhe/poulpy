@@ -2,10 +2,10 @@ use poulpy_hal::layouts::Backend;
 
 use super::{
     CKKSAddImpl, CKKSAddManyImpl, CKKSAffineImpl, CKKSApproximationImpl, CKKSCIRingMapImpl, CKKSComplexPolynomialEvaluationImpl,
-    CKKSConjugateImpl, CKKSCopyImpl, CKKSDFTImpl, CKKSDotProductImpl, CKKSEncryptionImpl, CKKSEvalModImpl, CKKSImagImpl,
-    CKKSInnerSumImpl, CKKSLinearTransformationImpl, CKKSMulAddImpl, CKKSMulImpl, CKKSMulSubImpl, CKKSNegImpl,
-    CKKSPlaintextVecImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSReplicatedImpl, CKKSRotateImpl, CKKSRoundImpl,
-    CKKSSubImpl,
+    CKKSConjugateImpl, CKKSCopyImpl, CKKSDFTImpl, CKKSDotProductImpl, CKKSEncryptionImpl, CKKSEvalModImpl,
+    CKKSFactoredPolynomialEvaluationImpl, CKKSImagImpl, CKKSInnerSumImpl, CKKSLinearTransformationImpl, CKKSMulAddImpl,
+    CKKSMulImpl, CKKSMulSubImpl, CKKSNegImpl, CKKSPlaintextVecImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl,
+    CKKSReplicatedImpl, CKKSRotateImpl, CKKSRoundImpl, CKKSSubImpl,
 };
 
 /// Aggregate CKKS dispatch surface: the scalar-independent evaluation families.
@@ -35,6 +35,7 @@ pub unsafe trait CKKSImpl:
     + CKKSMulImpl
     + CKKSDotProductImpl
     + CKKSLinearTransformationImpl
+    + CKKSFactoredPolynomialEvaluationImpl
     + CKKSPolynomialEvaluationImpl
     + CKKSComplexPolynomialEvaluationImpl
     + CKKSDFTImpl
@@ -65,6 +66,7 @@ unsafe impl<BE: Backend> CKKSImpl for BE where
         + CKKSMulImpl
         + CKKSDotProductImpl
         + CKKSLinearTransformationImpl
+        + CKKSFactoredPolynomialEvaluationImpl
         + CKKSPolynomialEvaluationImpl
         + CKKSComplexPolynomialEvaluationImpl
         + CKKSDFTImpl

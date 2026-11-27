@@ -1434,3 +1434,65 @@ where
     }
     Ok(())
 }
+
+use crate::{
+    api::{BSGSPolynomialInfos, Basis},
+    polynomial::ComplexBSGSPolynomial,
+};
+use poulpy_core::layouts::BSGSMeta;
+use poulpy_hal::layouts::Standard;
+/// `InvalidOperand` for `op` unless `poly` has a baby step.
+pub(crate) fn ensure_baby_steps<BE: Backend, B: BSGSPolynomialInfos<BE, Rg>, Rg: Ring>(
+    op: &'static str,
+    poly: &B,
+) -> CKKSResult<()> {
+    ckks_ensure_operand!(op, poly.baby_steps() > 0, "the polynomial has no baby step");
+    Ok(())
+}
+
+pub(crate) fn ensure_power_basis(op: &'static str, poly: Basis, power_basis: Basis) -> CKKSResult<()> {
+    ckks_ensure_operand!(
+        op,
+        poly == power_basis,
+        "polynomial basis {poly:?} does not match power basis {power_basis:?}"
+    );
+    Ok(())
+}
+
+/// `InvalidOperand` for `op` unless the real and imaginary parts of `poly` share a nonempty baby-step schedule, each
+/// step of one length, and their degree, parity and basis.
+pub(crate) fn ensure_complex_schedules<BE, C>(op: &'static str, poly: &ComplexBSGSPolynomial<C>) -> CKKSResult<()>
+where
+    BE: Backend,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + IntPolyInfos,
+{
+    let (re, im) = (&poly.re, &poly.im);
+    ensure_baby_steps::<BE, _, Standard>(op, re)?;
+    let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(re);
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::baby_steps(im) == n_baby,
+        "real/imag baby-step schedules differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::degree(im) == BSGSPolynomialInfos::<BE>::degree(re),
+        "real/imag degrees differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::parity(im) == BSGSPolynomialInfos::<BE>::parity(re),
+        "real/imag parities differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::basis(im) == BSGSPolynomialInfos::<BE>::basis(re),
+        "real/imag bases differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        (0..n_baby).all(|i| BSGSPolynomialInfos::<BE>::baby_step(im, i).n() == BSGSPolynomialInfos::<BE>::baby_step(re, i).n()),
+        "real/imag baby-step lengths differ"
+    );
+    Ok(())
+}

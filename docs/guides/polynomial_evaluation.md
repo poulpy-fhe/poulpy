@@ -92,9 +92,29 @@ The multiplication by the imaginary unit is the capacity free monomial map provi
 
 Both a prepared entry point and a one-shot entry point are available.
 The prepared entry point takes a power basis that the caller has already built, which allows reuse across several evaluations.
-The one-shot entry point builds and populates the power basis internally from the input ciphertext.
+The one-shot entry point builds and populates the power basis internally from the input ciphertext. Both real and complex BSGS evaluation compile the baby steps and giant products into a factored program at evaluation time. The program borrows the supplied powers and encoded plaintext tables. Equal giant powers within a run share one prepared operand. The BSGS entry points use the shared scratch bound and allocate their live intermediate ciphertexts on the heap.
 
 Chebyshev interpolation of a real function is also provided, which produces the Chebyshev coefficients of the interpolating polynomial.
+
+### Factored real polynomials
+
+A `FactoredPolynomial` holds a sequence of operations on ciphertexts. Inputs come first in value order, followed by the result of each step. This program computes `(x² + 1)(x² − 1)` with a shared square and two coefficients from table 0.
+
+```rust
+use poulpy_ckks::polynomial::{Factor, FactorStep, FactorUpdate, FactoredPolynomial};
+use poulpy_hal::layouts::Standard;
+
+let plan = FactoredPolynomial::<Standard>::new(1, vec![2], vec![
+    FactorStep::new(Factor::Square(0), []),
+    FactorStep::new(Factor::Value(1), [FactorUpdate::AddConstant((0, 0))]),
+    FactorStep::new(Factor::Value(1), [FactorUpdate::AddConstant((0, 1))]),
+    FactorStep::new(Factor::Product(2, 3), []),
+])?;
+```
+
+Pass `&[&[1.0, -1.0]]` to `plan.encode` for full packing or `plan.encode_replicated` for masked constants. To borrow existing backend plaintext tables, use `plan.bind`. Import `CKKSFactoredPolynomialEvaluationOps` from `poulpy_ckks::api`, size the arena with `module.ckks_eval_poly_factored_tmp_bytes(&res, &[&x], &encoded, &key_layout)`, then call `module.ckks_eval_poly_factored(&mut res, &[&x], &encoded, &keys, scratch)`.
+
+A prepared right operand can supply several products. The evaluator recycles ciphertext storage at the final use of each value. A `MulI` update requires the standard ring.
 
 ## Modulus consumption
 

@@ -8,6 +8,7 @@
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
+use crate::layouts::validation::ensure_baby_steps;
 use crate::{CKKSResult as Result, checked_log_budget_sub, ckks_ensure_operand};
 use poulpy_core::layouts::{GetTensorKey, IntPolyInfos};
 use poulpy_core::oep::{GLWEMulConstImpl, GLWEMulPlainImpl};
@@ -39,7 +40,7 @@ use crate::{
     power_basis::{PowerBasis, populate_in},
     reference::{
         mul::{product_key_k, square_wide_into, tensor_key_at},
-        polynomial_evaluation::{const_add_assign, const_sub_assign, ensure_baby_steps},
+        polynomial_evaluation::{const_add_assign, const_sub_assign},
     },
 };
 

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::Scale;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSEvalModOps,
         CKKSPolynomialEvaluationOps,
@@ -16,13 +16,13 @@ use crate::{
     },
     oep::{CKKSEncodingImpl, CKKSImpl, CKKSPolynomialEvaluationImpl},
     polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
-    power_basis::{CKKSPowerBasisGen, PowerBasis},
+    power_basis::{CKKSPowerBasisGen, CKKSPowerBasisInsert, PowerBasis},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
     GLWEFill,
     api::GLWETensorKeyPreparedFactory,
-    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
+    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module, Ring, Standard},
@@ -166,6 +166,29 @@ where
             "prepared and one-shot real evaluation differ"
         );
         results.push(snapshot::<BE, _, Rg>(&one_shot));
+        // A prepared evaluation must consume the caller's stored power.
+        let square = powers.take_power(2).unwrap();
+        let replacement_layout = CKKSLayout {
+            glwe_layout: square.glwe_layout(),
+            meta: square.meta(),
+        };
+        powers
+            .insert(2, fixture_ciphertext(module, &replacement_layout, 163))
+            .unwrap();
+        let mut replacement_out = fixture_ciphertext(module, &layout, 131);
+        with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_eval_poly_real_const_coeffs_from_power_basis(
+                &mut replacement_out,
+                &powers,
+                &encoded,
+                &prepared_key,
+                scratch,
+            )
+        })
+        .unwrap();
+        let with_replacement = snapshot::<BE, _, Rg>(&replacement_out);
+        assert_ne!(with_replacement, snapshot::<BE, _, Rg>(&one_shot));
+        results.push(with_replacement);
         // Exercise x², x²·x, T₂, and T₂·x input folds through production dispatch.
         for parity in [Parity::Even, Parity::Odd] {
             let encoded = folded::<F>(basis, parity)
@@ -333,6 +356,71 @@ where
     results
 }
 
+/// Two distinct inputs share a prepared square on both layouts, also below the module degree.
+fn factored_products<BE, Rg: Ring>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
+where
+    BE: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl<Rg>,
+    Module<BE>: GLWETensorKeyPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
+{
+    use crate::{
+        api::CKKSFactoredPolynomialEvaluationOps,
+        polynomial::{Factor, FactorStep, FactorUpdate, FactoredPolynomial},
+    };
+    let plan = FactoredPolynomial::<Rg>::new(
+        2,
+        vec![],
+        vec![
+            FactorStep::new(Factor::Square(0), []),
+            FactorStep::new(Factor::PrepareRight(2), []),
+            FactorStep::new(Factor::PreparedProduct(0, 3), []),
+            FactorStep::new(
+                Factor::PreparedProduct(1, 3),
+                [FactorUpdate::Sub(4), FactorUpdate::MulPow2(1)],
+            ),
+        ],
+    )
+    .unwrap();
+    let poly = plan.bind::<CKKSPlaintextOwned<BE, Rg>>(vec![]).unwrap();
+    let mut outputs = Vec::new();
+    for n in [module.n(), module.n() / 2] {
+        let key_params = CKKSTestParams {
+            n,
+            k: 12 * params.base2k + 1,
+            dsize: 1,
+            ..params
+        };
+        let key = key_params.tsk_layout().gglwe_layout();
+        let tsk = prepared_tensor_key(module, &key, 113);
+        for slots in [
+            SlotLayout::Full,
+            SlotLayout::Replicated(crate::ReplicatedLayout::new(0, 1, &[1, -1, 0, 1]).unwrap()),
+        ] {
+            let layout = CKKSLayout {
+                glwe_layout: GLWELayout {
+                    n: n.into(),
+                    rank: params.rank.into(),
+                    base2k: params.base2k.into(),
+                    k: (12 * params.base2k + 1).into(),
+                },
+                meta: GLWEPlaintextMeta {
+                    scale: Scale::Log(10),
+                    slots: SlotsKind::Real,
+                    slot_layout: slots,
+                    ..Default::default()
+                },
+            };
+            let a = fixture_ciphertext(module, &layout, 33);
+            let b = fixture_ciphertext(module, &layout, 97);
+            let inputs = [&a, &b];
+            let mut out = fixture_ciphertext(module, &layout, 129);
+            let bytes = module.ckks_eval_poly_factored_tmp_bytes(&out, &inputs, &poly, &key);
+            with_scratch::<BE, _>(bytes, |s| module.ckks_eval_poly_factored(&mut out, &inputs, &poly, &tsk, s)).unwrap();
+            outputs.push(snapshot::<BE, _, Rg>(&out));
+        }
+    }
+    outputs
+}
+
 /// Checks real prepared-basis and one-shot evaluation and folded inputs.
 pub fn test_real_polynomial_parity<BR, BT, F, Rg: Ring>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
@@ -345,6 +433,10 @@ where
     assert_eq!(module_ref.n(), module_test.n());
     let want = real_polynomials::<BR, F, Rg>(params, module_ref);
     assert_untagged("real polynomial", &want);
+    assert_eq!(
+        factored_products::<BR, Rg>(params, module_ref),
+        factored_products::<BT, Rg>(params, module_test)
+    );
     assert_eq!(
         want,
         real_polynomials::<BT, F, Rg>(params, module_test),
