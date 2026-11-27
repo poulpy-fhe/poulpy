@@ -674,10 +674,10 @@ impl BootstrappingPreset {
         for dft in transforms {
             let meta = dft.coeffs_meta();
             let diagonal_limbs = (meta.log_delta() + meta.log_budget()).div_ceil(base2k);
-            for (indexes, giant_step) in dft.diagonal_indexes(log_n).into_iter().zip(dft.schedule().giant_steps()) {
+            for (galois, giant_step) in dft.diagonal_galois(log_n).into_iter().zip(dft.schedule().giant_steps()) {
                 // With the plan's own schedule: the tree of power-of-two keys switches more.
                 let index = LinearTransformationLayout {
-                    indexes,
+                    galois,
                     slots: 1 << log_n,
                     strategy: dft.factor_strategy(giant_step),
                 }
@@ -688,11 +688,11 @@ impl BootstrappingPreset {
                     BsgsRotations::PerRotation => giants,
                     BsgsRotations::PowersOfTwo { .. } => index.rotations.giant_key_switches(
                         index
-                            .giant_steps
+                            .giant_galois
                             .iter()
                             .zip(&index.index)
                             .filter(|(_, babies)| !babies.is_empty())
-                            .map(|(&rot, _)| rot),
+                            .map(|(&galois, _)| galois),
                     ),
                 };
                 products = products.max(diagonals * diagonal_limbs + switches * operand);
@@ -1580,7 +1580,7 @@ mod tests {
             key_bytes(&encaps.dense_to_sparse) + encaps.sparse_to_dense.as_ref().map_or(0, key_bytes)
         });
         let first_factor = keys.first_factor_key.as_ref().map_or(0, |key| {
-            plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(key)
+            plan.coeffs_to_slots().diagonal_galois(log_n)[0].len() * key_bytes(key)
         });
         let conversion = keys
             .conversion_keys

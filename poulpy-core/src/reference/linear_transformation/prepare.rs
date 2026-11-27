@@ -18,7 +18,7 @@ use poulpy_hal::{
 
 use crate::layouts::{
     GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-    LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
+    LinearTransformationLayout, LinearTransformationPlan, galois_is_identity, prepared::PreparedDiagonal,
 };
 
 impl<BE: Backend, Rg: Ring> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>> {
@@ -53,13 +53,13 @@ impl<BE: Backend, Rg: Ring> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, 
         let base2k = pt_infos.base2k();
         let k = pt_infos.k();
 
-        let mut giant_steps = Vec::with_capacity(index.giant_steps.len());
-        for (g, &rot) in index.giant_steps.iter().enumerate() {
-            let baby_rots = &index.index[g];
-            let mut diagonals = Vec::with_capacity(baby_rots.len());
-            for &baby in baby_rots {
+        let mut giant_steps = Vec::with_capacity(index.giant_galois.len());
+        for (g, &galois) in index.giant_galois.iter().enumerate() {
+            let babies = &index.index[g];
+            let mut diagonals = Vec::with_capacity(babies.len());
+            for &baby_galois in babies {
                 diagonals.push(LinearTransformationDiagonal {
-                    baby,
+                    baby_galois,
                     plaintext: PreparedDiagonal {
                         cnv: module.cnv_pvec_right_alloc(pt_n, cols, pt_size, PrepareHint::Reuse),
                         base2k,
@@ -68,11 +68,11 @@ impl<BE: Backend, Rg: Ring> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, 
                     },
                 });
             }
-            giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
+            giant_steps.push(LinearTransformationGiantStep { galois, diagonals });
         }
 
         LinearTransformation {
-            baby_steps: index.baby_steps.clone(),
+            baby_galois: index.baby_galois.clone(),
             rotations: index.rotations,
             giant_steps,
         }
@@ -129,13 +129,10 @@ pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P, Rg: Ring>(
     M: CnvPVecAlloc<BE> + CnvOps<BE, Rg> + crate::api::GLWENormalize<BE, Rg>,
     P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
-    if !lt.baby_steps.is_empty() {
-        assert_eq!(
-            lt.baby_steps.first(),
-            Some(&0),
-            "baby_steps must start with the identity rotation (0)"
-        );
-    }
+    assert!(
+        lt.baby_galois.first().is_none_or(|&galois| galois_is_identity(galois)),
+        "baby_galois must start with the identity"
+    );
 
     let first = prepared
         .first_diagonal_plaintext()
@@ -190,8 +187,8 @@ pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P, Rg: Ring>(
                 prepared
                     .giant_steps
                     .iter()
-                    .find(|p| p.rot == gs.rot)
-                    .is_some_and(|p| p.diagonals.iter().any(|p| p.baby == d.baby)),
+                    .find(|p| p.galois == gs.galois)
+                    .is_some_and(|p| p.diagonals.iter().any(|p| p.baby_galois == d.baby_galois)),
                 "prepared cache has no diagonal slot for a diagonal of the transformation"
             );
         }
@@ -204,7 +201,7 @@ pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P, Rg: Ring>(
         let prepared_gs = prepared
             .giant_steps
             .iter_mut()
-            .find(|p| p.rot == gs.rot)
+            .find(|p| p.galois == gs.galois)
             .expect("checked above");
 
         for d in &gs.diagonals {
@@ -212,7 +209,7 @@ pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P, Rg: Ring>(
             let prepared_slot = prepared_gs
                 .diagonals
                 .iter_mut()
-                .find(|p| p.baby == d.baby)
+                .find(|p| p.baby_galois == d.baby_galois)
                 .expect("checked above");
             // A ciphertext diagonal is read canonical, as the products read it.
             if plaintext.rank().as_usize() > 0 {

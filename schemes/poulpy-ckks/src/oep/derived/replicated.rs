@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     Dnum, GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-    LWEInfos, LinearTransformationBabySteps, LinearTransformationPrepared, TorusPrecision,
+    LWEInfos, LinearTransformationBabySteps, LinearTransformationPrepared, TorusPrecision, galois_of_rotation,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena};
 
@@ -326,7 +326,7 @@ where
     })
 }
 
-/// The rotations, and the widths, at which `ckks_to_replicated` of `a` through `ctx` looks its keys up: the width
+/// The Galois elements, and the widths, at which `ckks_to_replicated` of `a` through `ctx` looks its keys up: the width
 /// model of its entry check.
 pub(crate) fn to_key_lookups<BE: Backend, Rg: Ring, A: GLWEInfos>(
     ctx: &ReplicatedConversion<BE, Rg>,
@@ -336,7 +336,7 @@ pub(crate) fn to_key_lookups<BE: Backend, Rg: Ring, A: GLWEInfos>(
     transform_key_lookups(&ctx.to, workspace, working_layout(a, ctx.extra_bits, 0).k.as_usize())
 }
 
-/// The rotations, and the widths, at which `ckks_from_replicated` of `a` through `ctx` looks its keys up: the gather
+/// The Galois elements, and the widths, at which `ckks_from_replicated` of `a` through `ctx` looks its keys up: the gather
 /// at the working width, then the trace at the width it leaves, a result of `log_budget` bits.
 pub(crate) fn from_key_lookups<BE: Backend, Rg: Ring, A: CKKSCtBounds>(
     ctx: &ReplicatedConversion<BE, Rg>,
@@ -348,7 +348,7 @@ pub(crate) fn from_key_lookups<BE: Backend, Rg: Ring, A: CKKSCtBounds>(
     let trace_k = log_budget + a.log_delta() + ctx.extra_bits + ctx.trace.len();
     transform_key_lookups(from, workspace, working_layout(a, ctx.extra_bits, 0).k.as_usize())
         .into_iter()
-        .chain(ctx.trace.iter().map(|&rotation| (rotation, trace_k)))
+        .chain(ctx.trace.iter().map(|&rotation| (galois_of_rotation(rotation), trace_k)))
         .collect()
 }
 

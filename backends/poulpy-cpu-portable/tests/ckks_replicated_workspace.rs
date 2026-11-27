@@ -1,7 +1,7 @@
 //! Reused replicated transforms do not allocate prepared operand buffers.
 use poulpy_ckks::{
     CKKSLayout, GLWEPlaintextMeta, Scale, SlotLayout,
-    api::{CKKSModuleInfos, CKKSReplicatedOps},
+    api::CKKSReplicatedOps,
     layouts::{CKKSCiphertextAlloc, ReplicatedConversion},
     shaping::ShapingUnit,
     test_suite::parity::{
@@ -9,11 +9,11 @@ use poulpy_ckks::{
         keys::{key_layout, prepared_automorphism_key},
     },
 };
-use poulpy_core::layouts::{GLWELayout, LWEInfos};
+use poulpy_core::layouts::{GLWELayout, LWEInfos, galois_at};
 use poulpy_cpu_portable::FFT64Portable;
 use poulpy_hal::{
     api::{CnvPVecBytesOf, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, PrepareHint, ScratchOwned, Standard},
+    layouts::{CyclotomicOrder, Module, PrepareHint, ScratchOwned, Standard},
 };
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -87,10 +87,10 @@ fn ckks_replicated_workspace_reuses_prepared_buffers() {
     let b = fixture_ciphertext(&module, &layout, 12);
     let key_layout = key_layout(256, 19, 180, 1, 1, 1);
     let keys: HashMap<_, _> = conversion
-        .rotations()
+        .galois()
         .into_iter()
-        .map(|rotation| {
-            let gal = module.ckks_galois_element::<Standard>(rotation);
+        .map(|galois| {
+            let gal = galois_at(galois, module.cyclotomic_order::<Standard>());
             (gal, prepared_automorphism_key(&module, &key_layout, gal, 13))
         })
         .collect();

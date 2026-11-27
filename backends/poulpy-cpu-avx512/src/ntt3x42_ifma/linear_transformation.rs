@@ -1,5 +1,5 @@
 use crate::NTT3x42IfmaRayon as BE;
-use poulpy_core::layouts::BabyStepOperand;
+use poulpy_core::layouts::{BabyStepOperand, galois_at, galois_is_identity};
 use poulpy_cpu_rayon::RayonTaskExecutor as E;
 use poulpy_hal::execution::TaskExecutor;
 
@@ -251,14 +251,14 @@ where
     let cols = res.rank().as_usize() + 1;
     let (offset_hi, offset_lo) = poulpy_core::cnv_offset_to_limb_offset(cnv_offset, base);
     let prod_size = poulpy_core::prod_dft_size(lhs.size(), rhs.first_diagonal_plaintext().unwrap().size(), offset_hi);
-    let term_count = rhs.giant_steps.iter().filter(|g| g.rot != 0).count();
+    let term_count = rhs.giant_steps.iter().filter(|g| !galois_is_identity(g.galois)).count();
     let giant_keys: Vec<_> = rhs
         .giant_steps
         .iter()
         .map(|gs| {
-            (gs.rot != 0).then(|| {
-                keys.get_automorphism_key(module.galois_element::<Standard>(gs.rot), res.k())
-                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
+            (!galois_is_identity(gs.galois)).then(|| {
+                keys.get_automorphism_key(galois_at(gs.galois, 2 * module.n() as i64), res.k())
+                    .unwrap_or_else(|e| panic!("giant step of Galois element {}: {e}", gs.galois))
             })
         })
         .collect();
@@ -304,7 +304,7 @@ where
             &mut acc0,
             &mut prod0,
             base,
-            rhs.giant_steps[g].rot,
+            rhs.giant_steps[g].galois,
             key.as_ref(),
             output_size,
             term_count,
@@ -338,7 +338,7 @@ fn finish_giant(
     acc: &mut VecZnxDftBackendMut<'_, BE, Standard>,
     prod: &mut VecZnxDftBackendMut<'_, BE, Standard>,
     base: usize,
-    rot: i64,
+    galois: i64,
     key: Option<&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>,
     output_size: usize,
     term_count: usize,
@@ -383,7 +383,7 @@ fn finish_giant(
     let plan = <Module<BE> as VecZnxDftAutomorphismPlan<BE, Standard>>::vec_znx_dft_automorphism_plan(
         module,
         module.n(),
-        module.galois_element::<Standard>(rot),
+        galois_at(galois, 2 * module.n() as i64),
     );
     let product_terms = module
         .n()

@@ -22,7 +22,8 @@ use poulpy_core::{
     layouts::{
         Base2K, Degree, Dnum, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyAlloc,
         GLWETensorKeyLayout, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-        LinearTransformationPlan, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
+        LinearTransformationPlan, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, galois_is_identity,
+        galois_of_rotation, galois_rotation, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
     test_suite::keys::fill_by_digit,
@@ -646,7 +647,7 @@ where
     };
     let src = ciphertext(&mut source);
     let plan = LinearTransformationLayout {
-        indexes: (0..CT_LT_DIAGONALS).collect(),
+        galois: (0..CT_LT_DIAGONALS).map(galois_of_rotation).collect(),
         slots: module.ckks_max_slots::<Standard>(),
         strategy: LinearTransformationStrategy::Bsgs {
             giant_step: CT_LT_GIANT_STEP,
@@ -654,17 +655,17 @@ where
     }
     .index();
     let lt = LinearTransformation {
-        baby_steps: plan.baby_steps.clone(),
+        baby_galois: plan.baby_galois.clone(),
         giant_steps: plan
-            .giant_steps
+            .giant_galois
             .iter()
             .zip(&plan.index)
-            .map(|(&rot, babies)| LinearTransformationGiantStep {
-                rot,
+            .map(|(&galois, babies)| LinearTransformationGiantStep {
+                galois,
                 diagonals: babies
                     .iter()
-                    .map(|&baby| LinearTransformationDiagonal {
-                        baby,
+                    .map(|&baby_galois| LinearTransformationDiagonal {
+                        baby_galois,
                         plaintext: ciphertext(&mut source),
                     })
                     .collect(),
@@ -721,7 +722,7 @@ pub fn runner_ckks_linear_transformation_eval_into_ct<BE: Backend<ZnxWord = i64>
     };
     let first = lt.first_diagonal_plaintext().unwrap();
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(&module, &plan, first);
-    let mut babies = LinearTransformationBabySteps::alloc(&module, &plan.baby_steps, &src);
+    let mut babies = LinearTransformationBabySteps::alloc(&module, &plan.baby_galois, &src);
     let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout(cp));
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -780,17 +781,18 @@ pub fn runner_ckks_linear_transformation_eval_into_ct_composed<BE: Backend<ZnxWo
             .max(module.ckks_add_tmp_bytes(ct_layout.size()))
             .max(module.glwe_normalize_tmp_bytes()),
     );
+    let slots = module.ckks_max_slots::<Standard>();
     let lefts: HashMap<i64, _> = plan
-        .baby_steps
+        .baby_galois
         .iter()
         .map(|&baby| {
             let mut left = module.ckks_left_operand_prepared_alloc_from_infos(&src, PrepareHint::Reuse);
-            if baby != 0 {
+            if !galois_is_identity(baby) {
                 module
-                    .ckks_rotate_into(baby, &mut rotated, &src, &atks, &mut scratch.borrow())
+                    .ckks_rotate_into(galois_rotation(baby, slots), &mut rotated, &src, &atks, &mut scratch.borrow())
                     .unwrap();
             }
-            let ct = if baby == 0 { &src } else { &rotated };
+            let ct = if galois_is_identity(baby) { &src } else { &rotated };
             module
                 .ckks_left_operand_prepare(&mut left, ct, &mut scratch.borrow())
                 .unwrap();
@@ -819,8 +821,8 @@ pub fn runner_ckks_linear_transformation_eval_into_ct_composed<BE: Backend<ZnxWo
         .zip(&rights)
         .map(|(gs, rights)| {
             (
-                gs.rot,
-                gs.diagonals.iter().map(|d| &lefts[&d.baby]).collect(),
+                gs.galois,
+                gs.diagonals.iter().map(|d| &lefts[&d.baby_galois]).collect(),
                 rights.iter().collect(),
             )
         })
@@ -831,8 +833,10 @@ pub fn runner_ckks_linear_transformation_eval_into_ct_composed<BE: Backend<ZnxWo
             module
                 .ckks_dot_product_prepared(out, a, b, &tsk, &mut scratch.borrow())
                 .unwrap();
-            if *rot != 0 {
-                module.ckks_rotate_assign(*rot, out, &atks, &mut scratch.borrow()).unwrap();
+            if !galois_is_identity(*rot) {
+                module
+                    .ckks_rotate_assign(galois_rotation(*rot, slots), out, &atks, &mut scratch.borrow())
+                    .unwrap();
             }
             if g != 0 {
                 module.ckks_add_assign(&mut dst, &term, &mut scratch.borrow()).unwrap();

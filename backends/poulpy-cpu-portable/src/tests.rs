@@ -1900,3 +1900,34 @@ backend_test_suite! {
         test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
     }
 }
+
+mod zq {
+    use dashu_int::UBig;
+    use poulpy_cpu_oracle::ZqOracle;
+    use poulpy_hal::test_suite::zq::{test_zq_new_rejects, test_zq_ntt, test_zq_ntt_parity, test_zq_ntt_rejects_wrong_length};
+
+    use crate::kernels::zq::ZqPlan;
+
+    // One word holds the moduli up to 64 bits, three every modulus of the suite.
+    #[test]
+    fn test_zq_ntt_portable() {
+        test_zq_ntt::<[u64; 1], ZqPlan<[u64; 1]>>();
+        test_zq_ntt::<[u64; 3], ZqPlan<[u64; 3]>>();
+    }
+
+    #[test]
+    fn test_zq_ntt_rejects_wrong_length_portable() {
+        test_zq_ntt_rejects_wrong_length::<[u64; 1], ZqPlan<[u64; 1]>>();
+    }
+
+    #[test]
+    fn test_zq_new_rejects_portable() {
+        test_zq_new_rejects::<[u64; 1], ZqPlan<[u64; 1]>>();
+    }
+
+    #[test]
+    fn test_zq_ntt_parity_portable_oracle() {
+        test_zq_ntt_parity::<UBig, ZqOracle, [u64; 1], ZqPlan<[u64; 1]>>();
+        test_zq_ntt_parity::<UBig, ZqOracle, [u64; 3], ZqPlan<[u64; 3]>>();
+    }
+}

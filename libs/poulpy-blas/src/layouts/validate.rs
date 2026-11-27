@@ -14,7 +14,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::layouts::{
     Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, Rank,
-    TorusPrecision,
+    TorusPrecision, galois_parts,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
@@ -377,16 +377,26 @@ fn bsgs_uses<P>(
     rank: Rank,
     f: UseSink<'_>,
 ) -> Result<()> {
-    let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-    let giants = match lt.rotations {
+    let giants = lt
+        .giant_steps
+        .iter()
+        .filter(|gs| !gs.diagonals.is_empty())
+        .map(|gs| gs.galois);
+    let giants: Vec<i64> = match lt.rotations {
         BsgsRotations::PerRotation => giants.collect(),
-        rotations => rotations.giant_key_rotations(giants),
+        rotations => rotations.giant_key_galois(giants),
     };
-    let babies = lt.rotations.baby_key_rotations(lt.baby_steps().iter().copied());
-    let babies = babies.into_iter().map(|rotation| (rotation, baby_k));
+    let babies = lt.rotations.baby_key_galois(lt.baby_galois().iter().copied());
+    let babies = babies.into_iter().map(|galois| (galois, baby_k));
     babies
-        .chain(giants.into_iter().map(|rotation| (rotation, giant_k)))
-        .try_for_each(|(rotation, k)| f(RotationUse { rotation, k, rank }))
+        .chain(giants.into_iter().map(|galois| (galois, giant_k)))
+        .try_for_each(|(galois, k)| {
+            f(RotationUse {
+                rotation: galois_parts(galois).1,
+                k,
+                rank,
+            })
+        })
 }
 
 /// Whether `uses`, an enumerator, yields a look-up [`ensure_rotation`] makes: a rotation other than the identity.

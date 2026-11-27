@@ -216,6 +216,24 @@ impl GGLWELayout {
 }
 
 impl GGLWELayout {
+    /// The smallest key layout covering an input of the layout of `a`, one digit per limb, of
+    /// its rank: it sizes the scratch of an operation that looks up no key, as any key covering
+    /// `a` sizes at least as much.
+    pub fn covering<A: GLWEInfos>(a: &A) -> Self {
+        let k_digit = TorusPrecision(a.base2k().0);
+        GGLWELayout {
+            n: a.n(),
+            base2k: a.base2k(),
+            dnum: Self::dnum_for_input(a.k(), k_digit),
+            k_aux: k_digit,
+            rank_in: a.rank(),
+            rank_out: a.rank(),
+            k_digit,
+            k_offset: TorusPrecision(0),
+            stride: 1,
+        }
+    }
+
     /// Number of gadget digits a key needs to cover an input ciphertext of
     /// precision `input_k`: `ceil(input_k / k_digit)`.
     ///
@@ -910,5 +928,34 @@ impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GGLWE<D, W, Rg> {
         writer.write_u32::<LittleEndian>(self.k_offset.0)?;
         writer.write_u32::<LittleEndian>(self.k_aux.0)?;
         self.data.write_to(writer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GGLWELayout;
+    use crate::layouts::{GGLWEInfos, GLWEInfos, GLWELayout, LWEInfos, TorusPrecision};
+
+    /// The covering key decomposes its input exactly, one digit per limb, at the input's degree, radix and rank.
+    #[test]
+    fn covering_key_covers_its_input() {
+        for (base2k, k) in [(12_usize, 1_usize), (12, 12), (12, 13), (19, 100)] {
+            let a = GLWELayout {
+                n: 256_u32.into(),
+                base2k: base2k.into(),
+                k: k.into(),
+                rank: 2_u32.into(),
+            };
+            let key = GGLWELayout::covering(&a);
+            assert!(
+                key.max_input_k() >= a.k(),
+                "base2k={base2k}, k={k}: the key does not cover its input"
+            );
+            assert_eq!(key.n(), a.n());
+            assert_eq!(key.base2k(), a.base2k());
+            assert_eq!((key.rank_in(), key.rank_out()), (a.rank(), a.rank()));
+            assert_eq!(key.k_digit(), TorusPrecision(base2k as u32));
+            assert_eq!(key.dnum().0 as usize, k.div_ceil(base2k));
+        }
     }
 }

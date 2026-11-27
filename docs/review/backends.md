@@ -17,7 +17,7 @@ This file adds the rules specific to the CPU backend crates (`poulpy-cpu-portabl
 ## 2. Backend types and names
 
 - **One marker per backend.** A CPU backend is one zero-sized `pub struct <Family><Isa>[Rayon];` (the oracle: `Oracle<F>`) serving both rings, with `impl Backend`, kernel traits per ring (generic where the kernel is, one impl per ring otherwise) and a serial handle `<Backend>Handle` holding the tables of both rings for every degree it serves, all built at construction (a `kernels::PerRing`, the oracle's handle its own tables), exported from `lib.rs`, a renamed type keeps a `#[deprecated]` alias, and new code and docs use no deprecated alias (`FFT64Ref`, `NTT4x30Ref`).
-- **Kernel and defaults traits.** A slice primitive is a kernel trait in `kernels::{znx, fft64::reim, fft64::reim4, ntt4x30}` with its `*_portable` function as default, and grouped kernel families (`ReimArith`, `Reim4BlkMatVec`, `Reim4Convolution`, `I64Ops`, `I128BigOps`, `ZnxNormalize`) give every method a portable default.
+- **Kernel and defaults traits.** A slice primitive is a kernel trait in `kernels::{znx, fft64::reim, fft64::reim4, ntt4x30, zq}` with its `*_portable` function as default, and grouped kernel families (`ReimArith`, `Reim4BlkMatVec`, `Reim4Convolution`, `I64Ops`, `I128BigOps`, `ZnxNormalize`) give every method a portable default.
 - **Defaults follow the word types.** A backend binds its word family's defaults (`FFT64*Default` and `fft64` for `BigWord = i64`, `NTT4x30VecZnxBigDefault` and `ntt4x30` for `BigWord = i128`, NTT3x42 included), and a method added to one word-family defaults trait enters every word-family trait of its OEP family with the same signature.
 
 ## 3. Assembly and registration

@@ -240,9 +240,9 @@ where
         .unwrap();
         let mut scalars = Vec::new();
         for factor in ckks_dft_matrices_gen::<F>(&plan, 7) {
-            for index in factor.indexes() {
+            for galois in factor.galois() {
                 for part in [&factor.re, &factor.im] {
-                    if let Some(values) = part.get(index) {
+                    if let Some(values) = part.get(galois) {
                         scalars.extend_from_slice(values);
                     }
                 }

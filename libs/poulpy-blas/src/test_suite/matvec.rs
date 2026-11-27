@@ -694,23 +694,23 @@ pub fn diagonal_ciphertext_layout(params: &CKKSTestParams, slots: usize, ct_k: u
     BlasDiagonalCiphertextLayout::new(
         ct,
         LinearTransformationLayout {
-            indexes: (0..8).collect(),
+            galois: (0..8).map(poulpy_core::layouts::galois_of_rotation).collect(),
             slots,
             strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
         },
     )
 }
 
-/// `layout` holding the diagonals `indexes` under `strategy`.
+/// `layout` holding the diagonals of the slot rotations `rotations` under `strategy`.
 pub(crate) fn diagonal_ciphertext_with(
     layout: &BlasDiagonalCiphertextLayout,
-    indexes: Vec<i64>,
+    rotations: Vec<i64>,
     strategy: LinearTransformationStrategy,
 ) -> BlasDiagonalCiphertextLayout {
     BlasDiagonalCiphertextLayout::new(
         layout.ct,
         LinearTransformationLayout {
-            indexes,
+            galois: rotations.into_iter().map(poulpy_core::layouts::galois_of_rotation).collect(),
             slots: layout.lt.slots,
             strategy,
         },
@@ -1513,8 +1513,10 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
         });
     };
     alloc("another slot count", &|l| l.lt.slots = 2 * slots);
-    alloc("no diagonal", &|l| l.lt.indexes.clear());
-    alloc("a diagonal past the slots", &|l| l.lt.indexes.push(slots as i64));
+    alloc("no diagonal", &|l| l.lt.galois.clear());
+    alloc("a diagonal past the slots", &|l| {
+        l.lt.galois.push(poulpy_core::layouts::galois_of_rotation(slots as i64))
+    });
     alloc("another degree", &|l| l.ct.glwe_layout.n = (2 * params.n).into());
     alloc("plaintext diagonals", &|l| l.ct.glwe_layout.rank = 0usize.into());
     alloc("a radix above 62", &|l| l.ct.glwe_layout.base2k = 63usize.into());

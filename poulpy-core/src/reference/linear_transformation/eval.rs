@@ -133,7 +133,7 @@ where
         diagonal_size: pt_size,
         prod_size: prod_dft_size(a_size, pt_size, min_cnv_offset),
         terms: 1,
-        batch: BE::glwe_giant_step_batch(module).min(plan.giant_steps.len()),
+        batch: BE::glwe_giant_step_batch(module).min(plan.giant_galois.len()),
     };
     let tree_products_bytes =
         plain_products_tmp_bytes::<BE, _, Rg>(module, res.n().as_usize(), res.rank().as_usize() + 1, &tree_products);

@@ -29,7 +29,7 @@
 
 use crate::numerics::CKKSFloat;
 use num_traits::Float;
-use poulpy_core::layouts::{Diagonals, period_lcm};
+use poulpy_core::layouts::{Diagonals, galois_of_rotation, galois_rotation};
 
 use crate::layouts::{
     ComplexDiagonals,
@@ -172,13 +172,14 @@ fn plain_layer<F: DftScalar>(
     (a_m, b_m, c_m)
 }
 
-/// Reads one period of diagonal `index` of a [`ComplexDiagonals`] as a
+/// Reads one period of the diagonal of the rotation `index` of a [`ComplexDiagonals`] as a
 /// contiguous `Cpx` vector: the longer of the two stored parts, the shorter
 /// one read modulo its length (zeros where a part is absent).
 fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64) -> Vec<Cpx<F>> {
-    let re = cd.re.get(index);
-    let im = cd.im.get(index);
-    let len = cd.diagonal_period(index).expect("indexed diagonal present");
+    let galois = galois_of_rotation(index);
+    let re = cd.re.get(galois);
+    let im = cd.im.get(galois);
+    let len = cd.diagonal_period(galois).expect("indexed diagonal present");
     (0..len)
         .map(|j| {
             Cpx::new(
@@ -190,21 +191,29 @@ fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64) -> Vec<Cpx<F>> {
 }
 
 /// Accumulating insert into a [`ComplexDiagonals`]: `cd[index] += vec` (set if
-/// absent), `vec` being one period of the added term. The sum is stored at the
-/// least common multiple of the two periods, each operand read modulo its
-/// length.
+/// absent) at the diagonal of the rotation `index`, `vec` being one period of the added term. The
+/// sum is stored at the longer of the two periods, both powers of two, each operand read modulo
+/// its length.
 fn cd_accumulate<F: DftScalar>(cd: &mut ComplexDiagonals<F>, index: i64, vec: &[Cpx<F>]) {
-    let len = period_lcm(vec.len(), cd.diagonal_period(index).unwrap_or(1));
-    let new_re: Vec<F> = match cd.re.get(index) {
+    let galois = galois_of_rotation(index);
+    debug_assert!(vec.len().is_power_of_two(), "a period is a power of two");
+    let len = vec.len().max(cd.diagonal_period(galois).unwrap_or(1));
+    let new_re: Vec<F> = match cd.re.get(galois) {
         Some(cur) => (0..len).map(|j| cur[j % cur.len()] + vec[j % vec.len()].re).collect(),
         None => (0..len).map(|j| vec[j % vec.len()].re).collect(),
     };
-    let new_im: Vec<F> = match cd.im.get(index) {
+    let new_im: Vec<F> = match cd.im.get(galois) {
         Some(cur) => (0..len).map(|j| cur[j % cur.len()] + vec[j % vec.len()].im).collect(),
         None => (0..len).map(|j| vec[j % vec.len()].im).collect(),
     };
-    cd.re.set(index, new_re);
-    cd.im.set(index, new_im);
+    cd.re.set(galois, new_re);
+    cd.im.set(galois, new_im);
+}
+
+/// The rotations of the diagonals of a [`ComplexDiagonals`], in `[0, slots)`.
+fn cd_rotations<F>(cd: &ComplexDiagonals<F>) -> Vec<i64> {
+    let slots = cd.slots();
+    cd.galois().into_iter().map(|galois| galois_rotation(galois, slots)).collect()
 }
 
 /// An empty `dslots`-wide complex diagonal map.
@@ -213,7 +222,7 @@ fn empty_cd<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
 }
 
 /// Element-wise `out[i] = multiplier[i mod multiplier.len()] · rotated[(i + k) mod rotated.len()]`
-/// over `out.len() = lcm(rotated.len(), multiplier.len())`.
+/// over `out.len() = max(rotated.len(), multiplier.len())`.
 ///
 /// Both operands are one period of a periodic vector: a rotation keeps a
 /// period and the product of two periodic vectors repeats over the least
@@ -225,7 +234,11 @@ fn empty_cd<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
 fn rotate_and_mul<F: DftScalar>(rotated: &[Cpx<F>], k: i64, multiplier: &[Cpx<F>]) -> Vec<Cpx<F>> {
     let rot_len = rotated.len() as i64;
     let mul_len = multiplier.len();
-    (0..period_lcm(rotated.len(), mul_len))
+    debug_assert!(
+        rotated.len().is_power_of_two() && mul_len.is_power_of_two(),
+        "a period is a power of two"
+    );
+    (0..rotated.len().max(mul_len))
         .map(|i| {
             let m = multiplier[i % mul_len];
             let r = rotated[(i as i64 + k).rem_euclid(rot_len) as usize];
@@ -249,7 +262,7 @@ fn maybe_bit_reverse<F: DftScalar>(v: &[Cpx<F>], log_l: usize, bit_reversed: boo
 }
 
 /// The `slots × slots` identity diagonal matrix as a [`ComplexDiagonals`]:
-/// one diagonal at index `0` with all-ones real part (imaginary part empty),
+/// one diagonal at the identity with all-ones real part (imaginary part empty),
 /// stored as its period of one.
 ///
 /// Used as the merge accumulator's initial state, so every butterfly layer —
@@ -257,7 +270,7 @@ fn maybe_bit_reverse<F: DftScalar>(v: &[Cpx<F>], log_l: usize, bit_reversed: boo
 /// uniformly.
 fn identity_diag<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
     let mut diag = empty_cd(dslots);
-    diag.re.set(0, vec![F::one()]);
+    diag.re.set(galois_of_rotation(0), vec![F::one()]);
     diag
 }
 
@@ -277,7 +290,7 @@ fn merge_next_layer<F: DftScalar>(
 ) -> ComplexDiagonals<F> {
     let mask = (n - 1) as i64;
     // Rotation geometry is single-sourced with the plan's index replay
-    // (`DFTPlan::diagonal_indexes`), so key provisioning cannot drift from the
+    // (`DFTPlan::diagonal_galois`), so key provisioning cannot drift from the
     // generated diagonals.
     let rot = crate::layouts::dft::dft_layer_rotation(kind, bit_reversed, next_level, log_l, mask);
     let a = maybe_bit_reverse(a, log_l, bit_reversed);
@@ -285,7 +298,7 @@ fn merge_next_layer<F: DftScalar>(
     let c = maybe_bit_reverse(c, log_l, bit_reversed);
 
     let mut new_vec = empty_cd(dslots);
-    for i in vec.indexes() {
+    for i in cd_rotations(vec) {
         let vi = cd_get(vec, i);
         let [d_same, d_plus, d_minus] = crate::layouts::dft::dft_layer_spread(i, rot, mask);
         cd_accumulate(&mut new_vec, d_same, &rotate_and_mul(&vi, 0, &a));
@@ -426,7 +439,7 @@ pub fn ckks_dft_matrices_gen<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> V
     // Sparse-repack Encode: zero the right half of the last matrix's diagonals.
     if sparse && imag_repack && kind == DFTType::Encode {
         let last = plain_vector.last_mut().expect("dft has at least one factor");
-        for idx in last.indexes() {
+        for idx in last.galois() {
             // Expand the stored period to the working vector: the zeroed
             // diagonal has no shorter period.
             let mut re: Vec<F> = (0..dslots)
@@ -699,7 +712,7 @@ mod tests {
         (re, im)
     }
 
-    /// The plan's value-free index replay ([`DFTPlan::diagonal_indexes`]) must
+    /// The plan's value-free index replay ([`DFTPlan::diagonal_galois`]) must
     /// name exactly the diagonals the generator produces, for every kind,
     /// schedule, bit-reversal, and packing — this is what key provisioning
     /// ([`DFTPlan::galois_elements`]) is derived from, so a mismatch silently
@@ -708,7 +721,7 @@ mod tests {
     /// remaining composition (sparse-repack seeding, repack widening, zero
     /// dropping) end to end.
     #[test]
-    fn plan_diagonal_indexes_match_generated_factors() {
+    fn plan_diagonal_galois_match_generated_factors() {
         let schedules: &[Vec<usize>] = &[vec![1, 1, 1, 1], vec![2, 2], vec![4], vec![1, 3], vec![3, 1], vec![2, 1, 1]];
         for kind in [DFTType::Encode, DFTType::Decode] {
             for bit_reversed in [false, true] {
@@ -723,8 +736,8 @@ mod tests {
                         plan.format = format;
                         plan.scaling = None;
                         let factors = ckks_dft_matrices_gen::<f64>(&plan, log_n);
-                        let replayed = plan.diagonal_indexes(log_n);
-                        let generated: Vec<Vec<i64>> = factors.iter().map(|f| f.indexes()).collect();
+                        let replayed = plan.diagonal_galois(log_n);
+                        let generated: Vec<Vec<i64>> = factors.iter().map(|f| f.galois()).collect();
                         assert_eq!(
                             replayed, generated,
                             "index replay diverges from generator: kind={kind:?} bit_reversed={bit_reversed} schedule={schedule:?} log_n={log_n} format={format:?}"
@@ -817,8 +830,8 @@ mod tests {
             let fr = ckks_dft_matrices_gen::<f64>(&repack, 5);
             assert_eq!(fs.len(), fr.len());
             for (a, b) in fs.iter().zip(&fr) {
-                assert_eq!(a.indexes(), b.indexes());
-                for idx in a.indexes() {
+                assert_eq!(a.galois(), b.galois());
+                for idx in a.galois() {
                     assert_eq!(a.re.get(idx), b.re.get(idx), "re diag {idx}");
                     assert_eq!(a.im.get(idx), b.im.get(idx), "im diag {idx}");
                 }
@@ -840,12 +853,17 @@ mod tests {
 
         let dec = ckks_dft_matrices_gen::<f64>(&mk(DFTType::Decode), log_n);
         assert_eq!(dec[0].slots(), dslots, "decode value width");
-        assert!(dec[0].indexes().contains(&(slots as i64)), "repack diagonal at index slots");
+        assert!(
+            dec[0]
+                .galois()
+                .contains(&poulpy_core::layouts::galois_of_rotation(slots as i64)),
+            "repack diagonal at index slots"
+        );
 
         let enc = ckks_dft_matrices_gen::<f64>(&mk(DFTType::Encode), log_n);
         assert_eq!(enc.last().unwrap().slots(), dslots, "encode value width");
         let last = enc.last().unwrap();
-        for idx in last.re.indexes() {
+        for idx in last.re.galois() {
             let re = last.re.get(idx).unwrap();
             let im = last.im.get(idx).unwrap();
             for x in slots..dslots {
@@ -921,7 +939,7 @@ mod tests {
         let enc = ckks_dft_matrices_gen::<f64>(&literal(DFTType::Encode, vec![2, 2, 1], false), 6);
         assert_eq!(enc.len(), 3, "one factor per schedule entry");
         // First factor merges 2 layers -> at most 3^2 = 9 diagonals.
-        assert!(enc[0].indexes().len() <= 9);
+        assert!(enc[0].galois().len() <= 9);
     }
 
     /// `log_tile == log_slots` degenerates the blockwise generator to the dense
@@ -942,7 +960,7 @@ mod tests {
                     let block = ckks_dft_matrices_gen_blockwise::<f64>(kind, log_slots, log_slots, &depth, 1.0, bit_reversed);
                     assert_eq!(dense.len(), block.len(), "{kind:?} {depth:?}");
                     for (f, (a, b)) in dense.iter().zip(&block).enumerate() {
-                        assert_eq!(a.indexes(), b.indexes(), "{kind:?} br={bit_reversed} {depth:?} factor {f}");
+                        assert_eq!(a.galois(), b.galois(), "{kind:?} br={bit_reversed} {depth:?} factor {f}");
                     }
                     let (dr, di) = eval_chain(&dense, re.clone(), im.clone());
                     let (br, bi) = eval_chain(&block, re.clone(), im.clone());

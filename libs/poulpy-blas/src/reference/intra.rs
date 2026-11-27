@@ -102,8 +102,8 @@ pub trait BlasMatIntraReference<BE: Backend, Rg: Ring = Standard> {
         let (dst_layout, src_layout) = (layout_of(first_dst), layout_of(first));
         let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(src.len(), &dst_layout, &src_layout, lts, key);
         assert_maps_scratch(op, self, lts, keys, first.k(), first_dst.k(), first.rank(), bytes, scratch);
-        let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
-        let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);
+        let baby_galois: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_galois().iter().copied()).collect();
+        let mut babies = LinearTransformationBabySteps::alloc(self, &baby_galois, first);
         for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
             self.ckks_linear_transformation_baby_steps_prepare(&mut babies, src, keys, scratch)?;
             for (dst, lt) in dst.iter_mut().zip(lts) {

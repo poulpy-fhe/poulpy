@@ -35,7 +35,7 @@ use crate::{
         GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
         GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
         LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationStrategy,
-        ModuleCoreAlloc, SetK, TorusPrecision, k_digit_of,
+        ModuleCoreAlloc, SetK, TorusPrecision, galois_at, galois_is_identity, galois_of_rotation, galois_parts, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPrepared, PreparedDiagonal,
@@ -182,7 +182,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     // The public query sizes one layout at a time, so a caller holding several
     // takes the max over them; each key set below runs on exactly its own max.
     let plan = LinearTransformationPlan {
-        baby_steps: baby_steps.clone(),
+        baby_galois: baby_steps.iter().map(|&rot| galois_of_rotation(rot)).collect(),
         ..Default::default()
     };
     let mut stored_bytes = Vec::new();
@@ -338,9 +338,12 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend<Rg>, K:
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut prep_scratch = poisoned_scratch::<BE>(prep_bytes);
-    let mut prepared_babies = LinearTransformationBabySteps::alloc(module, baby_steps, ct);
+    let baby_galois: Vec<i64> = baby_steps.iter().map(|&rot| galois_of_rotation(rot)).collect();
+    let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_galois, ct);
     module.glwe_linear_transformation_baby_steps_prepare(&mut prepared_babies, ct, keys, &mut prep_scratch.borrow());
-    assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
+    let mut held: Vec<i64> = prepared_babies.baby_galois().collect();
+    held.sort_by_key(|&p| galois_parts(p));
+    assert_eq!(held, baby_galois);
 
     let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
     let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> as GLWEToBackendRef<BE, Rg>>::to_backend_ref(pt);
@@ -366,7 +369,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend<Rg>, K:
             &mut scratch.borrow(),
         );
 
-        let baby = prepared_babies.baby_step(rot);
+        let baby = prepared_babies.baby(galois_of_rotation(rot));
         assert_eq!(
             baby.shape(),
             expected_prepared.shape(),
@@ -475,7 +478,7 @@ pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<
     diagonal.set_k(params.base2k.into());
 
     let schedule = LinearTransformationLayout {
-        indexes: vec![0],
+        galois: [0].into_iter().map(galois_of_rotation).collect(),
         slots: module.n() / 2,
         strategy: LinearTransformationStrategy::Bsgs { giant_step: 1 },
     };
@@ -483,12 +486,12 @@ pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<
         LinearTransformation::alloc_prepared(module, &schedule, &diagonal);
     let mut scratch = poisoned_scratch::<BE>(module.glwe_linear_transformation_rhs_prepare_tmp_bytes(&layout));
     let lt = LinearTransformation {
-        baby_steps: vec![0],
+        baby_galois: vec![galois_of_rotation(0)],
         rotations: Default::default(),
         giant_steps: vec![LinearTransformationGiantStep {
-            rot: 0,
+            galois: galois_of_rotation(0),
             diagonals: vec![LinearTransformationDiagonal {
-                baby: 0,
+                baby_galois: galois_of_rotation(0),
                 plaintext: diagonal,
             }],
         }],
@@ -510,8 +513,8 @@ fn prepared_state<BE: Backend, Rg: Ring>(
         .flat_map(|step| {
             step.diagonals.iter().map(move |d| {
                 (
-                    step.rot,
-                    d.baby,
+                    step.galois,
+                    d.baby_galois,
                     BE::to_host_bytes(d.plaintext.cnv.data()),
                     d.plaintext.cnv.size(),
                     d.plaintext.k.as_usize(),
@@ -570,7 +573,7 @@ pub fn test_glwe_linear_transformation_sum<BE: crate::test_suite::noise::TestBac
     };
     // Babies {0, 1}, giants {0, 4}.
     let schedule = LinearTransformationLayout {
-        indexes: vec![0, 1, 4, 5],
+        galois: [0, 1, 4, 5].into_iter().map(galois_of_rotation).collect(),
         slots: n / 2,
         strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
     };
@@ -621,16 +624,16 @@ pub fn test_glwe_linear_transformation_sum<BE: crate::test_suite::noise::TestBac
             &mut source_xa,
             &mut scratch.borrow(),
         );
-        let mut cache = LinearTransformationBabySteps::alloc(module, &plan.baby_steps, &ct);
+        let mut cache = LinearTransformationBabySteps::alloc(module, &plan.baby_galois, &ct);
         module.glwe_linear_transformation_baby_steps_prepare(&mut cache, &ct, &keys, &mut scratch.borrow());
         babies.push(cache);
 
         let mut lt = LinearTransformation {
-            baby_steps: plan.baby_steps.clone(),
+            baby_galois: plan.baby_galois.clone(),
             rotations: plan.rotations,
             giant_steps: Vec::new(),
         };
-        for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
+        for (&galois, index) in plan.giant_galois.iter().zip(&plan.index) {
             let mut diagonals = Vec::new();
             for &baby in index {
                 let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&pt_infos);
@@ -642,11 +645,11 @@ pub fn test_glwe_linear_transformation_sum<BE: crate::test_suite::noise::TestBac
                     &mut source_xa,
                 );
                 diagonals.push(LinearTransformationDiagonal {
-                    baby,
+                    baby_galois: baby,
                     plaintext: diagonal,
                 });
             }
-            lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
+            lt.giant_steps.push(LinearTransformationGiantStep { galois, diagonals });
         }
         let mut prepared: LinearTransformationPrepared<BE, Rg> =
             LinearTransformation::alloc_prepared(module, &schedule, &pt_infos);
@@ -717,7 +720,7 @@ pub fn test_glwe_linear_transformation_sum<BE: crate::test_suite::noise::TestBac
     // per giant step for each term and for the sum, each with its rounding.
     let var_key_switch =
         atk_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
-    let noise_max = 0.5 * ((babies.len() + 1) as f64 * plan.giant_steps.len() as f64 * var_key_switch).log2() + 1.0;
+    let noise_max = 0.5 * ((babies.len() + 1) as f64 * plan.giant_galois.len() as f64 * var_key_switch).log2() + 1.0;
     let noise_have = glwe_noise_checked(module, &sum, &pt_want, &sk_prepared, &mut scratch.borrow())
         .std()
         .log2();
@@ -769,7 +772,7 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
     };
     // Diagonals -8..8: babies {0, 1, 2, 3} and giants {-8, -4, 0, 4}, a tree of two levels.
     let layout = |strategy| LinearTransformationLayout {
-        indexes: (-8..8).collect(),
+        galois: (-8..8).map(galois_of_rotation).collect(),
         slots: n / 2,
         strategy,
     };
@@ -839,7 +842,7 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
     // The same diagonals under both schedules.
     let plan = schedules[0].index();
     let mut diagonals: Diagonals<BE, Rg> = HashMap::new();
-    for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
+    for (&galois, index) in plan.giant_galois.iter().zip(&plan.index) {
         for &baby in index {
             let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&pt_infos);
             module.vec_znx_fill_uniform_source(
@@ -849,26 +852,26 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
                 0,
                 &mut source_xa,
             );
-            diagonals.insert((rot, baby), diagonal);
+            diagonals.insert((galois, baby), diagonal);
         }
     }
     let mut results = Vec::new();
     for schedule in &schedules {
         let plan = schedule.index();
         let mut lt = LinearTransformation {
-            baby_steps: plan.baby_steps.clone(),
+            baby_galois: plan.baby_galois.clone(),
             rotations: plan.rotations,
             giant_steps: Vec::new(),
         };
-        for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
+        for (&galois, index) in plan.giant_galois.iter().zip(&plan.index) {
             let diagonals = index
                 .iter()
                 .map(|&baby| LinearTransformationDiagonal {
-                    baby,
-                    plaintext: diagonals[&(rot, baby)].clone(),
+                    baby_galois: baby,
+                    plaintext: diagonals[&(galois, baby)].clone(),
                 })
                 .collect();
-            lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
+            lt.giant_steps.push(LinearTransformationGiantStep { galois, diagonals });
         }
         let mut prepared: LinearTransformationPrepared<BE, Rg> =
             LinearTransformation::alloc_prepared(module, schedule, &pt_infos);
@@ -891,7 +894,9 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
             taken <= cache_bytes && cache_bytes - taken < BE::SCRATCH_ALIGN,
             "the carve took {taken} bytes of {cache_bytes}"
         );
-        assert_eq!(carved.baby_steps().collect::<Vec<_>>(), plan.baby_steps);
+        let mut held: Vec<i64> = carved.baby_galois().collect();
+        held.sort_by_key(|&p| galois_parts(p));
+        assert_eq!(held, plan.baby_galois);
         module.glwe_linear_transformation_baby_steps_prepare(&mut carved, &ct, &keys, &mut rest);
         let mut from_carved: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_linear_transformation_eval_into(base2k, &mut from_carved, &carved, &prepared, &keys, &mut rest);
@@ -1134,7 +1139,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::t
     );
 }
 
-/// Every baby rotation a summed transform reads must be in its cache, checked
+/// Every baby step a summed transform reads must be in its cache, checked
 /// before the fallback writes `res` at the first giant step.
 pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
@@ -1147,18 +1152,18 @@ pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
-    lt_b.giant_steps[1].diagonals[0].baby = 1;
+    lt_b.giant_steps[1].diagonals[0].baby_galois = galois_of_rotation(1);
     eval_without_keys(
         params,
         module,
         &[&babies_a, &babies_b],
         &[&lt_a, &lt_b],
         true,
-        "missing prepared baby-step rotation 1 of linear transformation 1",
+        "missing prepared baby step of Galois element 5 of linear transformation 1",
     );
 }
 
-/// A summed transform's cache must hold the rotations it reads, checked before
+/// A summed transform's cache must hold the baby steps it reads, checked before
 /// its layout is compared with the first term's.
 pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
@@ -1178,7 +1183,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_s
         &[&babies_a, &empty],
         &[&lt_a, &lt_b],
         true,
-        "missing prepared baby-step rotation 0 of linear transformation 1",
+        "missing prepared baby step of Galois element 1 of linear transformation 1",
     );
 }
 
@@ -1219,7 +1224,7 @@ pub fn test_glwe_linear_transformation_rejects_mixed_diagonal_degrees<BE: crate:
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let schedule = LinearTransformationLayout {
-        indexes: vec![0, 1],
+        galois: [0, 1].into_iter().map(galois_of_rotation).collect(),
         slots: module.n() / 2,
         strategy: LinearTransformationStrategy::Direct,
     };
@@ -1270,12 +1275,12 @@ pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<
 }
 
 /// Sums a `Direct` transform over `[0, 1]`, with one-limb diagonals at scale 0
-/// and a one-limb source, and one over `indexes`, with `pt_limbs`-limb
+/// and a one-limb source, and one over the slot rotations `rotations`, with `pt_limbs`-limb
 /// diagonals at scale `log_scale` and a `ct_limbs`-limb source.
 fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
-    indexes: Vec<i64>,
+    rotations: Vec<i64>,
     pt_limbs: usize,
     log_scale: usize,
     ct_limbs: usize,
@@ -1287,17 +1292,17 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
-    let (babies_b, lt_b) = direct_term(params, module, indexes, pt_limbs, log_scale, ct_limbs);
+    let (babies_b, lt_b) = direct_term(params, module, rotations, pt_limbs, log_scale, ct_limbs);
     eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true, message);
 }
 
-/// A `Direct` transform over `indexes` (giant steps at those rotations, each
-/// with one diagonal at baby rotation 0), with `pt_limbs`-limb diagonals at
-/// scale `log_scale`, and the cache of baby rotation 0 of a `ct_limbs`-limb source.
+/// A `Direct` transform over the slot rotations `rotations` (a giant step per rotation, each
+/// with one diagonal at the identity baby step), with `pt_limbs`-limb diagonals at
+/// scale `log_scale`, and the cache of the identity baby step of a `ct_limbs`-limb source.
 fn direct_term<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
-    indexes: Vec<i64>,
+    rotations: Vec<i64>,
     pt_limbs: usize,
     log_scale: usize,
     ct_limbs: usize,
@@ -1308,7 +1313,7 @@ where
     Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
 {
     let schedule = LinearTransformationLayout {
-        indexes,
+        galois: rotations.into_iter().map(galois_of_rotation).collect(),
         slots: module.n() / 2,
         strategy: LinearTransformationStrategy::Direct,
     };
@@ -1318,7 +1323,8 @@ where
         scale: crate::layouts::Scale::Log(log_scale),
         ..Default::default()
     });
-    let babies = LinearTransformationBabySteps::alloc(module, &[0], &limbs_layout(params, module, ct_limbs, 1));
+    let babies =
+        LinearTransformationBabySteps::alloc(module, &[galois_of_rotation(0)], &limbs_layout(params, module, ct_limbs, 1));
     (babies, lt)
 }
 
@@ -1424,7 +1430,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
     let (atk_low_infos, tsk_low_infos) = (atk_layout(base2k - 1), tsk_layout(base2k - 1));
     // Diagonals 0, 1, 4 and 5: babies {0, 1} and giants {0, 4}, a giant per rotation or a tree, or one giant step.
     let layout = |strategy| LinearTransformationLayout {
-        indexes: vec![0, 1, 4, 5],
+        galois: [0, 1, 4, 5].into_iter().map(galois_of_rotation).collect(),
         slots: n / 2,
         strategy,
     };
@@ -1527,19 +1533,19 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                      scratch: &mut ScratchOwned<BE>| {
         let plan = schedule.index();
         let mut lt = LinearTransformation {
-            baby_steps: plan.baby_steps.clone(),
+            baby_galois: plan.baby_galois.clone(),
             rotations: plan.rotations,
             giant_steps: Vec::new(),
         };
-        for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
+        for (&galois, index) in plan.giant_galois.iter().zip(&plan.index) {
             let diagonals = index
                 .iter()
                 .map(|&baby| LinearTransformationDiagonal {
-                    baby,
+                    baby_galois: baby,
                     plaintext: encrypt(source_xe, source_xa, scratch),
                 })
                 .collect();
-            lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
+            lt.giant_steps.push(LinearTransformationGiantStep { galois, diagonals });
         }
         let mut prepared: LinearTransformationPrepared<BE, Rg> =
             LinearTransformation::alloc_prepared(module, schedule, &ct_infos);
@@ -1562,7 +1568,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 offset,
                 out,
                 res_k,
-                gs.diagonals.iter().map(|d| cache.baby_step(d.baby)),
+                gs.diagonals.iter().map(|d| cache.baby(d.baby_galois)),
                 size,
                 cache.k(),
                 gs.diagonals.iter().map(|d| d.plaintext.cnv()),
@@ -1571,8 +1577,10 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 &tsk_prepared,
                 &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
             );
-            if gs.rot != 0 {
-                let key = atks.get_automorphism_key(module.galois_element::<Rg>(gs.rot), res_k).unwrap();
+            if !galois_is_identity(gs.galois) {
+                let key = atks
+                    .get_automorphism_key(galois_at(gs.galois, Rg::CYCLOTOMIC_ORDER_FACTOR * module.n() as i64), res_k)
+                    .unwrap();
                 module.glwe_automorphism_assign(out, &key, &mut scratch.borrow());
             }
             if g > 0 {
@@ -1627,7 +1635,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         // key switch of each giant step.
         let var_key_switch =
             atk_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
-        let noise_max = 0.5 * (2.0 * plan.giant_steps.len() as f64 * var_key_switch).log2() + 1.0;
+        let noise_max = 0.5 * (2.0 * plan.giant_galois.len() as f64 * var_key_switch).log2() + 1.0;
         let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
         module.glwe_decrypt(&want, &mut pt_want, &sk_prepared, &mut scratch.borrow());
         let noise_have = glwe_noise_checked(module, &have, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -1657,7 +1665,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         let var_products = pairs * var_relinearize(&tsk_low).1 + var_relinearize(&tsk_prepared).0;
         let var_key_switch_low =
             atk_low_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
-        let giants = plan.giant_steps.len() as f64;
+        let giants = plan.giant_galois.len() as f64;
         let noise_max_low = 0.5 * (giants * (var_products + var_key_switch + var_key_switch_low)).log2() + 1.0;
         module.glwe_linear_transformation_eval_into(
             scale,

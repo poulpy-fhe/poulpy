@@ -452,6 +452,13 @@ pub trait GLWEToBackendRef<BE: Backend, Rg: Ring = Standard>: Sized {
     fn is_canonical(&self) -> bool {
         self.to_backend_ref().is_canonical()
     }
+
+    /// Whether a limb-wise operation can read `a` into `self` without normalizing it first:
+    /// `a` is canonical, so the limbs `self` drops carry no pending carry, or `self` holds
+    /// every limb of `a`.
+    fn holds_limbs<A: GLWEToBackendRef<BE, Rg>>(&self, a: &A) -> bool {
+        a.is_canonical() || self.to_backend_ref().max_size() >= a.to_backend_ref().max_size()
+    }
 }
 
 impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendRef<BE, Rg> for GLWE<D, BE::ZnxWord, Rg>

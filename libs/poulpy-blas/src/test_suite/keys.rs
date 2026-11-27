@@ -1401,10 +1401,10 @@ impl<D: Data, W: ZnxWord, Rg: Ring> MapDiagonal for CKKSPlaintext<D, W, Rg> {
 /// A map's schedule and its first diagonal's width, scale and slot kind: what the queries read of it.
 fn shape_of<P: MapDiagonal>(lt: &LinearTransformation<P>) -> Shape {
     (
-        lt.baby_steps.clone(),
+        lt.baby_galois.clone(),
         lt.giant_steps
             .iter()
-            .map(|gs| (gs.rot, gs.diagonals.iter().map(|d| d.baby).collect()))
+            .map(|gs| (gs.galois, gs.diagonals.iter().map(|d| d.baby_galois).collect()))
             .collect(),
         lt.first_diagonal_plaintext()
             .map(|d| (d.width(), d.lt_log_scale(), d.lt_slots())),

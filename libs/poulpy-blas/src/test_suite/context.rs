@@ -548,6 +548,12 @@ pub fn test_blas_context<BE, F, E>(
             "the operand's schedule takes a key per rotation",
             || module.blas_matvec_operand_alloc_from_infos::<_, Standard>(&powers),
         );
+        let hypercube = layouts[0].with_strategy(LinearTransformationStrategy::Hypercube);
+        assert_panics(
+            "matvec operand of a hypercube schedule",
+            "the operand's schedule is Direct or Bsgs",
+            || module.blas_matvec_operand_alloc_from_infos::<_, Standard>(&hypercube),
+        );
     }
 }
 

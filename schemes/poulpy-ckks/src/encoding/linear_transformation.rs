@@ -37,7 +37,7 @@ fn validate_compile_inputs<F>(
     );
     ckks_ensure_operand!(
         op,
-        !diagonals.indexes().is_empty(),
+        !diagonals.galois().is_empty(),
         "linear transformation must contain at least one diagonal"
     );
     ckks_ensure_operand!(
@@ -62,10 +62,10 @@ fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar, Rg: Ring>(
     n: usize,
     diagonals: &ComplexDiagonals<F>,
 ) -> CKKSResult<()> {
-    let complex = diagonals.im.indexes().iter().any(|&index| {
+    let complex = diagonals.im.galois().iter().any(|&galois| {
         diagonals
             .im
-            .get(index)
+            .get(galois)
             .is_some_and(|values| values.iter().any(|value| !value.is_zero()))
     });
     let real_slots = meta.slots.is_real() || module.ckks_slots_of_degree::<Rg>(n) == n;
@@ -154,7 +154,7 @@ where
         diagonals
     };
     let layout = LinearTransformationLayout {
-        indexes: cd.indexes(),
+        galois: cd.galois(),
         slots: cd.slots(),
         strategy,
     };
@@ -213,18 +213,20 @@ where
     const OP: &str = "ckks_linear_transformation_encode_into";
     validate_compile_inputs(OP, module.ckks_max_slots::<Rg>(), diagonals, strategy)?;
     let plan = LinearTransformationLayout {
-        indexes: diagonals.indexes(),
+        galois: diagonals.galois(),
         slots: diagonals.slots(),
         strategy,
     }
     .index();
-    let same_schedule = res.baby_steps == plan.baby_steps
-        && res.giant_steps.len() == plan.giant_steps.len()
+    let same_schedule = res.baby_galois == plan.baby_galois
+        && res.giant_steps.len() == plan.giant_galois.len()
         && res
             .giant_steps
             .iter()
-            .zip(plan.giant_steps.iter().zip(&plan.index))
-            .all(|(gs, (&rot, babies))| gs.rot == rot && gs.diagonals.iter().map(|d| d.baby).eq(babies.iter().copied()));
+            .zip(plan.giant_galois.iter().zip(&plan.index))
+            .all(|(gs, (&galois, babies))| {
+                gs.galois == galois && gs.diagonals.iter().map(|d| d.baby_galois).eq(babies.iter().copied())
+            });
     if !same_schedule {
         return Err(CKKSCompositionError::InvalidOperand {
             op: OP,
@@ -302,7 +304,7 @@ mod tests {
             );
         };
         let mut re = Diagonals::new(4);
-        re.set(0, vec![1.0; 4]);
+        re.set(poulpy_core::layouts::galois_of_rotation(0), vec![1.0; 4]);
         let mismatched = ComplexDiagonals {
             re,
             im: Diagonals::new(8),
@@ -319,7 +321,7 @@ mod tests {
         );
 
         let mut re = Diagonals::new(4);
-        re.set(0, vec![1.0; 4]);
+        re.set(poulpy_core::layouts::galois_of_rotation(0), vec![1.0; 4]);
         let valid = ComplexDiagonals::new(re, Diagonals::new(4));
         refused(
             validate_compile_inputs("test", 2, &valid, LinearTransformationStrategy::Direct),

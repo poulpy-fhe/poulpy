@@ -106,7 +106,7 @@ impl BlasPlan {
             LinearTransformationStrategy::Direct
         } else {
             LinearTransformationStrategy::Bsgs {
-                giant_step: optimal_bsgs_giant_step(map.indexes(), map.slots()),
+                giant_step: optimal_bsgs_giant_step(map.galois(), map.slots()),
             }
         }
     }
@@ -231,7 +231,7 @@ impl BlasPlan {
         let mut elements = BTreeSet::new();
         for (map, shift) in maps(slots) {
             let layout = LinearTransformationLayout {
-                indexes: map.indexes(),
+                galois: map.galois(),
                 slots,
                 strategy: self.strategy(&map, shift),
             };
@@ -958,7 +958,7 @@ mod tests {
             let set = plan.matmul_pt_left_galois_elements(order);
             let map = maps::left_mul_rep::<f64>(slots, log_d, |_, _, _| 1.0);
             let layout = LinearTransformationLayout {
-                indexes: map.indexes(),
+                galois: map.galois(),
                 slots,
                 strategy: plan.left_mul_strategy(slots),
             };

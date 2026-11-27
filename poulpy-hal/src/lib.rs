@@ -150,11 +150,21 @@ pub mod doc {
     }
 }
 
-/// Default generator of the Galois group `(Z/2NZ)*` for the cyclotomic ring
-/// `Z[X]/(X^N + 1)`.
+/// Generator of the rotation subgroup of the Galois group `(Z/2NZ)*` of the cyclotomic ring
+/// `Z[X]/(X^N + 1)`, `N >= 4`: the cyclic subgroup `<5>` of order `N/2`, whose
+/// automorphisms are `X -> X^{5^k}`.
 ///
-/// Used to compute Galois automorphisms `X -> X^{5^k}` and their inverses.
-pub const GALOISGENERATOR: u64 = 5;
+/// The group is the direct product of two distinct subgroups, `<5>` and the conjugation
+/// subgroup `<-1>` that [`GALOIS_GENERATOR_CONJUGATION`] generates: they share only the
+/// identity, so every element is `(-1)^c 5^k` for one `c` and one `k`.
+pub const GALOIS_GENERATOR_ROTATION: u64 = 5;
+
+/// Generator of the conjugation subgroup of the Galois group: the subgroup `<-1>` of order
+/// two, whose automorphism is `X -> X^-1`.
+///
+/// It is distinct from the rotation subgroup `<5>` that [`GALOIS_GENERATOR_ROTATION`]
+/// generates, and the two generate the group together.
+pub const GALOIS_GENERATOR_CONJUGATION: i64 = -1;
 
 /// Default memory alignment in bytes for all allocated buffers.
 ///
@@ -164,6 +174,20 @@ pub const DEFAULTALIGN: usize = 64;
 
 fn is_aligned_custom<T>(ptr: *const T, align: usize) -> bool {
     (ptr as usize).is_multiple_of(align)
+}
+
+/// `rev_m(r)` of the [`api`] notation: the `log2(m)` low bits of `r` reversed, for `m` a
+/// power of two and `r < m`.
+pub fn bit_reverse(r: usize, m: usize) -> usize {
+    debug_assert!(
+        m.is_power_of_two() && r < m,
+        "bit_reverse: r must be below the power of two m"
+    );
+    if m == 1 {
+        0
+    } else {
+        r.reverse_bits() >> (usize::BITS - m.ilog2())
+    }
 }
 
 /// Returns `true` if `ptr` is aligned to [`DEFAULTALIGN`] bytes.
@@ -297,4 +321,17 @@ pub fn alloc_aligned<T: Copy + bytemuck::Zeroable>(size: usize) -> AlignedVec<T>
         (size * size_of::<T>()).next_multiple_of(DEFAULTALIGN) / size_of::<T>(),
         DEFAULTALIGN,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bit_reverse;
+
+    #[test]
+    fn bit_reverse_reverses_the_low_bits() {
+        assert_eq!(bit_reverse(0, 1), 0);
+        assert_eq!(bit_reverse(1, 2), 1);
+        assert_eq!(bit_reverse(0b001, 8), 0b100);
+        assert_eq!(bit_reverse(0b0011, 16), 0b1100);
+    }
 }

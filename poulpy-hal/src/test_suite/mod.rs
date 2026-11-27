@@ -27,6 +27,7 @@ pub mod vec_znx_dft;
 pub mod vmp;
 pub mod window;
 pub mod word_compat;
+pub mod zq;
 
 /// Parameters passed to every test function in a
 /// [`backend_test_suite!`](crate::backend_test_suite) or

@@ -1,7 +1,7 @@
 //! Diagonals of the per-matrix-slot linear maps, built on the host.
 
 use num_traits::One;
-use poulpy_core::layouts::{DiagonalArithmetic, Diagonals};
+use poulpy_core::layouts::{DiagonalArithmetic, Diagonals, galois_of_rotation};
 
 use super::grid::assert_tiles;
 
@@ -75,7 +75,7 @@ pub fn tau_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usi
                 }
             })
             .collect();
-        diagonals.set((c * d) as i64, mask);
+        diagonals.set(galois_of_rotation((c * d) as i64), mask);
     }
     diagonals
 }
@@ -98,7 +98,7 @@ pub fn rotate_rows_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, lo
     assert_tiles(slots, d, 1);
     assert!(0 < k && k < d, "rotate_rows_rep takes 1 <= k < d");
     let mut diagonals = Diagonals::new(slots);
-    diagonals.set(((k << log_d) % slots) as i64, vec![F::one()]);
+    diagonals.set(galois_of_rotation(((k << log_d) % slots) as i64), vec![F::one()]);
     diagonals
 }
 
@@ -180,7 +180,7 @@ pub fn slot_product<F: DiagonalArithmetic>(slots: usize, values: &[F], rotation:
     let mut rotated = values.to_vec();
     rotated.rotate_left(rotation.rem_euclid(values.len() as i64) as usize);
     let mut diagonals = Diagonals::new(slots);
-    diagonals.set(0, rotated);
+    diagonals.set(galois_of_rotation(0), rotated);
     diagonals
 }
 
@@ -252,7 +252,7 @@ pub fn left_mul_rep<F: DiagonalArithmetic + PartialEq>(
     let mut diagonals = Diagonals::new(slots);
     for j in 0..d {
         let values = (0..d * d).map(|t| b(0, t / d, ((t / d) + j) % d)).collect();
-        diagonals.set((j * d) as i64, values);
+        diagonals.set(galois_of_rotation((j * d) as i64), values);
     }
     diagonals
 }
@@ -298,7 +298,17 @@ pub fn left_jkls<F: DiagonalArithmetic + PartialEq>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
+    use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy, galois_rotation};
+
+    /// The rotations of the diagonals of `map`, in `[0, slots)`, by increasing value.
+    fn offsets_of<F>(map: &Diagonals<F>) -> Vec<i64> {
+        map.galois().into_iter().map(|g| galois_rotation(g, map.slots())).collect()
+    }
+
+    /// The stored period of the diagonal of the rotation `offset` of `map`.
+    fn period_at<F>(map: &Diagonals<F>, offset: i64) -> Option<usize> {
+        map.period(galois_of_rotation(offset))
+    }
 
     const LOG_D: usize = 2;
     const D: usize = 1 << LOG_D;
@@ -399,15 +409,15 @@ mod tests {
             ("equal", |_, l, c| ((l * D + c) % 7) as f64 - 3.0),
         ];
         let x = input(12);
-        let offsets = right_mul(SLOTS, LOG_D, 1, variants[0].1).indexes();
+        let offsets = offsets_of(&right_mul(SLOTS, LOG_D, 1, variants[0].1));
         assert_eq!(offsets.len(), 2 * D - 1);
         for count in [1, 2] {
             let period = if count == 1 { D } else { count * D * D };
             for (label, b) in variants {
                 let map = right_mul(SLOTS, LOG_D, count, b);
-                assert_eq!(map.indexes(), offsets, "{label} count={count}");
+                assert_eq!(offsets_of(&map), offsets, "{label} count={count}");
                 for &i in &offsets {
-                    assert_eq!(map.period(i), Some(period), "{label} count={count} offset={i}");
+                    assert_eq!(period_at(&map, i), Some(period), "{label} count={count} offset={i}");
                 }
                 let want: Vec<f64> = (0..SLOTS)
                     .map(|t| {
@@ -439,9 +449,9 @@ mod tests {
         for count in [1, 2, MATS] {
             for (label, b) in variants {
                 let map = left_mul(SLOTS, LOG_D, count, b);
-                assert_eq!(map.indexes(), offsets, "{label} count={count}");
+                assert_eq!(offsets_of(&map), offsets, "{label} count={count}");
                 for &i in &offsets {
-                    assert_eq!(map.period(i), Some(count * D * D), "{label} count={count} offset={i}");
+                    assert_eq!(period_at(&map, i), Some(count * D * D), "{label} count={count} offset={i}");
                 }
                 let want: Vec<f64> = (0..SLOTS)
                     .map(|t| {
@@ -482,18 +492,22 @@ mod tests {
                     "left slots={slots} count={count}"
                 );
                 assert_eq!(
-                    right.indexes(),
-                    sigma::<f64>(slots, LOG_D).indexes(),
+                    offsets_of(&right),
+                    offsets_of(&sigma::<f64>(slots, LOG_D)),
                     "right offsets slots={slots}"
                 );
                 assert_eq!(
-                    left.indexes(),
-                    tau::<f64>(slots, LOG_D).indexes(),
+                    offsets_of(&left),
+                    offsets_of(&tau::<f64>(slots, LOG_D)),
                     "left offsets slots={slots}"
                 );
                 for map in [&right, &left] {
-                    for &i in &map.indexes() {
-                        assert_eq!(map.period(i), Some(count * D * D), "slots={slots} count={count} offset={i}");
+                    for &i in &offsets_of(map) {
+                        assert_eq!(
+                            period_at(map, i),
+                            Some(count * D * D),
+                            "slots={slots} count={count} offset={i}"
+                        );
                     }
                 }
             }
@@ -503,7 +517,7 @@ mod tests {
     #[test]
     fn maps_store_one_minimal_period() {
         let period = |map: Diagonals<f64>| -> usize {
-            let periods: Vec<usize> = map.indexes().iter().map(|&i| map.period(i).unwrap()).collect();
+            let periods: Vec<usize> = offsets_of(&map).iter().map(|&i| period_at(&map, i).unwrap()).collect();
             assert!(periods.iter().all(|&p| p == periods[0]), "{periods:?}");
             periods[0]
         };
@@ -569,7 +583,7 @@ mod tests {
     #[test]
     fn one_matrix_slot_merges_wrapping_offsets() {
         let map = rotate_rows::<f64>(D * D, LOG_D, 1);
-        assert_eq!(map.indexes().len(), 1);
+        assert_eq!(offsets_of(&map).len(), 1);
         let x = &input(8)[..D * D];
         let want: Vec<f64> = (0..D * D).map(|t| x[((t / D + 1) % D) * D + t % D]).collect();
         assert_eq!(apply(&map, x), want);
@@ -591,7 +605,10 @@ mod tests {
             assert_eq!(apply(&rep, &replicated), apply(&psi, &replicated), "k={k}");
             assert_ne!(apply(&rep, &distinct), apply(&psi, &distinct), "k={k}");
         }
-        assert_eq!(tau_rep::<f64>(D * D, LOG_D).indexes(), tau::<f64>(D * D, LOG_D).indexes());
+        assert_eq!(
+            offsets_of(&tau_rep::<f64>(D * D, LOG_D)),
+            offsets_of(&tau::<f64>(D * D, LOG_D))
+        );
     }
 
     /// On a replicated input, `left_mul_rep` is `left_mul` of one public matrix; on distinct matrix slots they differ.
@@ -605,12 +622,12 @@ mod tests {
         assert_eq!(apply(&rep, &replicated), apply(&full, &replicated));
         assert_ne!(apply(&rep, &distinct), apply(&full, &distinct));
         let offsets: Vec<i64> = (0..D as i64).map(|j| j * D as i64).collect();
-        assert_eq!(rep.indexes(), offsets);
+        assert_eq!(offsets_of(&rep), offsets);
         for &i in &offsets {
-            assert_eq!(rep.period(i), Some(D * D), "offset={i}");
+            assert_eq!(period_at(&rep, i), Some(D * D), "offset={i}");
         }
         let (rep, full) = (left_mul_rep(D * D, LOG_D, b), left_mul(D * D, LOG_D, 1, b));
-        assert_eq!(rep.indexes(), full.indexes());
+        assert_eq!(offsets_of(&rep), offsets_of(&full));
         let x = &input(19)[..D * D];
         assert_eq!(apply(&rep, x), apply(&full, x));
     }
@@ -696,7 +713,7 @@ mod tests {
         assert_eq!(tree(&rows, D, -1), column_sums(&x));
         let cols = apply(&first_col(SLOTS, LOG_D), &tree(&x, 1, 1));
         assert_eq!(tree(&cols, 1, -1), row_sums);
-        assert_eq!(first_row::<f64>(SLOTS, LOG_D).period(0), Some(D * D));
-        assert_eq!(first_col::<f64>(SLOTS, LOG_D).period(0), Some(D));
+        assert_eq!(period_at(&first_row::<f64>(SLOTS, LOG_D), 0), Some(D * D));
+        assert_eq!(period_at(&first_col::<f64>(SLOTS, LOG_D), 0), Some(D));
     }
 }

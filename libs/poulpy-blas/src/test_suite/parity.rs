@@ -1661,7 +1661,7 @@ where
         let layout = BlasDiagonalCiphertextLayout::new(
             block(params, w - p, 0, SlotsKind::Complex),
             LinearTransformationLayout {
-                indexes: (0..8).collect(),
+                galois: (0..8).map(poulpy_core::layouts::galois_of_rotation).collect(),
                 slots,
                 strategy,
             },
@@ -2086,7 +2086,7 @@ where
     let m = module.blas_diagonal_ciphertext_alloc_from_infos::<_, Rg>(&BlasDiagonalCiphertextLayout::new(
         block(params, 60, 0, SlotsKind::Complex),
         LinearTransformationLayout {
-            indexes: (0..8).collect(),
+            galois: (0..8).map(poulpy_core::layouts::galois_of_rotation).collect(),
             slots: module.ckks_max_slots::<Rg>(),
             strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
         },

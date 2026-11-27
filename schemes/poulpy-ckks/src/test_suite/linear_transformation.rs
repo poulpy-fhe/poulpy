@@ -16,7 +16,8 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendRef,
         GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationDiagonal, LinearTransformationGiantStep,
-        LinearTransformationPlan, LinearTransformationStrategy, Rank, SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
+        LinearTransformationPlan, LinearTransformationStrategy, Rank, SetGLWEPlaintextInfos, TorusPrecision, galois_at,
+        galois_is_identity, galois_of_rotation, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPreparedBackendRef,
@@ -27,7 +28,6 @@ use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, ReimFFT, ReimIFFT, ReimNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, Ring, ScratchArena, Standard,
-        galois_element,
     },
 };
 
@@ -72,8 +72,8 @@ fn complex_diagonals<F: TestScalar>(diag_indices: &[usize], m: usize, shift: usi
     let mut im = Diagonals::<F>::new(m);
     for &i in diag_indices {
         let (dr, di) = diagonal::<F>(i + shift, m);
-        re.set(i as i64, dr);
-        im.set(i as i64, di);
+        re.set(galois_of_rotation(i as i64), dr);
+        im.set(galois_of_rotation(i as i64), di);
     }
     ComplexDiagonals::new(re, im)
 }
@@ -311,7 +311,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let babies: Vec<_> = cts
         .iter()
         .map(|ct| {
-            let mut babies = LinearTransformationBabySteps::alloc(module, prepared[0].baby_steps(), ct);
+            let mut babies = LinearTransformationBabySteps::alloc(module, prepared[0].baby_galois(), ct);
             with_scratch::<BE, _>(
                 module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(ct, &prepared[0].index(), &params.atk_layout()),
                 |s| module.ckks_linear_transformation_baby_steps_prepare(&mut babies, ct, &keys, s),
@@ -460,7 +460,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     reject(&[], &[], &[], "has no terms");
     reject(&two, &[&babies[0]], &[&prepared[0], &prepared[1]], "differ in length");
     let empty: LinearTransformationPrepared<BE, Standard> = LinearTransformation {
-        baby_steps: vec![0],
+        baby_galois: vec![galois_of_rotation(0)],
         giant_steps: Vec::new(),
         rotations: Default::default(),
     };
@@ -503,7 +503,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "source layout and scale",
     );
     // Core reads the sources through their caches: one built from a narrower source is rejected here, not there.
-    let narrow_babies = LinearTransformationBabySteps::alloc(module, prepared[1].baby_steps(), &narrow);
+    let narrow_babies = LinearTransformationBabySteps::alloc(module, prepared[1].baby_galois(), &narrow);
     reject(
         &two,
         &[&babies[0], &narrow_babies],
@@ -516,14 +516,14 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         &two,
         &[&babies[0], &empty_babies],
         &[&prepared[0], &prepared[1]],
-        "missing prepared baby-step rotation",
+        "missing prepared baby step of Galois element",
     );
-    let no_babies = LinearTransformationBabySteps::alloc(module, &[0], &cts[1]);
+    let no_babies = LinearTransformationBabySteps::alloc(module, &[galois_of_rotation(0)], &cts[1]);
     reject(
         &two,
         &[&babies[0], &no_babies],
         &[&prepared[0], &prepared[1]],
-        "missing prepared baby-step rotation",
+        "missing prepared baby step of Galois element",
     );
 
     // The single transform refuses the same transform without diagonals and cache without baby steps.
@@ -534,7 +534,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
             "missing baby step",
             &no_babies,
             &prepared[1],
-            "missing prepared baby-step rotation",
+            "missing prepared baby step of Galois element",
         ),
     ] {
         let before = snapshot::<BE, _, Standard>(&dst);
@@ -590,7 +590,7 @@ fn assert_prepared_unchanged<BE, Rg: Ring>(
     let diagonals = |lt: &LinearTransformationPrepared<BE, Rg>| {
         lt.giant_steps
             .iter()
-            .flat_map(|gs| gs.diagonals.iter().map(move |d| (gs.rot, d.baby)))
+            .flat_map(|gs| gs.diagonals.iter().map(move |d| (gs.galois, d.baby_galois)))
             .collect::<Vec<_>>()
     };
     let stashes = |lt: &LinearTransformationPrepared<BE, Rg>| {
@@ -753,7 +753,7 @@ pub fn test_linear_transformation_rhs_prepare_rejects_foreign_layout<BE, F, E>(
 }
 
 /// A prepared pair sharing one schedule and diagonal layout is refused by the preparation as `InvalidOperand` before
-/// any write and any scratch when it holds no diagonal, or when its baby steps do not start with the identity rotation.
+/// any write and any scratch when it holds no diagonal, or when its baby steps do not start with the identity.
 pub fn test_linear_transformation_rhs_prepare_rejects_malformed_schedule<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -784,12 +784,12 @@ pub fn test_linear_transformation_rhs_prepare_rejects_malformed_schedule<BE, F, 
     };
 
     let empty_prepared = || LinearTransformationPrepared::<BE, Standard> {
-        baby_steps: vec![0],
+        baby_galois: vec![galois_of_rotation(0)],
         giant_steps: Vec::new(),
         rotations: Default::default(),
     };
     let empty = LinearTransformation::<CKKSPlaintextOwned<BE, Standard>> {
-        baby_steps: vec![0],
+        baby_galois: vec![galois_of_rotation(0)],
         giant_steps: Vec::new(),
         rotations: Default::default(),
     };
@@ -813,9 +813,9 @@ pub fn test_linear_transformation_rhs_prepare_rejects_malformed_schedule<BE, F, 
     let mut res = prepare_lt(module, &encode(0, &mut scratch.borrow()));
     // Other values on the same schedule, the baby steps of both reordered alike, so only their first entry is wrong.
     let mut lt = encode(1, &mut scratch.borrow());
-    lt.baby_steps.rotate_left(1);
-    res.baby_steps.rotate_left(1);
-    refused(&mut res, &want, &lt, "the baby steps do not start with the identity rotation");
+    lt.baby_galois.rotate_left(1);
+    res.baby_galois.rotate_left(1);
+    refused(&mut res, &want, &lt, "the baby steps do not start with the identity");
 }
 
 /// Both prepared sides of a transformation, the right side of prepared diagonals and the left baby-step cache, under
@@ -989,10 +989,10 @@ pub fn test_linear_transformation_rhs_prepare_lifecycle<BE, F, E>(
     );
     let baby_bytes = module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(&ct, &lt.index(), &params.atk_layout());
     let baby_buffers = |b: &LinearTransformationBabySteps<BE>| -> Vec<Vec<u8>> {
-        b.baby_steps().map(|rot| b.baby_step(rot).data().to_vec()).collect()
+        b.baby_galois().map(|galois| b.baby(galois).data().to_vec()).collect()
     };
     let baby_addresses = |b: &LinearTransformationBabySteps<BE>| -> Vec<*const u8> {
-        b.baby_steps().map(|rot| b.baby_step(rot).data().as_ptr()).collect()
+        b.baby_galois().map(|galois| b.baby(galois).data().as_ptr()).collect()
     };
     let mut fresh = LinearTransformationBabySteps::alloc_for(module, &lt, &ct);
     with_scratch::<BE, _>(baby_bytes, |s| {
@@ -1016,7 +1016,7 @@ pub fn test_linear_transformation_rhs_prepare_lifecycle<BE, F, E>(
         "left side: prepare-into over other values differs from a fresh preparation"
     );
     let before = baby_addresses(&babies);
-    for (_, mut operand) in babies.baby_steps_mut() {
+    for (_, mut operand) in babies.babies_mut() {
         operand.data_mut().as_mut().fill(0xA5);
     }
     with_scratch::<BE, _>(baby_bytes, |s| {
@@ -1147,17 +1147,17 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     let dst_k = res.k();
 
     let baby_elements: HashSet<i64> = lt
-        .baby_steps()
+        .baby_galois()
         .iter()
         .copied()
-        .filter(|&rot| rot != 0)
-        .map(|rot| galois_element(rot, order))
+        .filter(|&galois| !galois_is_identity(galois))
+        .map(|galois| galois_at(galois, order))
         .collect();
     let giant_elements: HashSet<i64> = lt
         .giant_steps
         .iter()
-        .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
-        .map(|gs| galois_element(gs.rot, order))
+        .filter(|gs| !galois_is_identity(gs.galois) && !gs.diagonals.is_empty())
+        .map(|gs| galois_at(gs.galois, order))
         .collect();
 
     let seen = keys.take();
@@ -1497,13 +1497,13 @@ pub fn test_linear_transformation_ct<BE, F, E>(
         .unwrap();
         // Diagonals allocated wider than their width, as a copy into a larger ciphertext leaves them, read as theirs.
         let wide_lt = LinearTransformation {
-            baby_steps: lt.baby_steps.clone(),
+            baby_galois: lt.baby_galois.clone(),
             rotations: lt.rotations,
             giant_steps: lt
                 .giant_steps
                 .iter()
                 .map(|gs| LinearTransformationGiantStep {
-                    rot: gs.rot,
+                    galois: gs.galois,
                     diagonals: gs
                         .diagonals
                         .iter()
@@ -1514,7 +1514,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
                             })
                             .unwrap();
                             LinearTransformationDiagonal {
-                                baby: d.baby,
+                                baby_galois: d.baby_galois,
                                 plaintext: wide,
                             }
                         })

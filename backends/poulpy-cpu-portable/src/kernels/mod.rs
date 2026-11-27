@@ -1,8 +1,8 @@
 //! Portable production implementations of polynomial operations.
 //!
 //! Contains scalar polynomial arithmetic (`znx`), vector-level operations
-//! (`vec_znx`), and FFT64 and NTT4x30 kernels shared by the portable and SIMD
-//! backends. Independent correctness oracles live in `poulpy-cpu-oracle`.
+//! (`vec_znx`), FFT64 and NTT4x30 kernels shared by the portable and SIMD
+//! backends, and the negacyclic NTT over `Z/q` (`zq`). Independent correctness oracles live in `poulpy-cpu-oracle`.
 //!
 //! Every exported free kernel function uses the `_portable` suffix, including
 //! generic compositions, table builders, and scratch-size queries. Backend
@@ -17,6 +17,7 @@ pub mod vec_znx;
 pub mod vec_znx_big_normalize;
 pub mod vmp_select;
 pub mod znx_normalize;
+pub mod zq;
 
 pub use galois::{GaloisSlots, RightRead, right_read_fft64, right_read_ntt};
 pub use per_ring::{FFT64Plans, NttPlans, PerRing, RingFamily};

@@ -165,13 +165,13 @@ fn matrix<F: TestScalar>(m: usize) -> ComplexDiagonals<F> {
     let mut im = Diagonals::<F>::new(m);
     for i in 0..6usize {
         re.set(
-            i as i64,
+            poulpy_core::layouts::galois_of_rotation(i as i64),
             (0..m)
                 .map(|j| F::from_f64(0.25 * (i as f64 + 1.0) / (1.0 + (j % 8) as f64)).unwrap())
                 .collect(),
         );
         im.set(
-            i as i64,
+            poulpy_core::layouts::galois_of_rotation(i as i64),
             (0..m)
                 .map(|j| F::from_f64(0.125 * (i as f64 + 1.0) / (1.0 + ((j + 3) % 8) as f64)).unwrap())
                 .collect(),

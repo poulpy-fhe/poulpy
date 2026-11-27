@@ -10,6 +10,7 @@
 //! `enable-bin-fhe` and `enable-mhe` each imply it and register the CKKS,
 //! binary-FHE and multiparty ones, the multiparty ones on the standard ring only.
 //! `enable-blas` implies `enable-ckks` and wires the oracle backends into `poulpy-blas`.
+//! [`ZqOracle`] is the direct negacyclic NTT over `Z/q` behind the HAL `Zq*` traits.
 
 mod backend;
 #[cfg(feature = "enable-bin-fhe")]
@@ -40,6 +41,7 @@ mod ring;
 mod sampling;
 #[cfg(feature = "enable-core")]
 mod scalar_znx_fill;
+mod zq;
 
 #[cfg(feature = "enable-core")]
 pub mod test_suite;
@@ -52,6 +54,7 @@ pub use family::DFTFamily;
 pub use fft::{ComplexFft, Fft64};
 pub use ntt::{Ntt4x30, Primes30};
 pub use ring::OracleRing;
+pub use zq::ZqOracle;
 
 #[cfg(feature = "enable-ckks")]
 pub use ckks_fft::EncodingFft;

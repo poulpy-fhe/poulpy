@@ -346,8 +346,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     ///   width than `src`, and `MissingRelinearizationKey` without the tensor key;
     /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the budget rule leaves no result
     ///   at `dst`'s width;
-    /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
-    /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
+    /// - `MissingAutomorphismKey`, naming the Galois element at `src`'s order, for a non-identity giant step of `lt`
+    ///   with no key at the output width;
+    /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby steps.
     fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,

@@ -97,10 +97,13 @@ pub(crate) fn accumulate_giant_steps<RT: GpuRuntime, R: Ring, L: BabyStepOperand
         }
         schedule.counts[g] = step.diagonals.len() as u32;
         for (t, diagonal) in step.diagonals.iter().enumerate() {
-            let left = babies.iter().position(|&baby| baby == diagonal.baby).unwrap_or_else(|| {
-                babies.push(diagonal.baby);
-                babies.len() - 1
-            });
+            let left = babies
+                .iter()
+                .position(|&baby| baby == diagonal.baby_galois)
+                .unwrap_or_else(|| {
+                    babies.push(diagonal.baby_galois);
+                    babies.len() - 1
+                });
             schedule.left[g][t] = left as u32;
             schedule.right[g][t] = diagonals.len() as u32;
             diagonals.push(diagonal.plaintext.cnv());
@@ -117,9 +120,9 @@ pub(crate) fn accumulate_giant_steps<RT: GpuRuntime, R: Ring, L: BabyStepOperand
     {
         return false;
     }
-    let baby = lhs.baby_step(babies[0]);
-    if babies.iter().any(|&rot| {
-        let other = lhs.baby_step(rot);
+    let baby = lhs.baby(babies[0]);
+    if babies.iter().any(|&galois| {
+        let other = lhs.baby(galois);
         other.size() != baby.size() || other.cols() != cols || other.n() != baby.n()
     }) || prods
         .iter()
@@ -132,7 +135,7 @@ pub(crate) fn accumulate_giant_steps<RT: GpuRuntime, R: Ring, L: BabyStepOperand
         check_degree::<NTT4x30Gpu<RT>>(module.n(), prod.n());
         for diagonal in &step.diagonals {
             let (a, b) = (
-                lhs.baby_step(diagonal.baby).to_backend_ref(),
+                lhs.baby(diagonal.baby_galois).to_backend_ref(),
                 diagonal.plaintext.cnv().to_backend_ref(),
             );
             for col in 0..cols {
@@ -176,11 +179,9 @@ pub(crate) fn accumulate_giant_steps<RT: GpuRuntime, R: Ring, L: BabyStepOperand
     for col in 0..cols {
         let res = dft_column_mut(&prods[0], col).expect("the products hold storage");
         lefts.clear();
-        lefts.extend(
-            babies.iter().map(|&rot| {
-                cnv_left_column(&lhs.baby_step(rot).to_backend_ref(), col).expect("a prepared baby step holds storage")
-            }),
-        );
+        lefts.extend(babies.iter().map(|&galois| {
+            cnv_left_column(&lhs.baby(galois).to_backend_ref(), col).expect("a prepared baby step holds storage")
+        }));
         scale_many::<RT>(&res, gap, &lefts, &rights, schedule, cnv_offset_hi);
     }
     true

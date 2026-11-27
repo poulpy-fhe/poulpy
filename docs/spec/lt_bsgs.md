@@ -144,8 +144,8 @@ Done once, at key/transform setup (not per evaluation):
    Zero diagonals are omitted (§8).
 
 The prepared linear transformation stores non-empty giant steps; each giant step
-maps the real baby rotation `k` to its prepared diagonal `CnvPVecR`. The baby
-rotation list and required rotations are derived from those real indexes.
+maps the Galois element `gal(k)` of the real baby rotation `k` to its prepared diagonal
+`CnvPVecR`. The baby steps and the required keys are derived from those real elements.
 
 ---
 

@@ -4,7 +4,7 @@
 
 - **No hal reference layer.** A new basis or variant op gets a portable kernel (`hal_defaults`, `hal_impl_*!`) and an independent poulpy-cpu-oracle implementation calling no portable kernel; poulpy-hal adds no `reference` module, `*_reference` function or reference macro.
 - **Four op classes.** Every API method has one class fixing its OEP form:
-  - `basis`: independently defined, required, no default body, tested across backends (samplers and the raw complex transform against their definitions);
+  - `basis`: independently defined, required, no default body, tested across backends (samplers and the raw complex and `Z/q` transforms against their definitions);
   - `variant`: another storage or mutation form of a defined op (`_assign`, `ScalarZnx`, conjugate-invariant), required, except a layout conversion that re-views its operand as another layout and calls the defined op (`scalar_znx_automorphism`, `scalar_znx_ci_embed`), which is `derived`;
   - `derived`: a composition within its signature's scratch, defaulted over `oep::derived`;
   - `support`: allocation, `*_bytes_of`, `_tmp_bytes`, scratch, plans, module queries, no arithmetic.
@@ -14,7 +14,7 @@
 
 - **Backend parameter only when used.** An API trait takes a backend type parameter only when its signature names a backend type, never on `_tmp_bytes` or `<Layout>BytesOf` traits, which take no ring either.
 - **Declared where the checker sees.** An API trait is a plain `pub trait Name` at column 0 of a file under `poulpy-hal/src/api`, not macro-generated, `pub(crate)`, `pub unsafe` or cfg-gated, with methods `fn` or `unsafe fn`.
-- **Operands are backend views.** API and OEP methods take layout operands as `&XBackendRef<'_, B, Rg>` or `&mut XBackendMut<'_, B, Rg>` (`R: XToBackendMut<B, Rg>` for a whole destination), and only `ReimFFT` and `ReimIFFT` take host slices.
+- **Operands are backend views.** API and OEP methods take layout operands as `&XBackendRef<'_, B, Rg>` or `&mut XBackendMut<'_, B, Rg>` (`R: XToBackendMut<B, Rg>` for a whole destination), and only `ReimFFT`, `ReimIFFT`, `ZqNTT` and `ZqINTT` take host slices.
 - **Radix and precision are arguments.** Ops that read digits take `base2k` as a parameter; HAL layouts carry no radix or precision.
 - **Degree first on allocation calls.** Functions with no polynomial operand to read a degree from (`<layout>_alloc`, `<layout>_bytes_of`, `Backend::<layout>_bytes_of`, `take_<layout>_scratch`, plan constructors, `Module::max_base2k`) take `n` first, then `rows, cols_in, cols_out, size` (matrices) or `cols, size` (vectors), then the `PrepareHint` of a prepared layout.
 - **Clobbered sources.** A clobbered source says so in its sentence and definition.
@@ -35,7 +35,7 @@
 - **Keys and values.** `mutation` is `none` exactly for `support`, and `fallback` and `override` appear exactly on `derived` blocks and `variant` blocks whose `requires` names a `_tmp_bytes`, plus a defaulted `support` hook (`synchronize`).
 - **Op line spells the signature.** An `op` line lists the declared parameter names in order without `self`, except in wildcard blocks.
 - **Test line names suite tests.** The `test` line lists the `pub fn test_*` suite functions exercising the op (a `_tmp_bytes` its op's, a new computing op its own, `test none` only for an untested `support` block).
-- **Mutation follows the form.** `_assign` forms are `in-place` (`vec_znx_add_scalar_assign`, adding into one limb: `accumulate`), forms adding or subtracting their transformed or multiplied operand into the destination (`vec_znx_lsh_add`) are `accumulate`, other computing ops `out-of-place`, the raw complex transform `in-place`.
+- **Mutation follows the form.** `_assign` forms are `in-place` (`vec_znx_add_scalar_assign`, adding into one limb: `accumulate`), forms adding or subtracting their transformed or multiplied operand into the destination (`vec_znx_lsh_add`) are `accumulate`, other computing ops `out-of-place`, the raw complex and `Z/q` transforms `in-place`.
 - **Grammar changes move together.** A grammar change (key, class, mutation value, `op` matching) updates the unit tests of `poulpy-hal/tests/contracts.rs` in one PR, never relaxing a check for one block.
 
 ### 3.2. Content
@@ -47,7 +47,7 @@
 - **Ensures states the tail.** `ensures` states what destination limbs past the inputs' hold, never weakening or contradicting the definition, and `the digits are not renormalized` wherever digits can leave the canonical range (sums, differences, accumulating shifts, `X^p - 1` products, CI maps, entrywise matrix sums).
 - **Rounding through rnd and canon.** A normalizing, rounding or decomposing op takes explicit `res_k` or `k`, is defined through `rnd(x, k)` (`canon(v, b, k, L)` for a canonical column), states digit ranges and congruence modulo 1 to `rnd(..)` in `ensures`, never an equality or a value in `[-1/2, 1/2)`, and the radix range and input bound (`[-2^62, 2^62]`, big coefficients `abs <= 2^126`) in `domain`; no new rounding mode is added.
 - **Exact integer results.** A formula whose intermediates may leave the coefficient type writes `wrap(..)` or bounds them in `domain`.
-- **DFT results through idft.** Contracts state DFT results through `idft(..)` and prepared operands through the polynomial they read as, never a layout, slot order, word type, byte representation or cross-backend byte equality (the raw complex transform alone fixes `rev_m`, `omega(m,r)`); slot-order helpers live in backend crates, poulpy-hal keeping only `check_galois` and `check_degree`.
+- **DFT results through idft.** Contracts state DFT results through `idft(..)` and prepared operands through the polynomial they read as, never a layout, slot order, word type, byte representation or cross-backend byte equality (the raw complex and `Z/q` transforms alone fix `rev_m`, `omega(m,r)` and `psi`); slot-order helpers live in backend crates, poulpy-hal keeping only `check_galois`, `check_degree` and `bit_reverse`.
 - **Degree embedding.** Only slots an `embed` line names take a dense degree-`n` operand (`n` a power-of-two divisor of `N`), matching its `switch_ring_{n->N}` bit for bit, other operands at degree `N` and windows there as wide as `res`:
   - a derived op declares a slot only if every op its fallback feeds accepts it;
   - in the convolution only the right operand embeds: an apply reads a prepared right operand of degree at least `MIN_DEGREE`, a right-operand preparation embeds an input of any smaller power-of-two degree, 1 included, and the left and self prepares are not embedding-aware;

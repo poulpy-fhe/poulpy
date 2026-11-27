@@ -6,8 +6,7 @@ use poulpy_ckks::{
 use poulpy_core::{
     GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps,
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-        TorusPrecision,
+        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, galois_parts,
     },
 };
 use poulpy_hal::{
@@ -254,7 +253,7 @@ where
         let used = KeyLayouts::new(keys);
         let _ = matvec_pt_uses(&*res, w.blocks(), a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes_or_unused(|key| {
-            let key = key.copied().unwrap_or_else(|| covering_key(&a.ct_layout()));
+            let key = key.copied().unwrap_or_else(|| GGLWELayout::covering(&a.ct_layout()));
             self.blas_matvec_pt_tmp_bytes_reference(&*res, w, a, &key)
         });
         assert_scratch(op, bytes, scratch);
@@ -303,7 +302,7 @@ where
         let view = line.vector_layout(a);
         let _ = matvec_pt_uses(&*res, w.blocks(), &view, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes_or_unused(|key| {
-            let key = key.copied().unwrap_or_else(|| covering_key(&a.block_layout()));
+            let key = key.copied().unwrap_or_else(|| GGLWELayout::covering(&a.block_layout()));
             self.blas_grid_to_vector_tmp_bytes_reference(&*res, w, a, &key)
         });
         assert_scratch(op, bytes, scratch);
@@ -353,7 +352,7 @@ where
         let view = line.vector_layout(&*res);
         let _ = matvec_pt_uses(&view, w.blocks(), a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes_or_unused(|key| {
-            let key = key.copied().unwrap_or_else(|| covering_key(&a.ct_layout()));
+            let key = key.copied().unwrap_or_else(|| GGLWELayout::covering(&a.ct_layout()));
             self.blas_vector_to_grid_tmp_bytes_reference(&*res, w, a, &key)
         });
         assert_scratch(op, bytes, scratch);
@@ -623,11 +622,12 @@ where
             module.ckks_left_operand_prepare(&mut left, &rotated, &mut s)?;
         }
         for gs in &mut m.diagonals.giant_steps {
-            let giant = gs.rot;
+            let giant = galois_parts(gs.galois).1;
             for d in &mut gs.diagonals {
+                let baby = galois_parts(d.baby_galois).1;
                 let shift = match axis {
-                    AppendAxis::Row if d.baby == r => -(at + giant),
-                    AppendAxis::Col if -giant == r => d.baby - at,
+                    AppendAxis::Row if baby == r => -(at + giant),
+                    AppendAxis::Col if -giant == r => baby - at,
                     _ => continue,
                 };
                 let galois = module.ckks_galois_element::<Rg>(shift.rem_euclid(slots));
@@ -638,25 +638,8 @@ where
     Ok(())
 }
 
-/// The smallest rotation key covering an input of layout `a`, one digit per limb, which sizes the scratch of maps that
-/// look up no key: any key covering `a` sizes at least as much.
-fn covering_key(a: &CKKSLayout) -> GGLWELayout {
-    let k_digit = TorusPrecision(a.base2k().0);
-    GGLWELayout {
-        n: a.n(),
-        base2k: a.base2k(),
-        dnum: GGLWELayout::dnum_for_input(a.k(), k_digit),
-        k_aux: k_digit,
-        rank_in: a.rank(),
-        rank_out: a.rank(),
-        k_digit,
-        k_offset: TorusPrecision(0),
-        stride: 1,
-    }
-}
-
 /// One baby-step cache of an input of layout `a` and one summed transform from it into an output of layout `res` by
-/// `w`'s diagonals: resident, or streamed for an unprepared operand, at `keys`' layout, or at [`covering_key`] for maps
+/// `w`'s diagonals: resident, or streamed for an unprepared operand, at `keys`' layout, or at [`GGLWELayout::covering`] for maps
 /// that look up no key.
 fn maps_tmp_bytes<BE, W, Rg: Ring>(module: &Module<BE>, w: &W, res: CKKSLayout, a: CKKSLayout, keys: &impl GGLWEInfos) -> usize
 where
@@ -668,7 +651,7 @@ where
     let key = if rotates::<_, Rg>(module, |f| matvec_pt_uses(&views.0, w.blocks(), &views.1, f)) {
         keys.gglwe_layout()
     } else {
-        covering_key(&a)
+        GGLWELayout::covering(&a)
     };
     let eval = if W::STREAMED { LtEval::StreamedSum } else { LtEval::Sum };
     lt_tmp_bytes(module, &res, &a, &key, eval)

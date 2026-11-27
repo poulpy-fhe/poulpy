@@ -79,7 +79,7 @@ pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE, Rg>, Rg: R
         "linear transformation sum: babies and lts differ in length"
     );
     let (&lhs, &rhs) = (babies.first().expect("linear transformation sum has no terms"), &lts[0]);
-    // First, so that a later term's cache holds the rotations its schedule reads before its layout is read.
+    // First, so that a later term's cache holds the baby steps its schedule reads before its layout is read.
     assert_linear_transformation_giant_steps(babies, lts);
     let diagonals = |lt: &LinearTransformation<P>| {
         lt.first_diagonal_plaintext()
@@ -89,8 +89,8 @@ pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE, Rg>, Rg: R
         assert!(
             r.giant_steps
                 .iter()
-                .map(|gs| gs.rot)
-                .eq(rhs.giant_steps.iter().map(|gs| gs.rot)),
+                .map(|gs| gs.galois)
+                .eq(rhs.giant_steps.iter().map(|gs| gs.galois)),
             "summed linear transformation {t} does not share the first one's giant schedule"
         );
         assert!(
@@ -107,13 +107,13 @@ pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE, Rg>, Rg: R
 /// Checks the giant steps of every term. Only the first diagonal of a giant step is checked for width: every diagonal
 /// of a transform shares one width, scale and prepared degree, its degree raised to `MIN_DEGREE`, as the encoder
 /// produces them. Reads no cache layout, so an empty cache
-/// fails on its first missing rotation.
+/// fails on its first missing baby step.
 ///
 /// # Panics
 ///
 /// Unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
 /// transform's first diagonal, diagonals of the first one's degree at the floor `BE::MIN_DEGREE`, and reads only baby
-/// rotations its term's cache holds.
+/// steps its term's cache holds.
 fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
     lts: &[&LinearTransformation<P>],
@@ -140,9 +140,9 @@ fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE, Rg>, R
             );
             for d in &gs.diagonals {
                 assert!(
-                    lhs.contains_baby_step(d.baby),
-                    "missing prepared baby-step rotation {} of linear transformation {t}",
-                    d.baby
+                    lhs.contains_baby_galois(d.baby_galois),
+                    "missing prepared baby step of Galois element {} of linear transformation {t}",
+                    d.baby_galois
                 );
                 assert!(
                     Some(prepared_degree(d.plaintext.n())) == degree,

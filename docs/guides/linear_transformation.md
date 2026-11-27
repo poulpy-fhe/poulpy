@@ -23,6 +23,18 @@ It operates on GLWE ciphertexts, GGLWE automorphism keys, and prepared diagonals
 The CKKS layer in `poulpy-ckks` is a thin wrapper, `CKKSLinearTransformationOps`, that owns the scale and budget accounting, encodes the diagonals, and supplies the galois-element to key map.
 No homomorphic arithmetic lives in the CKKS layer.
 
+## Galois elements
+
+The API names every automorphism of a transform, a diagonal, a baby step and a giant step, by its Galois element `p = (-1)^c 5^j`, the automorphism `X -> X^p` (`poulpy_core::layouts::galois_parts` gives `c` and `j`).
+The rotation by `i` slots is `5^i` (`galois_of_rotation(i)`), and `X -> X^-1` is `-1` (`poulpy_hal::GALOIS_GENERATOR_CONJUGATION`, which generates the conjugation subgroup, distinct from the rotations of `GALOIS_GENERATOR_ROTATION`).
+A transform holds its elements at `GALOIS_ORDER = 4 * MAX_RING_DEGREE`, which the cyclotomic order of every operand divides on both rings, and an evaluation looks up the key of `p` reduced at the operand's order (`galois_at`).
+Rotations are taken modulo the slot count of the transform, a power of two, so a diagonal is the composition of its giant and baby steps there (`galois_compose(giant, baby, slots)`).
+
+`LinearTransformationLayout` lists the Galois elements of the non-zero diagonals (`galois`) with the slot count and the strategy.
+`LinearTransformationPlan` gives the baby steps (`baby_galois`, the identity first), the giant steps (`giant_galois`) and, per giant step, the baby steps it reads (`index`).
+`LinearTransformation` holds the encoded diagonals under the same elements (`baby_galois`, `LinearTransformationGiantStep::galois`, `LinearTransformationDiagonal::baby_galois`), and the prepared baby cache is keyed by them.
+The plaintext mirror `Diagonals<T>` and the slot helper `Diagonals::rotate_slots_into` take the elements of rotations only.
+
 ## Baby-Step Giant-Step factorization
 
 Pick a baby-step count `n1`.
@@ -102,19 +114,25 @@ The giant-step loop then rotates and sums them as it does plaintext products, wi
 
 ## Split strategies
 
-The decomposition is controlled by the choice of `n1`, expressed through the `LinearTransformationStrategy` enum, which has three variants.
+The decomposition is controlled by the choice of `n1`, expressed through the `LinearTransformationStrategy` enum, which has four variants.
+The first three factor the rotation of each diagonal as above; a diagonal that conjugates puts its conjugation on its giant step.
 
 - `Direct` uses one giant step per diagonal and no baby rotations. It is best for a handful of diagonals.
 
 - `Bsgs { giant_step }` uses a caller-fixed `n1`. This is the knob to align `n1` with the diagonal structure of `M`, for example the stride of an FFT matrix.
 
-- `BsgsPowersOfTwo { giant_step }` is the same schedule evaluated with the keys of the power-of-two multiples of the baby and giant steps only (`BsgsRotations::PowersOfTwo`).
+- `BsgsPowersOfTwo { giant_step }` is the same schedule evaluated with the keys of the power-of-two multiples of the baby and giant steps only (`BsgsRotations::PowersOfTwo`, whose steps are Galois elements and which takes no conjugating diagonal).
   The baby rotation `k·b` is the rotation of `(k - 2^i)·b` by `2^i·b`, `2^i` the top bit of `k`, so the rotations of one doubling pass share a key and are switched together.
   The giant steps are summed as a binary tree over the two's-complement digits of `j`, `T(u; G) = T(u_even; 2G) + rot(G)(T(u_odd; 2G))`, so the switches of one tree level share a key.
   The doubling takes one key switch per non-zero rotation it holds, as many as with a key per rotation for the baby steps `0..n1`, and the tree one per odd node of each level, up to one more per level than with a key per rotation for contiguous giant digits: `{-1, 0, 1}` take 3 switches instead of 2, `{-2, ..., 2}` 5 instead of 4, and `{-5, ..., 5}` 12 instead of 10.
   The number of distinct keys is about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
 
-For the cost-optimal width, call the `optimal_bsgs_giant_step` helper and feed its result into `Bsgs { giant_step }`. It returns `1`, which degenerates to the `Direct` schedule, for a single diagonal or fewer. Otherwise it only considers giant steps that are multiples of the smallest gap between consecutive diagonals, which is cheap for stride structured matrices, and selects the one that balances the baby and giant counts near the square root of the number of diagonals.
+- `Hypercube` schedules diagonals that conjugate as well as rotate, `X -> X^((-1)^c 5^j)`, on the hypercube of the generators `5^(2^k)` and `X -> X^-1`.
+  The dimensions the diagonals use, adjacent ones that step both ways merged, are each split into a baby and a giant part, cheapest first, which keeps the baby count near the square root of the product of their costs; a dimension that steps both ways steps back by giants.
+  When those dimensions do not cover every diagonal, the whole group is split instead: one dimension of the powers of 5, and `X -> X^-1` when a diagonal conjugates.
+  It is evaluated with a key per step.
+
+For the cost-optimal width, call the `optimal_bsgs_giant_step` helper on the Galois elements of the diagonals and feed its result into `Bsgs { giant_step }`. It returns `1`, which degenerates to the `Direct` schedule, for a single diagonal or fewer. Otherwise it only considers giant steps that are multiples of the smallest gap between consecutive diagonal rotations, which is cheap for stride structured matrices, and selects the one that balances the baby and giant counts near the square root of the number of diagonals.
 
 The result is invariant to `n1`; only the cost changes, and it bottoms out near the square root of the number of diagonals.
 

@@ -135,21 +135,21 @@ pub trait CKKSLinearTransformationAlloc<BE: Backend>: CKKSPlaintextAlloc<BE> {
         let plan = layout.index();
         LinearTransformation {
             giant_steps: plan
-                .giant_steps
+                .giant_galois
                 .iter()
                 .zip(&plan.index)
-                .map(|(&rot, babies)| LinearTransformationGiantStep {
-                    rot,
+                .map(|(&galois, babies)| LinearTransformationGiantStep {
+                    galois,
                     diagonals: babies
                         .iter()
-                        .map(|&baby| LinearTransformationDiagonal {
-                            baby,
+                        .map(|&baby_galois| LinearTransformationDiagonal {
+                            baby_galois,
                             plaintext: self.ckks_plaintext_alloc_from_infos(infos),
                         })
                         .collect(),
                 })
                 .collect(),
-            baby_steps: plan.baby_steps,
+            baby_galois: plan.baby_galois,
             rotations: plan.rotations,
         }
     }
@@ -164,6 +164,7 @@ impl<BE: Backend> CKKSLinearTransformationAlloc<BE> for Module<BE> where
 mod tests {
     use poulpy_core::layouts::{
         Diagonals, GLWELayout, LWEInfos, LinearTransformationLayout, LinearTransformationStrategy, Rank, TorusPrecision,
+        galois_of_rotation,
     };
     use poulpy_hal::layouts::{HostBytesBackend, Module, Standard};
 
@@ -176,14 +177,15 @@ mod tests {
     fn transform_alloc_is_the_encoding_receiver() {
         let module = Module::<HostBytesBackend>::new(64);
         let mut cd = ComplexDiagonals::new(Diagonals::new(32), Diagonals::new(32));
-        cd.re.set(0, vec![1.0, 2.0]);
-        cd.im.set(0, vec![0.5]);
-        cd.re.set(1, vec![3.0]);
-        cd.re.set(5, vec![-1.0, 4.0, 2.0, 0.5]);
-        cd.im.set(7, vec![1.0, -2.0]);
+        let rot = galois_of_rotation;
+        cd.re.set(rot(0), vec![1.0, 2.0]);
+        cd.im.set(rot(0), vec![0.5]);
+        cd.re.set(rot(1), vec![3.0]);
+        cd.re.set(rot(5), vec![-1.0, 4.0, 2.0, 0.5]);
+        cd.im.set(rot(7), vec![1.0, -2.0]);
         let strategy = LinearTransformationStrategy::Bsgs { giant_step: 4 };
         let layout = LinearTransformationLayout {
-            indexes: cd.indexes(),
+            galois: cd.galois(),
             slots: cd.slots(),
             strategy,
         };
@@ -209,10 +211,10 @@ mod tests {
         let schedule = |t: &LinearTransformation<_>| -> Vec<(i64, Vec<i64>)> {
             t.giant_steps
                 .iter()
-                .map(|gs| (gs.rot, gs.diagonals.iter().map(|d| d.baby).collect()))
+                .map(|gs| (gs.galois, gs.diagonals.iter().map(|d| d.baby_galois).collect()))
                 .collect()
         };
-        assert_eq!((&alloc.baby_steps, schedule(&alloc)), (&built.baby_steps, schedule(&built)));
+        assert_eq!((&alloc.baby_galois, schedule(&alloc)), (&built.baby_galois, schedule(&built)));
         assert!(
             alloc
                 .giant_steps

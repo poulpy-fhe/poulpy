@@ -81,6 +81,19 @@ pub enum SplitStrategy {
     MinMult,
 }
 
+impl SplitStrategy {
+    /// The `log_split`, at least 1, this strategy picks for a polynomial of `degree`: the one
+    /// [`Polynomial::decompose_bsgs_with`] decomposes with.
+    ///
+    /// # Panics
+    ///
+    /// When `degree` is zero.
+    pub fn log_split(self, degree: usize, parity: Parity, basis: Basis) -> usize {
+        assert!(degree >= 1, "log_split: the degree must be at least 1");
+        split_for_strategy(self, degree, parity, basis)
+    }
+}
+
 /// Default planner picked by [`Polynomial::decompose_bsgs_with`].
 pub const DEFAULT_SPLIT_STRATEGY: SplitStrategy = SplitStrategy::MinDepth;
 
@@ -1154,6 +1167,84 @@ impl<A> PowerBasis<A> {
     }
 }
 
+/// The scheme products a [`PowerBasis`] is generated with.
+///
+/// [`Self::gen_power`] owns the schedule: an entry is made of the two entries [`Self::split`]
+/// names, and, on the Chebyshev basis, of the entry at their difference. The scheme supplies
+/// the product, with its precision bookkeeping and the storage of the result. `S` is the state
+/// the products thread, the scratch arena an entry may be carved from.
+pub trait PowerBasisProducts<A, S> {
+    /// The two entries the entry `n >= 2` is made of: `n = a + b` with `a, b >= 1`.
+    fn split(&self, n: usize) -> (usize, usize);
+
+    /// Computes the entry `a + b` of `basis` from its entries `a` and `b` and, on the Chebyshev
+    /// basis when `a != b`, `|a - b|`, all stored: `X^a X^b`, or `2 T_a T_b - T_|a - b|`.
+    /// Returns it with what is left of `scratch`.
+    fn product(&self, basis: &PowerBasis<A>, a: usize, b: usize, scratch: S) -> Result<(A, S)>;
+
+    /// Stores the entry `n` in `basis`, with the entries it is made of, each computed once, in
+    /// the order `a`, `b`, then `|a - b|`. Returns what is left of `scratch`.
+    fn gen_power(&self, basis: &mut PowerBasis<A>, n: usize, scratch: S) -> Result<S> {
+        if basis.contains_power(n) {
+            return Ok(scratch);
+        }
+        ensure!(n >= 2, "PowerBasis: the entry {n} must be provided at construction");
+        let (a, b) = self.split(n);
+        let scratch = self.gen_power(basis, a, scratch)?;
+        let scratch = self.gen_power(basis, b, scratch)?;
+        let scratch = if basis.basis == Basis::Chebyshev && a != b {
+            self.gen_power(basis, a.abs_diff(b), scratch)?
+        } else {
+            scratch
+        };
+        let (value, scratch) = self.product(basis, a, b, scratch)?;
+        basis.set_power(n, value);
+        Ok(scratch)
+    }
+}
+
+/// Largest entry, powers of two aside, [`power_basis_gen_count`] tracks.
+pub const POWER_BASIS_TRACKED_ENTRIES: usize = 1 << 12;
+
+/// The number of entries [`PowerBasisProducts::gen_power`] adds to a basis holding only its
+/// entry 1 when asked for each of `targets` under `split`, replayed on the stack, so that a
+/// scratch query can read it. `None` when an entry that is not a power of two reaches
+/// [`POWER_BASIS_TRACKED_ENTRIES`].
+pub fn power_basis_gen_count(
+    targets: impl IntoIterator<Item = usize>,
+    split: impl Fn(usize) -> (usize, usize),
+    basis: Basis,
+) -> Option<usize> {
+    struct Seen {
+        pow2: u64,
+        rest: [u64; POWER_BASIS_TRACKED_ENTRIES / 64],
+    }
+    fn add(seen: &mut Seen, n: usize, split: &impl Fn(usize) -> (usize, usize), basis: Basis) -> Option<usize> {
+        if n < 2 {
+            return Some(0);
+        }
+        let (word, bit) = if n.is_power_of_two() {
+            (&mut seen.pow2, n.trailing_zeros())
+        } else {
+            (seen.rest.get_mut(n / 64)?, (n % 64) as u32)
+        };
+        if *word >> bit & 1 == 1 {
+            return Some(0);
+        }
+        *word |= 1 << bit;
+        let (a, b) = split(n);
+        let c = if basis == Basis::Chebyshev { a.abs_diff(b) } else { 0 };
+        Some(1 + add(seen, a, split, basis)? + add(seen, b, split, basis)? + add(seen, c, split, basis)?)
+    }
+    let mut seen = Seen {
+        pow2: 0,
+        rest: [0; POWER_BASIS_TRACKED_ENTRIES / 64],
+    };
+    targets
+        .into_iter()
+        .try_fold(0usize, |count, n| Some(count + add(&mut seen, n, &split, basis)?))
+}
+
 impl<BE: Backend, A, Rg: Ring> PowerBasisHelper<BE, A, Rg> for PowerBasis<A>
 where
     A: GLWEToBackendRef<BE, Rg>,
@@ -1176,6 +1267,67 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Integer powers: the entry `n` of the monomial basis is `x^n`, of the Chebyshev basis
+    /// `T_n(x)`, and each product is counted.
+    struct IntegerPowers;
+
+    impl PowerBasisProducts<i128, usize> for IntegerPowers {
+        fn split(&self, n: usize) -> (usize, usize) {
+            split_degree(n)
+        }
+
+        fn product(&self, basis: &PowerBasis<i128>, a: usize, b: usize, products: usize) -> Result<(i128, usize)> {
+            let (x, y) = (*basis.get_stored(a).unwrap(), *basis.get_stored(b).unwrap());
+            let value = match basis.basis() {
+                Basis::Monomial => x * y,
+                Basis::Chebyshev if a == b => 2 * x * y - 1,
+                Basis::Chebyshev => 2 * x * y - *basis.get_stored(a.abs_diff(b)).unwrap(),
+            };
+            Ok((value, products + 1))
+        }
+    }
+
+    fn chebyshev(n: usize, x: i128) -> i128 {
+        let (mut prev, mut cur) = (1i128, x);
+        for _ in 1..n {
+            (prev, cur) = (cur, 2 * x * cur - prev);
+        }
+        if n == 0 { 1 } else { cur }
+    }
+
+    /// The generator stores each entry once, with the value its basis defines, and
+    /// [`power_basis_gen_count`] replays the number of products it takes.
+    #[test]
+    fn gen_power_stores_each_entry_once() {
+        let x: i128 = 3;
+        for basis in [Basis::Monomial, Basis::Chebyshev] {
+            for n in 2..40usize {
+                let mut powers = PowerBasis::new(basis, x);
+                let products = IntegerPowers.gen_power(&mut powers, n, 0).unwrap();
+                let expected = match basis {
+                    Basis::Monomial => x.pow(n as u32),
+                    Basis::Chebyshev => chebyshev(n, x),
+                };
+                assert_eq!(*powers.get_stored(n).unwrap(), expected, "{basis:?}, entry {n}");
+                assert_eq!(products, powers.values.len() - 1, "{basis:?}, entry {n}");
+                assert_eq!(
+                    power_basis_gen_count([n], split_degree, basis),
+                    Some(products),
+                    "{basis:?}, entry {n}"
+                );
+                // A second request computes nothing.
+                assert_eq!(IntegerPowers.gen_power(&mut powers, n, products).unwrap(), products);
+            }
+        }
+        // An entry below 2 that is not stored is refused.
+        let mut powers = PowerBasis::new(Basis::Monomial, x);
+        powers.take_power(1);
+        assert!(IntegerPowers.gen_power(&mut powers, 2, 0).is_err());
+        // An entry past the tracked range is not counted.
+        let big = POWER_BASIS_TRACKED_ENTRIES + 1;
+        assert_eq!(power_basis_gen_count([big], split_degree, Basis::Monomial), None);
+    }
 
     fn collect_baby_step_degrees(basis: Basis, degree: usize, log_split: usize, split_leading: bool) -> Vec<usize> {
         let coeffs = vec![0.0f64; degree + 1];

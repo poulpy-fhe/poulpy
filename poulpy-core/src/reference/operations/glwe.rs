@@ -3831,9 +3831,7 @@ where
         // can sit in limbs past `res`'s allocation.
         let raw = {
             let (res_ref, a_ref) = (res.to_backend_ref(), a.to_backend_ref());
-            res_ref.base2k() == a_ref.base2k()
-                && res_ref.k() >= a_ref.k()
-                && (a_ref.is_canonical() || res_ref.max_size() >= a_ref.max_size())
+            res_ref.base2k() == a_ref.base2k() && res_ref.k() >= a_ref.k() && res.holds_limbs(a)
         };
         let rank = res.to_backend_ref().rank().as_usize();
         let noise = if res.to_backend_ref().k() >= a.to_backend_ref().k() {

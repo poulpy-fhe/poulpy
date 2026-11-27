@@ -932,7 +932,7 @@ fn assert_refused_rotation_keys(err: &anyhow::Error, [xs, xa, xe]: [Source; 3], 
     );
 }
 
-/// The Galois elements and first-factor rotations the matrices of a compiled context switch
+/// The Galois elements and first-factor diagonal Galois elements the matrices of a compiled context switch
 /// with: the homomorphic DFTs, the bypass, the folded factors, and conjugation with EvalMod on
 /// the standard ring.
 fn compiled_key_rotations<BE: Backend, F>(
@@ -957,7 +957,7 @@ fn compiled_key_rotations<BE: Backend, F>(
     }
     let mut first_factor: Vec<i64> = context
         .coeffs_to_slots_first_factor()
-        .map(|factor| factor.giant_steps.iter().map(|giant| giant.rot).collect())
+        .map(|factor| factor.giant_steps.iter().map(|giant| giant.galois).collect())
         .unwrap_or_default();
     first_factor.sort_unstable();
     (elements.into_iter().collect(), first_factor)

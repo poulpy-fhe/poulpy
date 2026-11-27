@@ -164,7 +164,7 @@ impl<B: Backend> GGSWBytesOf<B> for Module<B> {
 pub trait GLWELinearTransformationBabyStepsBytesOf<BE: Backend> {
     /// Byte size of the baby-step cache of the transformation schedule `plan` for a source of the layout `a`, as
     /// [`ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch)
-    /// carves it: one aligned operand per baby rotation.
+    /// carves it: one aligned operand per baby step.
     ///
     /// # Panics
     ///
@@ -176,7 +176,7 @@ impl<B: Backend> GLWELinearTransformationBabyStepsBytesOf<B> for Module<B> {
     fn glwe_linear_transformation_baby_steps_bytes_of<A: GLWEInfos>(&self, plan: &LinearTransformationPlan, a: &A) -> usize {
         let operand = B::cnv_pvec_left_bytes_of(a.n().into(), (a.rank() + 1).into(), a.size(), PrepareHint::Reuse);
         B::scratch_aligned(operand)
-            .checked_mul(plan.baby_steps.len())
+            .checked_mul(plan.baby_galois.len())
             .expect("baby-step cache byte size overflows usize")
     }
 }

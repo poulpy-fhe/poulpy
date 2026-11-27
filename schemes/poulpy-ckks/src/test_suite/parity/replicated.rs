@@ -100,11 +100,12 @@ where
         let from_bits = conv.from.as_ref().map_or(0, ReplicatedTransform::consumed_bits);
         let k = log_delta_ckks + conv.to.consumed_bits() + from_bits + log_delta_diag;
         let (_, atk_layout) = rank_keys(params, k + extra_bits + conv.trace.len() + b);
+        let order = crate::operand_cyclotomic_order::<_, Rg>("parity", module, params.n).unwrap();
         let keys: HashMap<i64, _> = conv
-            .rotations()
+            .galois()
             .into_iter()
-            .map(|r| {
-                let p = crate::operand_rotation_galois_element::<_, Rg>("parity", module, params.n, r).unwrap();
+            .map(|galois| {
+                let p = poulpy_core::layouts::galois_at(galois, order);
                 (
                     p,
                     prepared_automorphism_key::<B, Rg>(module, &atk_layout, p, (p as u8).wrapping_add(31)),
