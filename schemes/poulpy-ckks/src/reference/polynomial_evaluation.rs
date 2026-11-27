@@ -125,96 +125,15 @@ where
         coeffs: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<bool> {
-        use crate::mul_pt_params_raw;
-
         let Some(&(seed, _)) = terms.last() else {
             return Ok(false);
         };
         if let SlotLayout::Replicated(_) = seed.slot_layout() {
             return shaped_baby_linear_combination(self, module, res, terms, coeffs, scratch);
         }
-        let kb: usize = res.base2k().into();
-        let delta = seed.log_delta();
-        if kb == 0 {
-            return Ok(false);
-        }
-
-        let mut budget = seed.log_budget();
-        let mut term_params = Vec::with_capacity(terms.len());
-        for (t, _) in terms {
-            if usize::from(t.base2k()) != kb || t.log_delta() != delta {
-                return Ok(false);
-            }
-            let Ok((b_i, d_i, off_i)) = mul_pt_params_raw(
-                self.op,
-                budget + delta,
-                t.log_delta(),
-                t.log_budget(),
-                coeffs.log_delta(),
-                coeffs.log_budget(),
-                coeffs.encoded_k().as_usize(),
-            ) else {
-                return Ok(false);
-            };
-            if d_i != delta || off_i < kb {
-                return Ok(false);
-            }
-            budget = budget.min(b_i);
-            term_params.push((b_i, off_i));
-        }
-        for (term_budget, offset) in &mut term_params {
-            *offset += *term_budget - budget;
-        }
-
-        let mut sparsity = res.log_sparsity();
-        let mut slots = seed.slots();
-        for (t, _) in terms {
-            sparsity = sparsity.min(t.log_sparsity());
-            slots = slots.join(t.slots());
-        }
-        res.set_log_delta(delta);
-        res.set_log_budget(budget);
-        res.set_log_sparsity(sparsity);
-        res.set_slots(slots);
-        res.set_slot_layout(crate::SlotLayout::Full);
-        let pt_bk = coeffs.to_backend_ref();
-        let pt_size = pt_bk.data().size();
-        let res_size = res.to_backend_ref().data().size();
-        // Splits a term's total bit shift into the sub-limb right-shift of the
-        // constant (`r`) and the whole-limb convolution offset (`rho`).
-        let shift_split = |off: usize| {
-            let r = (kb - off % kb) % kb;
-            (r, (off + r) / kb - 1)
-        };
-        let mut acc_size = res_size;
-        for ((t, _), (_, off)) in terms.iter().zip(term_params.iter()) {
-            let (r, rho) = shift_split(*off);
-            let g_size = pt_size + usize::from(r != 0);
-            let needed = (t.to_backend_ref().data().size() + g_size - 1).saturating_sub(rho);
-            acc_size = acc_size.max(needed);
-        }
-
-        res.set_canonical(true);
-        let term_refs: Vec<_> = terms.iter().map(|(t, _)| t.to_backend_ref()).collect();
-        let combination: Vec<ConstTerm<'_, BE, Rg>> = terms
-            .iter()
-            .zip(term_params.iter())
-            .zip(term_refs.iter())
-            .map(|(((_, coeff_idx), (_, off)), t_bk)| {
-                let (shift, cnv_offset) = shift_split(*off);
-                ConstTerm {
-                    a: vec_znx_backend_ref_from_ref::<BE, Rg>(t_bk.data()),
-                    b: vec_znx_backend_ref_from_ref::<BE, Rg>(pt_bk.data()),
-                    b_col: 0,
-                    b_coeff: *coeff_idx,
-                    shift,
-                    cnv_offset,
-                }
-            })
-            .collect();
-        let mut res_bk = res.to_backend_mut();
-        BE::glwe_const_combination(module, res_bk.data_mut(), kb, budget + delta, acc_size, &combination, scratch);
-        Ok(true)
+        Ok(full_baby_linear_combination(
+            self.op, module, res, terms, seed, coeffs, scratch,
+        ))
     }
 
     fn add_pt_const_assign(
@@ -289,6 +208,108 @@ where
         module.ckks_copy(res, src, scratch)?;
         Ok(())
     }
+}
+
+/// Accumulate a scalar-coefficient block on the full layout in a single pass.
+/// Returns false when the operands require the individual multiply/add path.
+fn full_baby_linear_combination<BE, V, A, P, Rg: Ring>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &mut V,
+    terms: &[(&A, usize)],
+    seed: &A,
+    coeffs: &P,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> bool
+where
+    BE: GLWEMulConstImpl<Rg>,
+    V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+{
+    use crate::mul_pt_params_raw;
+    let kb: usize = res.base2k().into();
+    let delta = seed.log_delta();
+    if kb == 0 {
+        return false;
+    }
+
+    let mut budget = seed.log_budget();
+    let mut term_params = Vec::with_capacity(terms.len());
+    for (t, _) in terms {
+        if usize::from(t.base2k()) != kb || t.log_delta() != delta {
+            return false;
+        }
+        let Ok((b_i, d_i, off_i)) = mul_pt_params_raw(
+            op,
+            budget + delta,
+            t.log_delta(),
+            t.log_budget(),
+            coeffs.log_delta(),
+            coeffs.log_budget(),
+            coeffs.encoded_k().as_usize(),
+        ) else {
+            return false;
+        };
+        if d_i != delta || off_i < kb {
+            return false;
+        }
+        budget = budget.min(b_i);
+        term_params.push((b_i, off_i));
+    }
+    for (term_budget, offset) in &mut term_params {
+        *offset += *term_budget - budget;
+    }
+
+    let mut sparsity = res.log_sparsity();
+    let mut slots = seed.slots();
+    for (t, _) in terms {
+        sparsity = sparsity.min(t.log_sparsity());
+        slots = slots.join(t.slots());
+    }
+    res.set_log_delta(delta);
+    res.set_log_budget(budget);
+    res.set_log_sparsity(sparsity);
+    res.set_slots(slots);
+    res.set_slot_layout(crate::SlotLayout::Full);
+    let pt_bk = coeffs.to_backend_ref();
+    let pt_size = pt_bk.data().size();
+    let res_size = res.to_backend_ref().data().size();
+    // Splits a term's total bit shift into the sub-limb right-shift of the
+    // constant (`r`) and the whole-limb convolution offset (`rho`).
+    let shift_split = |off: usize| {
+        let r = (kb - off % kb) % kb;
+        (r, (off + r) / kb - 1)
+    };
+    let mut acc_size = res_size;
+    for ((t, _), (_, off)) in terms.iter().zip(term_params.iter()) {
+        let (r, rho) = shift_split(*off);
+        let g_size = pt_size + usize::from(r != 0);
+        let needed = (t.to_backend_ref().data().size() + g_size - 1).saturating_sub(rho);
+        acc_size = acc_size.max(needed);
+    }
+
+    res.set_canonical(true);
+    let term_refs: Vec<_> = terms.iter().map(|(t, _)| t.to_backend_ref()).collect();
+    let combination: Vec<ConstTerm<'_, BE, Rg>> = terms
+        .iter()
+        .zip(term_params.iter())
+        .zip(term_refs.iter())
+        .map(|(((_, coeff_idx), (_, off)), t_bk)| {
+            let (shift, cnv_offset) = shift_split(*off);
+            ConstTerm {
+                a: vec_znx_backend_ref_from_ref::<BE, Rg>(t_bk.data()),
+                b: vec_znx_backend_ref_from_ref::<BE, Rg>(pt_bk.data()),
+                b_col: 0,
+                b_coeff: *coeff_idx,
+                shift,
+                cnv_offset,
+            }
+        })
+        .collect();
+    let mut res_bk = res.to_backend_mut();
+    BE::glwe_const_combination(module, res_bk.data_mut(), kb, budget + delta, acc_size, &combination, scratch);
+    true
 }
 
 /// `res = Σ_t x_t·c_t·π_S` on a replicated layout: each product with its
