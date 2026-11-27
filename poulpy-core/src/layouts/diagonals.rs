@@ -114,28 +114,6 @@ pub fn period_lcm(a: usize, b: usize) -> usize {
     a / gcd(a, b) * b
 }
 
-/// Left-rotates `src` by the rotation `k` of the Galois element `galois` into `out`:
-/// `out[j] = src[(j + k) mod src.len()]`.
-///
-/// Public utility matching the scheme slot-rotation convention
-/// `rot(v, k)[j] = v[(j+k) mod n]`; downstream diagonal-map flavors (e.g. the
-/// CKKS `ComplexDiagonals`) use it to apply baby / giant pre-rotations under
-/// the same convention as the homomorphic engine. `src` is read as a periodic
-/// vector of a power-of-two length, so `out` may be any multiple of its length: one stored
-/// period rotates into any replication of itself.
-///
-/// # Panics
-///
-/// When `galois` conjugates.
-pub fn rotate_slots_into<T: Clone>(src: &[T], galois: i64, out: &mut [T]) {
-    let n = src.len();
-    let k = galois_rotation(galois, n) as usize;
-    debug_assert!(out.len().is_multiple_of(n));
-    for (j, slot) in out.iter_mut().enumerate() {
-        *slot = src[(j + k) % n].clone();
-    }
-}
-
 /// The non-zero generalized diagonals of a square slot-matrix linear map.
 ///
 /// One-dimensional: the matrix has `slots × slots` shape and every diagonal is a
@@ -201,6 +179,31 @@ impl<T> Diagonals<T> {
     /// True when no diagonal is stored.
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
+    }
+
+    /// Left-rotates `src` by the rotation `k` of the Galois element `galois` into `out`:
+    /// `out[j] = src[(j + k) mod src.len()]`.
+    ///
+    /// The slot-rotation convention of the diagonals, `rot(v, k)[j] = v[(j+k) mod n]`, on a
+    /// slice that need not be a stored diagonal: diagonal-map flavors built on this type
+    /// (e.g. the CKKS `ComplexDiagonals`) apply their baby and giant pre-rotations with it,
+    /// under the same convention as the homomorphic engine. `src` is read as a periodic
+    /// vector of a power-of-two length, so `out` may be any multiple of its length: one stored
+    /// period rotates into any replication of itself.
+    ///
+    /// # Panics
+    ///
+    /// When `galois` conjugates.
+    pub fn rotate_slots_into(src: &[T], galois: i64, out: &mut [T])
+    where
+        T: Clone,
+    {
+        let n = src.len();
+        let k = galois_rotation(galois, n) as usize;
+        debug_assert!(out.len().is_multiple_of(n));
+        for (j, slot) in out.iter_mut().enumerate() {
+            *slot = src[(j + k) % n].clone();
+        }
     }
 }
 
@@ -326,8 +329,8 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
                 let diag = self
                     .get(galois_compose(giant, baby, slots))
                     .expect("schedule references a missing diagonal");
-                rotate_slots_into(input, baby, &mut rot_in);
-                rotate_slots_into(diag, galois_inverse(giant, slots), &mut rot_diag);
+                Self::rotate_slots_into(input, baby, &mut rot_in);
+                Self::rotate_slots_into(diag, galois_inverse(giant, slots), &mut rot_diag);
                 for j in 0..slots {
                     let mut p = rot_in[j].clone();
                     p = p.mul(&rot_diag[j]);

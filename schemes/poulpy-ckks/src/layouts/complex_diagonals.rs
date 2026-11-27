@@ -29,7 +29,7 @@ use std::collections::BTreeSet;
 use poulpy_core::layouts::{
     DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
     LinearTransformationLayout, LinearTransformationStrategy, galois_compose, galois_inverse, galois_of_rotation,
-    galois_rotation, period_lcm, rotate_slots_into,
+    galois_rotation, period_lcm,
 };
 
 /// A complex slot-matrix linear map for CKKS.
@@ -265,8 +265,8 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                 let d = galois_compose(giant, baby, slots);
                 let dre = self.re.get(d).map_or(&zero_block[..], |v| v.as_slice());
                 let dim = self.im.get(d).map_or(&zero_block[..], |v| v.as_slice());
-                rotate_slots_into(dre, inverse, &mut pre_re);
-                rotate_slots_into(dim, inverse, &mut pre_im);
+                Diagonals::rotate_slots_into(dre, inverse, &mut pre_re);
+                Diagonals::rotate_slots_into(dim, inverse, &mut pre_im);
                 let plaintext = encode(&pre_re, &pre_im);
                 diagonals.push(LinearTransformationDiagonal {
                     baby_galois: baby,

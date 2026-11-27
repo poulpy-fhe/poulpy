@@ -33,7 +33,7 @@ Rotations are taken modulo the slot count of the transform, a power of two, so a
 `LinearTransformationLayout` lists the Galois elements of the non-zero diagonals (`galois`) with the slot count and the strategy.
 `LinearTransformationPlan` gives the baby steps (`baby_galois`, the identity first), the giant steps (`giant_galois`) and, per giant step, the baby steps it reads (`index`).
 `LinearTransformation` holds the encoded diagonals under the same elements (`baby_galois`, `LinearTransformationGiantStep::galois`, `LinearTransformationDiagonal::baby_galois`), and the prepared baby cache is keyed by them.
-The plaintext mirror `Diagonals<T>` and the slot helper `rotate_slots_into` take the elements of rotations only.
+The plaintext mirror `Diagonals<T>` and the slot helper `Diagonals::rotate_slots_into` take the elements of rotations only.
 
 ## Baby-Step Giant-Step factorization
 
