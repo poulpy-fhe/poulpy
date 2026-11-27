@@ -130,34 +130,34 @@ mod bootstrapping_presets {
 }
 
 mod replicated_bootstrapping_presets {
-    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::test_ckks_bootstrap_replicated_presets_with_client;
     // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
 
     #[test]
     #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
     fn ntt4x30() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx512>(52);
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT4x30Avx512, crate::NTT4x30Avx512>(52);
     }
 
     #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
     fn ntt4x30_rayon() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx512Rayon>(52);
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT4x30Avx512Rayon, crate::NTT4x30Avx512Rayon>(52);
     }
 
     #[cfg(feature = "enable-ifma")]
     #[test]
     #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
     fn ifma() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT3x42Ifma, crate::NTT3x42Ifma>(52);
     }
 
     #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
     #[test]
     #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
     fn ifma_rayon() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT3x42IfmaRayon, crate::NTT3x42IfmaRayon>(52);
     }
 }
 

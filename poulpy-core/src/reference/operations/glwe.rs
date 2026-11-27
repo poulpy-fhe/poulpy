@@ -12,8 +12,8 @@ use poulpy_hal::{
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRBackendRef,
         CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, Ring, ScratchArena, Standard,
-        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
         vec_znx_backend_ref_from_ref,
     },
 };
@@ -31,6 +31,7 @@ use crate::{
     layouts::{
         Base2K, DiagonalOperand, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey,
         IntPolyInfos, LWEInfos, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef},
     },
     reference::keyswitching::GGLWEProductReference,
 };
@@ -59,231 +60,6 @@ where
     let cols = res.data.cols();
     for col in 0..cols {
         module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, col, &mut scratch.borrow());
-    }
-}
-
-/// HAL-based reference implementation, independently callable from backend overrides.
-pub trait GLWEMulConstReference<BE: Backend, Rg: Ring = Standard> {
-    fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos;
-
-    fn glwe_mul_const_reference<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
-        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
-
-    fn glwe_mul_const_assign_reference<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
-
-    fn glwe_const_combination_tmp_bytes_reference(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize;
-
-    fn glwe_const_combination_reference(
-        &self,
-        res: &mut VecZnxBackendMut<'_, BE, Rg>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[crate::oep::ConstTerm<'_, BE, Rg>],
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-}
-
-impl<BE: Backend, Rg: Ring> GLWEMulConstReference<BE, Rg> for Module<BE>
-where
-    Self: CnvOps<BE, Rg> + VecZnxBigBytesOf + VecZnxBigNormalize<BE, Rg> + VecZnxBigNormalizeTmpBytes,
-    Self: VecZnxCopy<BE, Rg> + GLWENormalize<BE, Rg> + VecZnxRsh<BE, Rg> + VecZnxRshTmpBytes,
-{
-    fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos,
-    {
-        let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
-
-        let b_size = b.size();
-        // Offset-0 maximum of the runtime BIG span `a.size() + b_size - cnv_offset_hi`.
-        let res_dft_size: usize = a.size() + b_size;
-        let lvl_0: usize = self.vec_znx_big_bytes_of(n, 1, res_dft_size) + BE::vec_znx_bytes_of(n, 1, res.size());
-        let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(0, res_dft_size, a.size(), b_size);
-        let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
-        let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
-
-        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a)) + (lvl_0 + lvl_1).max(self.glwe_normalize_tmp_bytes())
-    }
-
-    fn glwe_mul_const_reference<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
-        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
-    {
-        let scratch = scratch.borrow();
-        assert_eq!(res.rank(), a.rank());
-        let b_size = b.size();
-        assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, a, b),
-            "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_mul_const_tmp_bytes_reference(res, a, b)
-        );
-        let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
-        let a = if a.is_canonical() {
-            a.to_backend_ref()
-        } else {
-            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
-            a_tmp.to_backend_ref()
-        };
-        res.set_canonical(true);
-
-        let cols: usize = res.rank().as_usize() + 1;
-        let a_base2k: usize = a.base2k().as_usize();
-        let res_base2k: usize = res.base2k().as_usize();
-        let res_k = res.k().as_usize();
-
-        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
-
-        let res_dft_size = a.size() + b_size - cnv_offset_hi;
-
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, res_dft_size);
-        let b_backend = b.to_backend_ref();
-        for i in 0..cols {
-            {
-                let mut scratch_iter = scratch.borrow();
-                let mut res_big_backend = res_big.to_backend_mut();
-                self.cnv_by_const_apply(
-                    cnv_offset_hi,
-                    &mut res_big_backend,
-                    0,
-                    &a.data,
-                    i,
-                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE, Rg>(&b_backend.data),
-                    0,
-                    b_coeff,
-                    &mut scratch_iter,
-                );
-            }
-            let res_big_ref = res_big.to_backend_ref();
-            let mut res_backend = res.to_backend_mut();
-            let mut scratch_iter = scratch.borrow();
-            self.vec_znx_big_normalize(
-                &mut res_backend.data,
-                res_base2k,
-                res_k,
-                cnv_offset_lo,
-                i,
-                &res_big_ref,
-                a_base2k,
-                0,
-                &mut scratch_iter,
-            );
-        }
-    }
-
-    fn glwe_mul_const_assign_reference<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
-    {
-        let mut scratch = scratch.borrow();
-        assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, res, b),
-            "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_mul_const_tmp_bytes_reference(res, res, b)
-        );
-        if !res.is_canonical() {
-            self.glwe_normalize_assign(res, &mut scratch);
-        }
-
-        let cols: usize = res.rank().as_usize() + 1;
-        let res_base2k: usize = res.base2k().as_usize();
-        let res_k = res.k().as_usize();
-
-        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
-
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, res.size());
-        let b_backend = b.to_backend_ref();
-        for i in 0..cols {
-            {
-                let res_backend = res.to_backend_ref();
-                let mut scratch_iter = scratch.borrow();
-                let mut res_big_backend = res_big.to_backend_mut();
-                self.cnv_by_const_apply(
-                    cnv_offset_hi,
-                    &mut res_big_backend,
-                    0,
-                    &res_backend.data,
-                    i,
-                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE, Rg>(&b_backend.data),
-                    0,
-                    b_coeff,
-                    &mut scratch_iter,
-                );
-            }
-            let res_big_ref = res_big.to_backend_ref();
-            let mut res_backend = res.to_backend_mut();
-            let mut scratch_iter = scratch.borrow();
-            self.vec_znx_big_normalize(
-                &mut res_backend.data,
-                res_base2k,
-                res_k,
-                cnv_offset_lo,
-                i,
-                &res_big_ref,
-                res_base2k,
-                0,
-                &mut scratch_iter,
-            );
-        }
-    }
-
-    fn glwe_const_combination_tmp_bytes_reference(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize {
-        glwe_const_combination_tmp_bytes_reference(self, acc_size, a_size, b_size)
-    }
-
-    fn glwe_const_combination_reference(
-        &self,
-        res: &mut VecZnxBackendMut<'_, BE, Rg>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[crate::oep::ConstTerm<'_, BE, Rg>],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        glwe_const_combination_reference(self, res, base2k, res_k, acc_size, terms, scratch)
     }
 }
 
@@ -409,7 +185,6 @@ where
                     i,
                     &b_live,
                     0,
-                    0,
                     &mut scratch.borrow(),
                 );
                 let mut res_backend = res.to_backend_mut();
@@ -520,7 +295,6 @@ where
                         &res_live,
                         i,
                         &a_live,
-                        0,
                         0,
                         &mut scratch.borrow(),
                     );
@@ -680,9 +454,9 @@ where
                     for col in 0..cols {
                         let mut big = big.to_backend_mut();
                         if index == 0 {
-                            self.cnv_by_const_apply(cnv_offset, &mut big, col, &a_live, col, b, 0, 0, scratch);
+                            self.cnv_by_const_apply(cnv_offset, &mut big, col, &a_live, col, b, 0, scratch);
                         } else {
-                            self.cnv_by_const_apply_add(cnv_offset, &mut big, col, &a_live, col, b, 0, 0, scratch);
+                            self.cnv_by_const_apply_add(cnv_offset, &mut big, col, &a_live, col, b, 0, scratch);
                         }
                     }
                 };
@@ -777,29 +551,6 @@ where
         }
         res.set_canonical(true);
     }
-
-    fn glwe_plain_combination_tmp_bytes_reference(
-        &self,
-        cols: usize,
-        res_size: usize,
-        acc_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        glwe_plain_combination_tmp_bytes_reference(self, cols, res_size, acc_size, a_size, b_size)
-    }
-
-    fn glwe_plain_combination_reference(
-        &self,
-        res: &mut VecZnxBackendMut<'_, BE, Rg>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[crate::oep::PlainTerm<'_, BE, Rg>],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        glwe_plain_combination_reference(self, res, base2k, res_k, acc_size, terms, scratch)
-    }
 }
 
 /// HAL-based reference implementation, independently callable from backend overrides.
@@ -839,25 +590,6 @@ pub trait GLWEMulPlainReference<BE: Backend, Rg: Ring = Standard> {
         R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
         A: GLWELeftOperandRef<BE, Rg>,
         B: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos;
-
-    fn glwe_plain_combination_tmp_bytes_reference(
-        &self,
-        cols: usize,
-        res_size: usize,
-        acc_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-
-    fn glwe_plain_combination_reference(
-        &self,
-        res: &mut VecZnxBackendMut<'_, BE, Rg>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[crate::oep::PlainTerm<'_, BE, Rg>],
-        scratch: &mut ScratchArena<'_, BE>,
-    );
 }
 
 /// Portable tensor composition helper; specialize [`crate::oep::GLWETensoringImpl`] to replace it.
@@ -2110,12 +1842,16 @@ pub(crate) const ONE_PASS_VARIANCE_SLACK: f64 = 1.0 / 16.0;
 
 /// Whether the one-pass relinearization against `tsk` keeps the noise of the two-step path.
 ///
-/// Where `lo = cnv_offset mod base2k > 0` and `d2` holds digits past the gadget, the one-pass path is kept only if
-/// its modeled variance exceeds the two-step one by at most [`ONE_PASS_VARIANCE_SLACK`] (see
+/// Where `lo = cnv_offset mod base2k > 0` and `d2` holds digits past the gadget or the result is wider than the
+/// operands, the one-pass path is kept only if its modeled variance exceeds the two-step one by at most
+/// [`ONE_PASS_VARIANCE_SLACK`] (see
 /// [`var_noise_glwe_mul_relinearize`](crate::reference::noise::var_noise_glwe_mul_relinearize)).
 /// The secret's second moment and the key error are read from the noise metadata of `tsk`: a key without it, or
 /// with a secret of unknown law, takes the two-step path. The operands' errors are floored at their rounding at
-/// their width, which vanishes once the product is lifted past it.
+/// their width, which vanishes once the product is lifted past it. A tensor resolved at a result wider than the
+/// operands is not rounded where it holds the product whole, from `left_k + right_k - cnv_offset` bits on; the model of
+/// a narrower result keeps its tensor's rounding, even at `cnv_offset >= min(left_k, right_k)` where that tensor is
+/// exact too, so the routes and bits of the narrow products are those of the two-step model.
 #[allow(clippy::too_many_arguments)]
 fn one_pass_keeps_two_step_noise<Rg: Ring>(
     tsk: &crate::layouts::GLWETensorKeyPreparedBackendRef<'_, impl Backend, Rg>,
@@ -2129,7 +1865,8 @@ fn one_pass_keeps_two_step_noise<Rg: Ring>(
     res_k: TorusPrecision,
 ) -> bool {
     let lo = cnv_offset % base2k;
-    if lo == 0 || dft_size * base2k <= tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
+    // The key error lifted by `2^lo` stays under the rounding of a result no wider than the operands only.
+    if lo == 0 || (dft_size * base2k <= tsk.dnum().as_usize() * tsk.k_digit().as_usize() && res_k <= left_k.max(right_k)) {
         return true;
     }
     let Some(noise) = tsk.noise() else {
@@ -2164,10 +1901,26 @@ fn one_pass_keeps_two_step_noise<Rg: Ring>(
         var_operands,
         lo,
         tensor_k.as_usize(),
+        res_k > left_k.max(right_k) && tensor_k.as_usize() + cnv_offset >= left_k.as_usize() + right_k.as_usize(),
         dft_size * base2k,
         res_k.as_usize(),
     );
     one_pass <= two_step * (1.0 + ONE_PASS_VARIANCE_SLACK)
+}
+
+/// Width a product of operands up to `operands_k` is resolved at into a result of `res_k` bits: the result's where it
+/// is wider, as far as `tsk` decomposes exactly.
+pub(crate) fn product_tensor_k(operands_k: TorusPrecision, res_k: TorusPrecision, tsk: &impl GGLWEInfos) -> TorusPrecision {
+    operands_k.max(res_k.min(tsk.gglwe_layout().max_input_k()))
+}
+
+/// A tensor key looked up once, the source of every product it serves.
+pub(crate) struct Resolved<'k, 'a, BE: Backend + 'a, Rg: Ring>(pub(crate) &'k GLWETensorKeyPreparedBackendRef<'a, BE, Rg>);
+
+impl<'a, BE: Backend + 'a, Rg: Ring> GetTensorKey<BE, Rg> for Resolved<'_, 'a, BE, Rg> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
+        Ok(GLWETensorKeyPrepared(GGLWEPreparedToBackendRef::to_backend_ref(&self.0)))
+    }
 }
 
 /// The limbs and route of a one-pass product, from [`one_pass_shape`].
@@ -2214,10 +1967,13 @@ pub(crate) fn one_pass_shape<BE: Backend, Rg: Ring>(
         cnv_offset_lo,
     );
     let output_size = gglwe_product_output_size(res_infos, tensor_infos, tsk);
+    // d2 is switched `cnv_offset mod base2k` bits under the result: one more output limb than the two-step path when
+    // the alignment adds a limb to d2, or when the result is wider than the operands.
+    let wider = cnv_offset_lo > 0 && res_infos.k > left_k.max(right_k);
+    let extra = dft_size.saturating_sub(tensor_size).max(usize::from(wider));
     OnePassShape {
         dft_size,
-        // One more output limb than the two-step path when the alignment adds a limb to d2.
-        ks_size: (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size()),
+        ks_size: (output_size + extra).min(tsk.size()),
         one_pass: res_infos.rank.as_usize() == 1
             && cnv_offset >= base2k
             && tsk.base2k() == res_infos.base2k
@@ -2263,6 +2019,9 @@ where
     let n: usize = operand_degree(module.n(), &[res.n(), tsk.n()]);
     let base2k = res.base2k().as_usize();
     let max_size = a_size.max(b_size);
+    // The gate may take the tensor route into a result wider than the operands, whatever the gadget covers.
+    let tensor_route = res.k() > tensor_k;
+    let tensor_k = product_tensor_k(tensor_k, res.k(), tsk);
     let tensor_infos = GLWELayout {
         n: res.n(),
         base2k: res.base2k(),
@@ -2295,7 +2054,7 @@ where
             dft_size,
             tsk,
             false,
-            false,
+            tensor_route,
         ));
 
     // A sum holds a second set of product columns while each later pair is formed. A prepared form reads its operands
@@ -2481,8 +2240,10 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H, Rg: Ring>(
             );
         }
     }
-    // The width the two-step path gives its tensor intermediate.
-    let tensor_k = left_k.max(right_k);
+    // The key is looked up at the operands' width.
+    let operands_k = left_k.max(right_k);
+    let tsk = &tsk.get_tensor_key(operands_k).unwrap_or_else(|e| panic!("{e}"));
+    let tensor_k = product_tensor_k(operands_k, res_k, tsk);
     let tensor_infos = GLWELayout {
         n: res.n(),
         base2k: res.base2k(),
@@ -2493,9 +2254,6 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H, Rg: Ring>(
         k: res_k,
         ..tensor_infos
     };
-
-    let tsk_source = tsk;
-    let tsk = &tsk.get_tensor_key(tensor_k).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(tsk.base2k().as_usize(), base2k, "tsk.base2k() != res.base2k()");
     assert_eq!(tsk.rank_out().as_usize(), 1, "rank 1 only");
     let scratch = scratch.borrow();
@@ -2509,7 +2267,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H, Rg: Ring>(
             *summed,
         ),
     };
-    let bytes = one_pass_tmp_bytes(module, &res_infos, a_size, b_size, tensor_k, tsk, prepared_operands, summed);
+    let bytes = one_pass_tmp_bytes(module, &res_infos, a_size, b_size, operands_k, tsk, prepared_operands, summed);
     assert!(
         scratch.available() >= bytes,
         "scratch.available(): {} < {query}: {bytes}",
@@ -2656,7 +2414,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H, Rg: Ring>(
         &mut diag,
         &mut cross,
         &shape,
-        tsk_source,
+        &Resolved(tsk),
         &mut scratch,
         None,
     );
@@ -4193,77 +3951,6 @@ where
     }
 }
 
-/// Forwards every method of [`GLWEMulConstReference`] to its HAL-based reference implementation.
-///
-/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
-#[macro_export]
-macro_rules! impl_glwe_mul_const_reference_full {
-    ($be:ty) => {
-        $crate::impl_glwe_mul_const_reference_full!($be, ::poulpy_hal::layouts::Standard);
-        $crate::impl_glwe_mul_const_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
-    };
-    ($be:ty, $ring:ty) => {
-        unsafe impl $crate::oep::GLWEMulConstImpl<$ring> for $be {
-    fn glwe_mul_const_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
-    where
-        R: $crate::layouts::GLWEInfos,
-        A: $crate::layouts::GLWEInfos,
-        B: $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_tmp_bytes_reference::<R, A, B>(module, res, a, b)
-        }
-
-    fn glwe_mul_const<R, A, B>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
-        A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
-        B: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_reference::<R, A, B>(module, cnv_offset, res, a, b, b_coeff, scratch)
-        }
-
-    fn glwe_mul_const_assign<R, B>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
-        B: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_assign_reference::<R, B>(module, cnv_offset, res, b, b_coeff, scratch)
-        }
-
-            fn glwe_const_combination_tmp_bytes(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                acc_size: usize,
-                a_size: usize,
-                b_size: usize,
-            ) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
-            }
-
-            fn glwe_const_combination(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be, $ring>,
-                base2k: usize,
-                res_k: usize,
-                acc_size: usize,
-                terms: &[$crate::oep::ConstTerm<'_, $be, $ring>],
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
-            }
-        }
-    };
-}
-
 /// Forwards every method of [`GLWEMulPlainReference`] to its HAL-based reference implementation.
 ///
 /// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
@@ -4313,29 +4000,6 @@ macro_rules! impl_glwe_mul_plain_reference_full {
         B: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::IntPolyInfos + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_mul_plain_sum_reference::<R, A, B>(module, res, a, b, offsets, scratch)
         }
-
-            fn glwe_plain_combination_tmp_bytes(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                cols: usize,
-                res_size: usize,
-                acc_size: usize,
-                a_size: usize,
-                b_size: usize,
-            ) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_plain_combination_tmp_bytes_reference(module, cols, res_size, acc_size, a_size, b_size)
-            }
-
-            fn glwe_plain_combination(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be, $ring>,
-                base2k: usize,
-                res_k: usize,
-                acc_size: usize,
-                terms: &[$crate::oep::PlainTerm<'_, $be, $ring>],
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_plain_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
-            }
         }
     };
 }
@@ -4601,250 +4265,4 @@ macro_rules! impl_glwe_normalize_reference_full {
         }
         }
     };
-}
-
-/// Scratch of [`glwe_const_combination_reference`]: the accumulator and one shifted constant
-/// beside the products, shift and normalization.
-pub fn glwe_const_combination_tmp_bytes_reference<BE, M, Rg: Ring>(
-    module: &M,
-    acc_size: usize,
-    a_size: usize,
-    b_size: usize,
-) -> usize
-where
-    BE: Backend,
-    M: ModuleN + CnvOps<BE, Rg> + VecZnxBigNormalize<BE, Rg> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE, Rg> + VecZnxRshTmpBytes,
-{
-    let shifted_size = b_size + 1;
-    BE::scratch_aligned(BE::vec_znx_big_bytes_of(module.n(), 1, acc_size))
-        + BE::scratch_aligned(BE::vec_znx_bytes_of(1, 1, shifted_size))
-        + module
-            .cnv_by_const_apply_tmp_bytes(0, acc_size, a_size, shifted_size)
-            .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, a_size, shifted_size))
-            .max(module.vec_znx_rsh_tmp_bytes(shifted_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes())
-}
-
-/// Reference of [`GLWEMulConstImpl::glwe_const_combination`](crate::oep::GLWEMulConstImpl::glwe_const_combination),
-/// which `impl_glwe_mul_const_reference_full!` forwards to: per column, the terms shifted and
-/// accumulated one by one, then one normalization.
-pub fn glwe_const_combination_reference<BE, M, Rg: Ring>(
-    module: &M,
-    res: &mut VecZnxBackendMut<'_, BE, Rg>,
-    base2k: usize,
-    res_k: usize,
-    acc_size: usize,
-    terms: &[crate::oep::ConstTerm<'_, BE, Rg>],
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: ModuleN + CnvOps<BE, Rg> + VecZnxBigNormalize<BE, Rg> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE, Rg> + VecZnxRshTmpBytes,
-{
-    assert!(!terms.is_empty(), "glwe_const_combination: no term");
-    assert!(
-        terms.iter().all(|term| term.shift < base2k),
-        "glwe_const_combination: a shift is not below base2k"
-    );
-    let shifted_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0) + 1;
-    let (mut acc, scratch) = scratch.borrow().take_vec_znx_big_scratch(res.n(), 1, acc_size);
-    let (mut shifted, mut scratch) = scratch.take_vec_znx_scratch(1, 1, shifted_size);
-    for col in 0..res.cols() {
-        for (index, term) in terms.iter().enumerate() {
-            let mut acc = acc.to_backend_mut();
-            if term.shift == 0 {
-                const_combination_accumulate(
-                    module,
-                    index == 0,
-                    &mut acc,
-                    col,
-                    term,
-                    &term.b,
-                    term.b_col,
-                    term.b_coeff,
-                    &mut scratch,
-                );
-            } else {
-                module.vec_znx_rsh(
-                    base2k,
-                    term.shift,
-                    &mut shifted.to_backend_mut(),
-                    0,
-                    &vec_znx_backend_ref_from_ref::<BE, Rg>(&term.b).window_coeffs(term.b_coeff, 1),
-                    term.b_col,
-                    &mut scratch.borrow(),
-                );
-                const_combination_accumulate(
-                    module,
-                    index == 0,
-                    &mut acc,
-                    col,
-                    term,
-                    &shifted.to_backend_ref(),
-                    0,
-                    0,
-                    &mut scratch,
-                );
-            }
-        }
-        module.vec_znx_big_normalize(
-            res,
-            base2k,
-            res_k,
-            0,
-            col,
-            &acc.to_backend_ref(),
-            base2k,
-            0,
-            &mut scratch.borrow(),
-        );
-    }
-}
-
-/// Scratch of [`glwe_plain_combination_reference`]: the transform-domain accumulator beside one prepared, possibly
-/// shifted plaintext and the products, then the fused inverse transform and normalization of each column into a `res`
-/// of `res_size` limbs.
-pub fn glwe_plain_combination_tmp_bytes_reference<BE, M, Rg: Ring>(
-    module: &M,
-    cols: usize,
-    res_size: usize,
-    acc_size: usize,
-    a_size: usize,
-    b_size: usize,
-) -> usize
-where
-    BE: Backend,
-    M: ModuleN + CnvOps<BE, Rg> + VecZnxRshTmpBytes + VecZnxIdftNormalizeTmpBytes,
-{
-    let n = module.n();
-    let g_size = b_size + 1;
-    let shifted = BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, g_size))
-        + module
-            .vec_znx_rsh_tmp_bytes(g_size)
-            .max(module.cnv_pvec_right_prepare_tmp_bytes(g_size, g_size));
-    let term = BE::scratch_aligned(BE::cnv_pvec_right_bytes_of(n, 1, g_size, PrepareHint::OneShot))
-        + shifted
-            .max(module.cnv_pvec_right_prepare_tmp_bytes(g_size, g_size))
-            .max(module.cnv_apply_dft_tmp_bytes(0, acc_size, a_size, g_size))
-            .max(module.cnv_apply_dft_add_tmp_bytes(0, acc_size, a_size, g_size));
-    BE::scratch_aligned(BE::vec_znx_dft_bytes_of(n, cols, acc_size))
-        + term.max(module.vec_znx_idft_normalize_tmp_bytes(res_size, acc_size))
-}
-
-/// Reference of [`GLWEMulPlainImpl::glwe_plain_combination`](crate::oep::GLWEMulPlainImpl::glwe_plain_combination),
-/// which `impl_glwe_mul_plain_reference_full!` forwards to: the terms in order, each plaintext shifted and prepared
-/// once and applied to every column in the transform domain, then per column one fused inverse transform and
-/// normalization.
-pub fn glwe_plain_combination_reference<BE, M, Rg: Ring>(
-    module: &M,
-    res: &mut VecZnxBackendMut<'_, BE, Rg>,
-    base2k: usize,
-    res_k: usize,
-    acc_size: usize,
-    terms: &[crate::oep::PlainTerm<'_, BE, Rg>],
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: ModuleN
-        + CnvOps<BE, Rg>
-        + VecZnxRsh<BE, Rg>
-        + VecZnxRshTmpBytes
-        + VecZnxIdftNormalize<BE, Rg>
-        + VecZnxIdftNormalizeTmpBytes,
-{
-    assert!(!terms.is_empty(), "glwe_plain_combination: no term");
-    assert!(
-        terms.iter().all(|term| term.shift < base2k),
-        "glwe_plain_combination: a shift is not below base2k"
-    );
-    let (n, cols) = (res.n(), res.cols());
-    assert!(
-        terms.iter().all(|term| term.a.cols() == cols),
-        "glwe_plain_combination: a term does not hold the columns of res"
-    );
-    let a_size = terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
-    let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
-    let bytes = glwe_plain_combination_tmp_bytes_reference(module, cols, res.size(), acc_size, a_size, b_size);
-    assert!(
-        scratch.available() >= bytes,
-        "scratch.available(): {} < GLWEMulPlain::glwe_plain_combination_tmp_bytes: {bytes}",
-        scratch.available()
-    );
-    let (mut acc, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, cols, acc_size);
-    for (index, term) in terms.iter().enumerate() {
-        let (b_n, g_size) = (term.b.n(), term.b.size() + usize::from(term.shift != 0));
-        let (mut right, mut scratch_term) = scratch
-            .borrow()
-            .take_cnv_pvec_right_scratch(b_n, 1, g_size, PrepareHint::OneShot);
-        if term.shift == 0 {
-            module.cnv_pvec_right_prepare(&mut right, &term.b, &mut scratch_term);
-        } else {
-            let (mut g, mut scratch_g) = scratch_term.borrow().take_vec_znx_scratch(b_n, 1, g_size);
-            module.vec_znx_rsh(
-                base2k,
-                term.shift,
-                &mut g.to_backend_mut(),
-                0,
-                &term.b,
-                0,
-                &mut scratch_g.borrow(),
-            );
-            module.cnv_pvec_right_prepare(&mut right, &g.to_backend_ref(), &mut scratch_g);
-        }
-        let b = right.to_backend_ref();
-        for col in 0..cols {
-            let mut acc_bk = acc.to_backend_mut();
-            if index == 0 {
-                module.cnv_apply_dft(term.cnv_offset, &mut acc_bk, col, &term.a, col, &b, 0, 1, &mut scratch_term);
-            } else {
-                module.cnv_apply_dft_add(term.cnv_offset, &mut acc_bk, col, &term.a, col, &b, 0, 1, &mut scratch_term);
-            }
-        }
-    }
-    let mut acc = acc.to_backend_mut();
-    for col in 0..cols {
-        module.vec_znx_idft_normalize(res, base2k, res_k, 0, col, &mut acc, col, base2k, None, &mut scratch.borrow());
-    }
-}
-
-/// Adds, or with `first` writes, the product of `term.a[col]` by `b[b_col][b_coeff]` into `acc`.
-#[allow(clippy::too_many_arguments)]
-fn const_combination_accumulate<BE, M, Rg: Ring>(
-    module: &M,
-    first: bool,
-    acc: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, BE, Rg>,
-    col: usize,
-    term: &crate::oep::ConstTerm<'_, BE, Rg>,
-    b: &VecZnxBackendRef<'_, BE, Rg>,
-    b_col: usize,
-    b_coeff: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: ModuleN + CnvOps<BE, Rg> + VecZnxBigNormalize<BE, Rg> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE, Rg> + VecZnxRshTmpBytes,
-{
-    if first {
-        module.cnv_by_const_apply(
-            term.cnv_offset,
-            acc,
-            0,
-            &term.a,
-            col,
-            b,
-            b_col,
-            b_coeff,
-            &mut scratch.borrow(),
-        );
-    } else {
-        module.cnv_by_const_apply_add(
-            term.cnv_offset,
-            acc,
-            0,
-            &term.a,
-            col,
-            b,
-            b_col,
-            b_coeff,
-            &mut scratch.borrow(),
-        );
-    }
 }

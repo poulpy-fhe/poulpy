@@ -42,107 +42,11 @@ macro_rules! impl_add_cached_one {
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSInfos
+                    + ::poulpy_ckks::CKKSCtBounds
                     + ::poulpy_ckks::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
             {
                 ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_assign_reference(module, dst, a, scratch)
-            }
-
-            fn ckks_add_pt_vec_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_pt_vec_tmp_bytes_reference(
-                    module, res_size,
-                )
-            }
-
-            fn ckks_add_pt_vec_into<Dst, A, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                a: &A,
-                pt: &P,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_pt_vec_into_reference(
-                    module, dst, a, pt, scratch,
-                )
-            }
-
-            fn ckks_add_pt_vec_assign<Dst, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                pt: &P,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_pt_vec_assign_reference(
-                    module, dst, pt, scratch,
-                )
-            }
-
-            fn ckks_add_pt_const_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_pt_const_tmp_bytes_reference(
-                    module, res_size,
-                )
-            }
-
-            fn ckks_add_pt_const_into<Dst, A, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                dst_coeff: usize,
-                a: &A,
-                pt: &P,
-                pt_coeff: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_pt_const_into_reference(
-                    module, dst, dst_coeff, a, pt, pt_coeff, scratch,
-                )
-            }
-
-            fn ckks_add_pt_const_assign<Dst, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                dst_coeff: usize,
-                pt: &P,
-                pt_coeff: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::add::CKKSAddReference::<$be, $ring>::ckks_add_pt_const_assign_reference(
-                    module, dst, dst_coeff, pt, pt_coeff, scratch,
-                )
             }
 
             // The constant `1` comes from the module's cache instead of a host upload per call.
@@ -156,21 +60,18 @@ macro_rules! impl_add_cached_one {
                     + ::poulpy_ckks::CKKSCtBounds
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                let slot_layout = ::poulpy_ckks::GLWEPlaintextInfos::slot_layout(dst);
+                let bytes = ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_one_tmp_bytes(
+                    module,
+                    ::poulpy_core::layouts::LWEInfos::max_size(dst),
+                );
+                ::poulpy_ckks::oep::check_unit_shift::<_, _, $ring>("ckks_add_one_assign", module, &*dst, scratch, bytes)?;
                 let one = $crate::ckks_impl::one_plaintext::<_, $ring>(
                     module,
                     ::poulpy_core::layouts::LWEInfos::base2k(dst),
-                    slot_layout,
+                    ::poulpy_ckks::GLWEPlaintextInfos::slot_layout(dst),
                     ::poulpy_ckks::CKKSInfos::log_delta(dst),
                 )?;
-                match slot_layout {
-                    ::poulpy_ckks::SlotLayout::Full => {
-                        ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_pt_const_assign(module, dst, 0, &*one, 0, scratch)
-                    }
-                    ::poulpy_ckks::SlotLayout::Replicated(_) => {
-                        ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_pt_vec_assign(module, dst, &*one, scratch)
-                    }
-                }
+                ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_assign(module, dst, &*one, scratch)
             }
         }
     };
@@ -217,107 +118,11 @@ macro_rules! impl_sub_cached_one {
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSInfos
+                    + ::poulpy_ckks::CKKSCtBounds
                     + ::poulpy_ckks::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
             {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_assign_reference(module, dst, a, scratch)
-            }
-
-            fn ckks_sub_pt_vec_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_pt_vec_tmp_bytes_reference(
-                    module, res_size,
-                )
-            }
-
-            fn ckks_sub_pt_vec_into<Dst, A, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                a: &A,
-                pt: &P,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_pt_vec_into_reference(
-                    module, dst, a, pt, scratch,
-                )
-            }
-
-            fn ckks_sub_pt_vec_assign<Dst, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                pt: &P,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_pt_vec_assign_reference(
-                    module, dst, pt, scratch,
-                )
-            }
-
-            fn ckks_sub_pt_const_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_pt_const_tmp_bytes_reference(
-                    module, res_size,
-                )
-            }
-
-            fn ckks_sub_pt_const_into<Dst, A, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                dst_coeff: usize,
-                a: &A,
-                pt: &P,
-                pt_coeff: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + ::poulpy_ckks::CKKSCtBounds,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_pt_const_into_reference(
-                    module, dst, dst_coeff, a, pt, pt_coeff, scratch,
-                )
-            }
-
-            fn ckks_sub_pt_const_assign<Dst, P>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                dst_coeff: usize,
-                pt: &P,
-                pt_coeff: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> ::poulpy_ckks::CKKSResult<()>
-            where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_ckks::SetCKKSInfos,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_ckks::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
-            {
-                ::poulpy_ckks::reference::sub::CKKSSubReference::<$be, $ring>::ckks_sub_pt_const_assign_reference(
-                    module, dst, dst_coeff, pt, pt_coeff, scratch,
-                )
             }
 
             // The constant `1` comes from the module's cache instead of a host upload per call.
@@ -331,21 +136,18 @@ macro_rules! impl_sub_cached_one {
                     + ::poulpy_ckks::CKKSCtBounds
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                let slot_layout = ::poulpy_ckks::GLWEPlaintextInfos::slot_layout(dst);
+                let bytes = ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_one_tmp_bytes(
+                    module,
+                    ::poulpy_core::layouts::LWEInfos::max_size(dst),
+                );
+                ::poulpy_ckks::oep::check_unit_shift::<_, _, $ring>("ckks_sub_one_assign", module, &*dst, scratch, bytes)?;
                 let one = $crate::ckks_impl::one_plaintext::<_, $ring>(
                     module,
                     ::poulpy_core::layouts::LWEInfos::base2k(dst),
-                    slot_layout,
+                    ::poulpy_ckks::GLWEPlaintextInfos::slot_layout(dst),
                     ::poulpy_ckks::CKKSInfos::log_delta(dst),
                 )?;
-                match slot_layout {
-                    ::poulpy_ckks::SlotLayout::Full => {
-                        ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_pt_const_assign(module, dst, 0, &*one, 0, scratch)
-                    }
-                    ::poulpy_ckks::SlotLayout::Replicated(_) => {
-                        ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_pt_vec_assign(module, dst, &*one, scratch)
-                    }
-                }
+                ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_assign(module, dst, &*one, scratch)
             }
         }
     };

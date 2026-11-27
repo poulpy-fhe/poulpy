@@ -281,7 +281,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
@@ -293,7 +292,6 @@ where
             a_col,
             b,
             b_col,
-            b_coeff,
             &mut [],
         );
     }
@@ -318,7 +316,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
@@ -330,7 +327,6 @@ where
             a_col,
             b,
             b_col,
-            b_coeff,
             &mut [],
         );
     }

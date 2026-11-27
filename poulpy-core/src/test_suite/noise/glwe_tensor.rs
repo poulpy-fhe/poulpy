@@ -3,14 +3,11 @@ use poulpy_hal::{
         CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
-    layouts::{
-        Backend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchOwned, Standard, VecZnx, ZnxView, ZnxViewMut,
-    },
+    layouts::{Backend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchOwned, Standard, VecZnx, ZnxView},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
-use rand::Rng;
 use std::f64::consts::SQRT_2;
 
 use crate::api::{GLWESecretSampling, TransferInto};
@@ -18,7 +15,7 @@ use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_decrypt_chec
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, cnv_pvec_left_state, glwe_state, glwe_tensor_state};
 use crate::{
-    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum, GLWENormalize,
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEFill, GLWEMulPlain, GLWEMulRelinearizeSum, GLWENormalize,
     GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
     api::{
         GLWESecretPreparedFactory, GLWESecretTensorFromGLWESecret, GLWESecretTensorPreparedFactory, GLWETensorKeyPreparedFactory,
@@ -367,9 +364,9 @@ where
 /// The one-pass product against the two-step path when the tensor key covers exactly the operands' limbs.
 ///
 /// At an offset `k` of remainder `lo`, `d2` spans one limb more than the operands, beyond such a key's gadget. Squares
-/// and products of small messages, at widths of every remainder class tested and against keys of dsize 1 and 2, are
-/// held to the noise model of each path. Where the model rejects the one-pass path, and against a key without noise
-/// metadata, such products are the two-step product bit for bit.
+/// and products of small messages, at widths of every remainder class tested, into results narrower and wider than the
+/// operands and against keys of dsize 1 and 2, are held to the noise model of each path. Where the model rejects the
+/// one-pass path, and against a key without noise metadata, such products are the two-step product bit for bit.
 fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
@@ -478,12 +475,20 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
                 k: k.into(),
                 ..key_infos
             };
-            let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&infos);
             let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&infos);
-            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&infos);
+            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&GLWELayout {
+                k: (k + base2k / 2).into(),
+                ..infos
+            });
 
-            // A result at the operands' width, and one a limb narrower as a rescaled product is.
-            for res_k in [k, k - base2k] {
+            // A result at the operands' width, one a limb narrower as a rescaled product is, and one half a limb wider
+            // as a shaped product is, whose tensor is resolved at its width as far as the key decomposes.
+            for res_k in [k, k - base2k, k + base2k / 2] {
+                let tensor_k = k.max(res_k.min(tsk_infos.gglwe_layout().max_input_k().as_usize()));
+                let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&GLWELayout {
+                    k: tensor_k.into(),
+                    ..infos
+                });
                 let res_infos = GLWELayout {
                     k: res_k.into(),
                     ..infos
@@ -493,7 +498,7 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
                     module.glwe_plaintext_alloc_from_infos(&res_infos);
                 // The messages sit `r` bits above the offset `k`, and their square `r` bits under it, a few bits
                 // above the result's last bit.
-                let r = (k - res_k) / 2 + 4;
+                let r = k.saturating_sub(res_k) / 2 + 4;
                 let cnv_offset = k;
                 pt_in.encode_vec_i64(&data, TorusPrecision((k - r) as u32));
                 pt_want.encode_vec_i64(&square, TorusPrecision((k - 2 * r) as u32));
@@ -526,15 +531,16 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
                         var_key_err_mask,
                         var_operands,
                         lo,
-                        k,
+                        tensor_k,
+                        res_k > k && tensor_k >= k,
                         d2_k,
                         res_k,
                     )
                 };
                 let var_msg = n as f64 * crate::DEFAULT_SIGMA_XE.powi(2) * mean_square * (-2.0 * (k - r) as f64).exp2();
                 let (floor_one_pass, floor_two_step) = model(0.0);
-                let one_pass_kept =
-                    lo == 0 || d2_k <= cover || floor_one_pass <= floor_two_step * (1.0 + ONE_PASS_VARIANCE_SLACK);
+                let early = lo == 0 || (d2_k <= cover && res_k <= k);
+                let one_pass_kept = early || floor_one_pass <= floor_two_step * (1.0 + ONE_PASS_VARIANCE_SLACK);
                 let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&res_infos);
                 for square in [true, false] {
                     let role = if square { "square" } else { "product" };
@@ -550,7 +556,8 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
                     module.glwe_tensor_relinearize(&mut res, &tensor, &tsk_prep, &mut poisoned_scratch::<BE>(bytes).borrow());
                     let (two_step_max, two_step) = error(&res, &mut scratch);
                     assert!(
-                        two_step_max < 1 << 20 && two_step <= 0.5 * var_two_step.log2() + TENSOR_NOISE_MARGIN,
+                        two_step_max < 1 << (20 + res_k.saturating_sub(k))
+                            && two_step <= 0.5 * var_two_step.log2() + TENSOR_NOISE_MARGIN,
                         "two-step {role}, dsize {dsize}, k {k}, res_k {res_k}: error {two_step_max}, log2 std {two_step} \
                          against {}",
                         0.5 * var_two_step.log2()
@@ -576,7 +583,7 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
                     let same = have.data().raw() == res.data().raw();
                     one_pass_with(&outside, &mut have);
                     assert!(
-                        lo == 0 || d2_k <= cover || have.data().raw() == res.data().raw(),
+                        early || have.data().raw() == res.data().raw(),
                         "one-pass {role} against a key without noise metadata, dsize {dsize}, k {k}, res_k {res_k}"
                     );
                     one_pass_with(&tsk_prep, &mut have);
@@ -1741,147 +1748,6 @@ pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBa
                     |res| mixed(res, [&pt_small, &pt_dense], 1),
                 );
             }
-        }
-    }
-}
-
-pub fn test_glwe_mul_const<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
-where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE, Rg>
-        + GLWEDecrypt<BE, Rg>
-        + GLWESecretPreparedFactory<BE, Rg>
-        + GLWESub<BE, Rg>
-        + VecZnxNormalizeAssign<BE, Rg>
-        + VecZnxNormalize<BE, Rg>
-        + GLWEMulConst<BE, Rg>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-{
-    let base2k: usize = params.base2k;
-    let in_base2k: usize = base2k;
-    let out_base2k: usize = base2k;
-    let k: usize = 8 * base2k + 1;
-    let b_coeff: usize = 0;
-
-    for rank in 1_usize..=3 {
-        let n: usize = module.n();
-
-        let glwe_in_infos = GLWELayout {
-            n: n.into(),
-            base2k: in_base2k.into(),
-            k: k.into(),
-            rank: rank.into(),
-        };
-
-        let glwe_out_infos: GLWELayout = GLWELayout {
-            n: n.into(),
-            base2k: out_base2k.into(),
-            k: k.into(),
-            rank: rank.into(),
-        };
-
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_a: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-        let mut pt_b: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
-            module.glwe_plaintext_alloc(in_base2k.into(), (2 * in_base2k).into());
-        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            (module)
-                .glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
-                .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos)),
-        );
-        let mul_bytes = module.glwe_mul_const_tmp_bytes(&res, &a, &pt_b);
-
-        // Distinct seeds: with a shared one the secret, the mask and the error
-        // are all drawn from the same byte stream, correlating `s` with `a` and
-        // `e` and making the measured tensoring noise unrepresentative.
-        let mut source_xs: Source = Source::new([0u8; 32]);
-        let mut source_xe: Source = Source::new([1u8; 32]);
-        let mut source_xa: Source = Source::new([2u8; 32]);
-
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
-        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
-        module.glwe_secret_prepare(&mut sk_dft, &sk);
-
-        let scale: usize = 2 * in_base2k;
-
-        let a_size = pt_a.size();
-        module.vec_znx_fill_uniform_source(
-            17,
-            a_size * 17,
-            &mut vec_znx_backend_mut::<BE, Rg>(pt_a.data_mut()),
-            0,
-            &mut source_xa,
-        );
-
-        let mask = (1 << in_base2k) - 1;
-        for j in 0..1 {
-            let r = source_xa.next_u64() & mask;
-            pt_b.data_mut().at_mut(0, j)[b_coeff] = ((r << (64 - 17)) as i64) >> (64 - 17);
-        }
-
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> =
-            module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
-        bivariate_convolution_naive(
-            module,
-            in_base2k,
-            2,
-            &mut pt_want_base2k_in,
-            0,
-            pt_a.data(),
-            0,
-            pt_b.data(),
-            0,
-            &mut scratch.borrow(),
-        );
-
-        module.glwe_encrypt_sk(&mut a, &pt_a, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
-
-        for res_offset in 0..scale {
-            module.glwe_mul_const(
-                scale + res_offset,
-                &mut res,
-                &a,
-                &pt_b,
-                b_coeff,
-                &mut poisoned_scratch::<BE>(mul_bytes).borrow(),
-            );
-
-            glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
-            module.vec_znx_normalize(
-                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_want.data),
-                out_base2k,
-                k,
-                res_offset as i64,
-                0,
-                &vec_znx_backend_ref::<BE, Rg>(&pt_want_base2k_in),
-                in_base2k,
-                0,
-                &mut scratch.borrow(),
-            );
-
-            module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
-            module.vec_znx_normalize_assign(
-                pt_tmp.base2k().as_usize(),
-                pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
-                0,
-                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_tmp.data),
-                0,
-                &mut scratch.borrow(),
-            );
-
-            let noise_have: f64 = pt_tmp.stats().std().log2();
-            let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
-
-            assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
         }
     }
 }

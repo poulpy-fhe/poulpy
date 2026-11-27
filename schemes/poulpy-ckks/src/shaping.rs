@@ -22,12 +22,21 @@
 use std::{marker::PhantomData, sync::OnceLock};
 
 use anyhow::Context;
-use poulpy_core::layouts::{ReplicatedLayout, TorusPrecision};
-use poulpy_hal::layouts::{Ring, Standard};
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{GLWEToBackendRef, ReplicatedLayout, TorusPrecision},
+};
+use poulpy_hal::layouts::{Backend, HostDataMut, Ring, ScratchArena, Standard, VecZnx, ZnxViewMut, encode_i128_by_limb};
 
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use crate::{CKKSCompositionError, CKKSInfos, CKKSResult, Quad, SlotLayout, ckks_offset_unary, numerics::CKKSFloat};
+use crate::{
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, Quad, SetCKKSInfos, SlotLayout,
+    api::CKKSCopyOps,
+    ckks_offset_unary,
+    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext, replicated::layout_at},
+    numerics::CKKSFloat,
+};
 
 /// Largest [`ShapingProfile::max_pass_bits`], reached by `U = ±1`.
 pub const MAX_PASS_BITS: usize = 62;
@@ -561,6 +570,91 @@ pub(crate) fn product_depth(slot_layout: SlotLayout, log_delta: usize) -> Option
     }
 }
 
+/// A ciphertext shaped as `dst` at width `k`, for a result rounded into `dst`.
+pub(crate) fn take_wide<'a, BE: Backend + 'a, D: CKKSCtBounds, Rg: Ring>(
+    scratch: &'a mut ScratchArena<'_, BE>,
+    dst: &D,
+    k: usize,
+) -> (CKKSCiphertextViewMut<'a, BE, Rg>, ScratchArena<'a, BE>) {
+    let layout = layout_at(dst, k);
+    scratch.borrow().take_ckks_ciphertext_scratch(&layout, layout.meta)
+}
+
+/// The width of a copy of `a` at a budget of `log_budget` bits, `lambda` bits under its scale.
+pub(crate) fn wide_k(a: &impl CKKSCtBounds, lambda: usize, log_budget: usize) -> usize {
+    log_budget + a.log_delta() + lambda
+}
+
+/// Scratch of [`ckks_wide_copy`] beside `stage`, the scratch of the work on the copy, given its layout.
+pub(crate) fn ckks_wide_copy_tmp_bytes<BE: Backend, Rg: Ring, M: CKKSCopyOps<BE, Rg> + GLWEBytesOf<BE> + ?Sized>(
+    module: &M,
+    a: &impl CKKSCtBounds,
+    lambda: usize,
+    log_budget: usize,
+    stage: impl FnOnce(&CKKSLayout) -> usize,
+) -> usize {
+    let wide = layout_at(a, wide_k(a, lambda, log_budget));
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(&wide)) + module.ckks_copy_tmp_bytes(&wide, a).max(stage(&wide))
+}
+
+/// `a` copied at a budget of `log_budget` bits, relabelled `lambda` bits under its scale, beside the rest of the arena.
+pub(crate) fn ckks_wide_copy<'s, BE: Backend + 's, Rg: Ring, M: CKKSCopyOps<BE, Rg> + ?Sized>(
+    module: &M,
+    a: &(impl GLWEToBackendRef<BE, Rg> + CKKSCtBounds),
+    lambda: usize,
+    log_budget: usize,
+    scratch: &'s mut ScratchArena<'_, BE>,
+) -> CKKSResult<(CKKSCiphertextViewMut<'s, BE, Rg>, ScratchArena<'s, BE>)> {
+    let (mut x, mut rest) = take_wide(scratch, a, wide_k(a, lambda, log_budget));
+    x.set_log_budget(log_budget);
+    module.ckks_copy(&mut x, a, &mut rest)?;
+    x.set_log_delta(a.log_delta() + lambda);
+    Ok((x, rest))
+}
+
+/// Coefficient `t` of the constant `(re + i·im)·π_S` of a plaintext of degree `n` in `slot_layout`, `π_S = 1` on the
+/// full layout, or `InvalidOperand` for `op` when `n` is not a multiple of the period of the constant: that of `π_S`,
+/// or 1 for a real constant of the full layout.
+pub(crate) fn masked_constant<F: CKKSFloat, Rg: Ring>(
+    op: &'static str,
+    slot_layout: SlotLayout,
+    n: usize,
+    re: F,
+    im: F,
+) -> CKKSResult<impl Fn(usize) -> F> {
+    let log_r = match slot_layout {
+        SlotLayout::Replicated(layout) => layout.log_r(),
+        SlotLayout::Full => 0,
+    };
+    let r = 1usize << log_r;
+    let r_inv = F::from_usize(r)
+        .context("slot period is not representable by the encoding scalar")?
+        .recip();
+    let pi_s = move |j: usize| F::ckks_root_of_unity(j as u64, log_r as u32 + 2).0 * r_inv;
+    let period = if conjugate_invariant::<Rg>() || (r == 1 && im == F::zero()) {
+        r
+    } else {
+        2 * r
+    };
+    crate::ckks_ensure_operand!(
+        op,
+        n.is_multiple_of(period),
+        "a masked constant of period {r} needs a degree multiple of {period}, got {n}"
+    );
+    let stride = n / period;
+    Ok(move |t: usize| {
+        if !t.is_multiple_of(stride) {
+            return F::zero();
+        }
+        let j = t / stride;
+        if period == r {
+            return re * pi_s(j);
+        }
+        let shifted = if j >= r { pi_s(j - r) } else { -pi_s(j + r) };
+        re * pi_s(j) + im * shifted
+    })
+}
+
 /// Input width consumed by the automorphism, including a shifted shaping temporary.
 pub(crate) fn automorphism_input_k<Dst: CKKSInfos, Src: CKKSInfos>(dst: &Dst, src: &Src) -> TorusPrecision {
     if ckks_offset_unary(dst, src) != 0 {
@@ -606,6 +700,18 @@ where
     Ok(())
 }
 
+/// The refusals of [`shaped_quantize_into`] on `n` coefficients at `log_delta` and `log_budget` in `layout`, under `op`,
+/// for a caller that checks them before its first write.
+pub(crate) fn ensure_shaped_quantizable<Rg: Ring>(
+    op: &'static str,
+    layout: &ReplicatedLayout,
+    n: usize,
+    log_delta: usize,
+    log_budget: usize,
+) -> CKKSResult<()> {
+    shaping_pass::<Rg>(op, layout, n, log_delta, log_budget).map(|_| ())
+}
+
 /// The shaping pass of [`shaped_quantize_into`] for `coeffs` and its shaping
 /// depth, checked before any quantization and refused under `op`.
 fn shaping_pass<Rg: Ring>(
@@ -634,6 +740,44 @@ fn shaping_pass<Rg: Ring>(
     Ok((profile, lambda))
 }
 
+/// Writes `coeffs`, quantized with shaping at `layout`, into the first column of `data` at `k` bits in base
+/// `2^base2k`, and zeroes the limbs above: `encode_vec_i128` of the column, one class of `Y = X^stride` at a time.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the refusal's op, the column, its radix and width, the values, their layout and scales"
+)]
+pub(crate) fn shaped_encode_into<F: CKKSFloat, D: HostDataMut, Rg: Ring>(
+    op: &'static str,
+    data: &mut VecZnx<D, i64, Rg>,
+    base2k: usize,
+    k: usize,
+    coeffs: &[F],
+    layout: &ReplicatedLayout,
+    log_delta: usize,
+    log_budget: usize,
+) -> anyhow::Result<()> {
+    let n = coeffs.len();
+    let shape = data.shape();
+    let size = k.div_ceil(base2k);
+    assert!(size <= shape.size(), "the plaintext holds fewer limbs than its width");
+    let raw = data.raw_mut();
+    let (mut carry, mut limb) = ([0i64; MAX_COEFFS], [0i64; MAX_COEFFS]);
+    shaped_quantize_by_class::<_, Rg>(op, coeffs, layout, log_delta, log_budget, |r, values| {
+        let (m, stride) = (values.len(), n / values.len());
+        encode_i128_by_limb(base2k, k, values, &mut carry[..m], &mut limb[..m], |j, digits| {
+            let base = shape.scalar_offset(0, j) + r;
+            for (t, &digit) in digits.iter().enumerate() {
+                raw[base + stride * t] = digit;
+            }
+        });
+    })?;
+    for j in size..shape.size() {
+        let base = shape.scalar_offset(0, j);
+        raw[base..base + n].fill(0);
+    }
+    Ok(())
+}
+
 /// [`shaped_quantize_into`] class by class, on stack buffers: with `Y = X^stride`,
 /// `stride = coeffs.len() / period`, the shaping product acts on each class
 /// `r < stride` of coefficients `r + stride*t` as a negacyclic product of `2R`
@@ -643,18 +787,16 @@ fn shaping_pass<Rg: Ring>(
 /// whole-vector pass computes it. Every coefficient is quantized and checked
 /// before the first `emit(r, values)`, which receives the `period` results of
 /// class `r` in order of `t`. Bit for bit [`shaped_quantize_into`].
-pub(crate) fn shaped_quantize_by_class<F, Rg: Ring>(
+fn shaped_quantize_by_class<F: CKKSFloat, Rg: Ring>(
+    op: &'static str,
     coeffs: &[F],
     layout: &ReplicatedLayout,
     log_delta: usize,
     log_budget: usize,
     mut emit: impl FnMut(usize, &mut [i128]),
-) -> anyhow::Result<()>
-where
-    F: crate::api::CKKSEncodingScalar,
-{
+) -> anyhow::Result<()> {
     let n = coeffs.len();
-    let (profile, lambda) = shaping_pass::<Rg>("ckks_quantize_coeffs_into", layout, n, log_delta, log_budget)?;
+    let (profile, lambda) = shaping_pass::<Rg>(op, layout, n, log_delta, log_budget)?;
     let quantize = |x: F| {
         x.ckks_quantize(log_delta + lambda)
             .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
@@ -814,7 +956,7 @@ mod tests {
                 .unwrap();
                 let mut got = vec![0i128; n];
                 let stride = n / period;
-                shaped_quantize_by_class::<_, Rg>(&coeffs, &layout, log_delta, log_budget, |r, values| {
+                shaped_quantize_by_class::<_, Rg>("test", &coeffs, &layout, log_delta, log_budget, |r, values| {
                     for (t, &v) in values.iter().enumerate() {
                         got[r + stride * t] = v;
                     }

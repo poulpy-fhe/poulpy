@@ -152,17 +152,14 @@ impl<BE: Backend, Rg: Ring> GLWEBSGSOps<BE, Value<BE, Rg>, Value<BE, Rg>, Value<
         res.delta = seed.delta;
         Ok(())
     }
-    fn add_pt_const_assign(
+    fn add_pt_assign(
         &self,
         _: &Module<BE>,
         res: &mut Value<BE, Rg>,
-        res_coeff: usize,
-        coeffs: &Value<BE, Rg>,
-        idx: usize,
+        pt: &Value<BE, Rg>,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
-        assert_eq!(res_coeff, 0);
-        res.write(&[res.read(0) + coeffs.read(idx)]);
+        res.write(&[res.read(0) + pt.read(0)]);
         Ok(())
     }
     fn eval_baby_linear_combination(
@@ -170,7 +167,7 @@ impl<BE: Backend, Rg: Ring> GLWEBSGSOps<BE, Value<BE, Rg>, Value<BE, Rg>, Value<
         _: &Module<BE>,
         res: &mut Value<BE, Rg>,
         terms: &[(&Value<BE, Rg>, usize)],
-        coeffs: &Value<BE, Rg>,
+        coeffs: &[Value<BE, Rg>],
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<bool> {
         if self.fail {
@@ -179,33 +176,31 @@ impl<BE: Backend, Rg: Ring> GLWEBSGSOps<BE, Value<BE, Rg>, Value<BE, Rg>, Value<
         if !self.fused {
             return Ok(false);
         }
-        res.write(&[terms.iter().map(|(a, i)| a.read(0) * coeffs.read(*i)).sum()]);
+        res.write(&[terms.iter().map(|(a, i)| a.read(0) * coeffs[*i].read(0)).sum()]);
         res.budget = terms.last().unwrap().0.budget;
         Ok(true)
     }
-    fn mul_pt_const(
+    fn mul_pt(
         &self,
         _: &Module<BE>,
         res: &mut Value<BE, Rg>,
         a: &Value<BE, Rg>,
-        coeffs: &Value<BE, Rg>,
-        idx: usize,
+        pt: &Value<BE, Rg>,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
-        res.write(&[a.read(0) * coeffs.read(idx)]);
+        res.write(&[a.read(0) * pt.read(0)]);
         res.budget = a.budget;
         Ok(())
     }
-    fn mul_add_pt_const(
+    fn mul_add_pt(
         &self,
         _: &Module<BE>,
         res: &mut Value<BE, Rg>,
         a: &Value<BE, Rg>,
-        coeffs: &Value<BE, Rg>,
-        idx: usize,
+        pt: &Value<BE, Rg>,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
-        res.write(&[res.read(0) + a.read(0) * coeffs.read(idx)]);
+        res.write(&[res.read(0) + a.read(0) * pt.read(0)]);
         Ok(())
     }
     fn prepare_right(&self, _: &Module<BE>, a: &Value<BE, Rg>, _: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared> {
@@ -242,7 +237,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut scratch = ScratchOwned::<BE>::alloc(0); // The exact policy needs no arena storage.
-    let coeffs = value(module, &[3, -2, 4, 1], 30);
+    let coeffs = [3, -2, 4, 1].map(|c| value(module, &[c], 30));
     let mut basis = PowerBasis::new(Basis::Monomial, value(module, &[2], 29));
     for power in 2..=8 {
         basis.set_power(power, value(module, &[2_i64.pow(power as u32)], 30 - power));
@@ -264,7 +259,7 @@ where
             out.push((res.read(0), res.budget, res.delta));
         }
         let mut constant = value(module, &[-99], 1);
-        let constant_coeffs = value(module, &[3], 30);
+        let constant_coeffs = [value(module, &[3], 30)];
         module
             .glwe_eval_baby_step(
                 &ops,
@@ -277,12 +272,11 @@ where
             .unwrap();
         assert_eq!((constant.read(0), constant.budget), (3, 29));
         assert_eq!(constant.noise(), None);
-        ops.mul_pt_const(
+        ops.mul_pt(
             module,
             &mut constant,
             basis.get_stored(1).unwrap(),
-            &coeffs,
-            1,
+            &coeffs[1],
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -341,6 +335,12 @@ where
     assert!(error.to_string().contains("policy sentinel"));
     assert_eq!(res.read(0), -99);
     assert_eq!(res.noise(), before);
+    let no_coeffs: [Value<BE, Rg>; 0] = [];
+    let error = module
+        .glwe_eval_baby_step(&ops, &mut res, Parity::Full, &no_coeffs, &basis, &mut scratch.borrow())
+        .unwrap_err();
+    assert!(error.to_string().contains("a baby step holds no constant"), "{error}");
+    assert_eq!(res.noise(), before);
     basis.take_power(3);
     assert!(
         module
@@ -352,7 +352,7 @@ where
 }
 /// Both BSGS phases agree with the selected comparison backend and exact
 /// integer expectations, including fused/fallback policies, parity, hoisting,
-/// metadata, zero scratch, missing powers and policy-error propagation.
+/// metadata, zero scratch, an empty baby step, missing powers and policy-error propagation.
 pub fn test_polynomial_evaluation_parity<BR: ParityBackend<Rg>, BT: ParityBackend<Rg>, Rg: Ring>(
     _: &TestParams,
     _: &ParityShapes,

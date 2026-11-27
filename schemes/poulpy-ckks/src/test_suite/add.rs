@@ -2,7 +2,7 @@
 //!
 //! # Test inventory
 //!
-//! ## Operations-layer ct+ct (`GLWE<_, CKKS>::add`)
+//! ## Operations-layer ct+ct (`ckks_add_into`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
@@ -11,7 +11,7 @@
 //! | [`test_add_ct_delta_a_gt_b`] | `a.log_budget() > b.log_budget()` → a shifted to align with b |
 //! | [`test_add_ct_aligned_smaller_output`] | `offset > 0` (output one limb narrower than inputs) |
 //!
-//! ## Operations-layer ct+ct (`GLWE<_, CKKS>::add_assign`)
+//! ## Operations-layer ct+ct (`ckks_add_assign`)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
@@ -19,26 +19,26 @@
 //! | [`test_add_ct_assign_self_lt`] | `self.log_budget() < a.log_budget()` → a shifted to align with self |
 //! | [`test_add_ct_assign_self_gt`] | `self.log_budget() > a.log_budget()` → self shifted to align with a |
 //!
-//! ## Operations-layer ct + ZNX plaintext (`GLWE<_, CKKS>::add_pt_vec[_assign]`)
+//! ## Operations-layer ct + ZNX plaintext (`ckks_add_{into,assign}` of a plaintext)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
-//! | [`test_add_pt_vec_assign`] | in-place, `offset == 0` |
-//! | [`test_add_pt_vec_into_aligned`] | out-of-place, `offset == 0` |
-//! | [`test_add_pt_vec_into_delta_log_delta`] | out-of-place, plaintext encoded at lower `log_delta` |
-//! | [`test_add_pt_vec_into_smaller_output`] | out-of-place, `offset > 0` (output one limb narrower) |
-//! | [`test_add_pt_vec_into_lsh_alignment`] | out-of-place, plaintext `max_k` above budget → left-shift alignment |
+//! | [`test_add_assign_pt`] | in-place, `offset == 0` |
+//! | [`test_add_into_pt_aligned`] | out-of-place, `offset == 0` |
+//! | [`test_add_into_pt_delta_log_delta`] | out-of-place, plaintext encoded at lower `log_delta` |
+//! | [`test_add_into_pt_smaller_output`] | out-of-place, `offset > 0` (output one limb narrower) |
+//! | [`test_add_into_pt_lsh_alignment`] | out-of-place, plaintext `max_k` above budget → left-shift alignment |
 //!
-//! ## Operations-layer ct + packed plaintext constants (`GLWE<_, CKKS>::add_pt_const[_assign]`)
+//! ## Operations-layer ct + constants (`ckks_add_{into,assign}` of a degree-2 `[re, im]` or degree-1 plaintext)
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
-//! | [`test_add_const_into_aligned`] | out-of-place, aligned packed coeffs |
-//! | [`test_add_const_assign`] | in-place, aligned packed coeffs |
-//! | [`test_add_const_into_delta_log_delta`] | out-of-place, constant encoded at lower `log_delta` |
-//! | [`test_add_const_into_smaller_output`] | out-of-place, smaller output with packed-cst precision |
-//! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
-//! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
+//! | [`test_add_into_const_aligned`] | out-of-place, aligned complex constant |
+//! | [`test_add_assign_const`] | in-place, aligned complex constant |
+//! | [`test_add_into_const_delta_log_delta`] | out-of-place, constant encoded at lower `log_delta` |
+//! | [`test_add_into_const_smaller_output`] | out-of-place, smaller output with the constant's precision |
+//! | [`test_add_into_const_real_only`] | out-of-place, real constant of degree 1 |
+//! | [`test_add_into_const_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
 use crate::CKKSModuleInfos;
 use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSPlaintextAlloc};
 use poulpy_core::layouts::IntPolyInfos;
@@ -62,7 +62,7 @@ use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::Reference
 
 const DELTA_LOG_DELTA: usize = 12;
 
-// ─── ct+ct out-of-place (GLWE<_, CKKS>::add) ────────────────────────────────
+// ─── ct+ct out-of-place (ckks_add_into) ────────────────────────────────
 
 /// ct+ct out-of-place, aligned (same log_budget(), offset == 0 → glwe_add fast path).
 pub fn test_add_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -367,7 +367,7 @@ pub fn test_add_ct_aligned_smaller_output<BE, F, E>(
     );
 }
 
-// ─── ct+ct in-place (GLWE<_, CKKS>::add_assign) ────────────────────────────
+// ─── ct+ct in-place (ckks_add_assign) ────────────────────────────
 
 /// ct+ct in-place, aligned (same log_budget()).
 pub fn test_add_ct_assign_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -549,10 +549,10 @@ where
     );
 }
 
-// ─── ct + ZNX plaintext (GLWE<_, CKKS>::add_pt_vec[_assign]) ────────
+// ─── ct + ZNX plaintext (ckks_add_{into,assign} of a plaintext) ────────
 
 /// ct + ZNX plaintext, in-place.
-pub fn test_add_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+pub fn test_add_assign_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -590,14 +590,14 @@ where
     let expected_log_budget = ct.log_budget();
     let provenance = ct.noise();
     assert!(provenance.is_some());
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct.max_size()), |s| {
-        module.ckks_add_pt_vec_assign(&mut ct, &pt, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_add_assign(&mut ct, &pt, s)
     })
     .unwrap();
     assert_eq!(ct.noise(), None);
-    assert_ct_meta("add_pt_vec_assign", &ct, expected_log_delta, expected_log_budget);
+    assert_ct_meta("add_assign_pt", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
-        "add_pt_vec_assign",
+        "add_assign_pt",
         &params,
         module,
         &encoder,
@@ -610,7 +610,7 @@ where
 }
 
 /// ct + ZNX plaintext, out-of-place.
-pub fn test_add_pt_vec_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+pub fn test_add_into_pt_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -645,15 +645,15 @@ where
         &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct1, &pt, s)
     })
     .unwrap();
-    assert_unary_output_meta("add_pt_vec", &ct_res, params.k, &ct1);
+    assert_unary_output_meta("add_pt", &ct_res, params.k, &ct1);
     assert!(ct1.noise().is_some());
     assert_eq!(ct_res.noise(), None);
     assert_decrypt_precision(
-        "add_pt_vec",
+        "add_pt",
         &params,
         module,
         &encoder,
@@ -666,7 +666,7 @@ where
 }
 
 /// ct + ZNX plaintext, out-of-place, plaintext encoded at lower decimal precision.
-pub fn test_add_pt_vec_into_delta_log_delta<BE, F, E>(
+pub fn test_add_into_pt_delta_log_delta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -704,13 +704,13 @@ pub fn test_add_pt_vec_into_delta_log_delta<BE, F, E>(
         &quantize(&im2, PT_PREC.log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct1, &pt, s)
     })
     .unwrap();
-    assert_unary_output_meta("add_pt_vec delta_log_delta", &ct_res, params.k, &ct1);
+    assert_unary_output_meta("add_pt delta_log_delta", &ct_res, params.k, &ct1);
     assert_decrypt_precision_at_log_delta(
-        "add_pt_vec delta_log_delta",
+        "add_pt delta_log_delta",
         &params,
         module,
         &encoder,
@@ -724,7 +724,7 @@ pub fn test_add_pt_vec_into_delta_log_delta<BE, F, E>(
 }
 
 /// ct + ZNX plaintext whose `max_k` exceeds the available precision → left-shift alignment path.
-pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
+pub fn test_add_into_pt_lsh_alignment<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -771,13 +771,13 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
         &quantize(&im2, pt_prec.log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct1, &pt, s)
     })
     .unwrap();
-    assert_unary_output_meta("add_pt_vec lsh_alignment", &ct_res, params.k, &ct1);
+    assert_unary_output_meta("add_pt lsh_alignment", &ct_res, params.k, &ct1);
     assert_decrypt_precision_at_log_delta(
-        "add_pt_vec lsh_alignment",
+        "add_pt lsh_alignment",
         &params,
         module,
         &encoder,
@@ -791,7 +791,7 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
 }
 
 /// ct + complex constant, out-of-place.
-pub fn test_add_const_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+pub fn test_add_into_const_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -821,17 +821,13 @@ where
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
     let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct, &cst, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut ct_res, m, &cst, 1, s)
-    })
-    .unwrap();
-    assert_unary_output_meta("add_const_into_aligned", &ct_res, params.k, &ct);
+    assert_unary_output_meta("add_into_const_aligned", &ct_res, params.k, &ct);
     assert_decrypt_precision(
-        "add_const_into_aligned",
+        "add_into_const_aligned",
         &params,
         module,
         &encoder,
@@ -844,7 +840,7 @@ where
 }
 
 /// ct + complex constant whose `max_k` exceeds the available precision → left-shift alignment path.
-pub fn test_add_const_into_lsh_alignment<BE, F, E>(
+pub fn test_add_into_const_lsh_alignment<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -893,17 +889,13 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
         cst.encoded_k().as_usize(),
         ct.log_budget() + cst.log_delta()
     );
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct, &cst, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut ct_res, m, &cst, 1, s)
-    })
-    .unwrap();
-    assert_unary_output_meta("add_const_into_lsh_alignment", &ct_res, params.k, &ct);
+    assert_unary_output_meta("add_into_const_lsh_alignment", &ct_res, params.k, &ct);
     assert_decrypt_precision(
-        "add_const_into_lsh_alignment",
+        "add_into_const_lsh_alignment",
         &params,
         module,
         &encoder,
@@ -916,7 +908,7 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
 }
 
 /// ct + complex constant, in-place.
-pub fn test_add_const_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+pub fn test_add_assign_const<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -947,17 +939,13 @@ where
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
     let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut ct, 0, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_add_assign(&mut ct, &cst, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut ct, m, &cst, 1, s)
-    })
-    .unwrap();
-    assert_ct_meta("add_const_assign", &ct, expected_log_delta, expected_log_budget);
+    assert_ct_meta("add_assign_const", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
-        "add_const_assign",
+        "add_assign_const",
         &params,
         module,
         &encoder,
@@ -1019,7 +1007,7 @@ where
 }
 
 /// ct + complex constant, out-of-place, constant encoded at lower decimal precision.
-pub fn test_add_const_into_delta_log_delta<BE, F, E>(
+pub fn test_add_into_const_delta_log_delta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1052,17 +1040,13 @@ pub fn test_add_const_into_delta_log_delta<BE, F, E>(
     let (want_re, want_im) = want_add_const(&a_re, &a_im, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
     let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct, &cst, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut ct_res, m, &cst, 1, s)
-    })
-    .unwrap();
-    assert_unary_output_meta("add_const_into_delta_log_delta", &ct_res, params.k, &ct);
+    assert_unary_output_meta("add_into_const_delta_log_delta", &ct_res, params.k, &ct);
     assert_decrypt_precision_at_log_delta(
-        "add_const_into_delta_log_delta",
+        "add_into_const_delta_log_delta",
         &params,
         module,
         &encoder,
@@ -1076,7 +1060,7 @@ pub fn test_add_const_into_delta_log_delta<BE, F, E>(
 }
 
 /// ct + complex constant, out-of-place, output buffer has smaller max_k than `a` (offset > 0).
-pub fn test_add_const_into_smaller_output<BE, F, E>(
+pub fn test_add_into_const_smaller_output<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1110,17 +1094,13 @@ pub fn test_add_const_into_smaller_output<BE, F, E>(
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
     let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct, &cst, s)
     })
     .unwrap();
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut ct_res, m, &cst, 1, s)
-    })
-    .unwrap();
-    assert_unary_output_meta("add_const_into_smaller_output", &ct_res, dst_k, &ct);
+    assert_unary_output_meta("add_into_const_smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision(
-        "add_const_into_smaller_output",
+        "add_into_const_smaller_output",
         &params,
         module,
         &encoder,
@@ -1133,7 +1113,7 @@ pub fn test_add_const_into_smaller_output<BE, F, E>(
 }
 
 /// ct + real constant only, out-of-place.
-pub fn test_add_const_into_real_only<BE, F, E>(
+pub fn test_add_into_const_real_only<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1167,13 +1147,13 @@ pub fn test_add_const_into_real_only<BE, F, E>(
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
     let cst = ckks_pt_cst::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, Some(const_re_f64), None);
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct, &cst, s)
     })
     .unwrap();
-    assert_unary_output_meta("add_const_into_real_only", &ct_res, params.k, &ct);
+    assert_unary_output_meta("add_into_const_real_only", &ct_res, params.k, &ct);
     assert_decrypt_precision(
-        "add_const_into_real_only",
+        "add_into_const_real_only",
         &params,
         module,
         &encoder,
@@ -1186,7 +1166,7 @@ pub fn test_add_const_into_real_only<BE, F, E>(
 }
 
 /// ct + ZNX plaintext, out-of-place, output buffer has smaller max_k than `a` (offset > 0).
-pub fn test_add_pt_vec_into_smaller_output<BE, F, E>(
+pub fn test_add_into_pt_smaller_output<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1225,13 +1205,13 @@ pub fn test_add_pt_vec_into_smaller_output<BE, F, E>(
     );
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_add_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_add_into(&mut ct_res, &ct1, &pt, s)
     })
     .unwrap();
-    assert_unary_output_meta("add_pt_vec smaller_output", &ct_res, dst_k, &ct1);
+    assert_unary_output_meta("add_pt smaller_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
-        "add_pt_vec smaller_output",
+        "add_pt smaller_output",
         &params,
         module,
         &encoder,
@@ -1244,7 +1224,7 @@ pub fn test_add_pt_vec_into_smaller_output<BE, F, E>(
 }
 
 /// ct + ZNX plaintext must reject mismatched base2k with an explicit error.
-pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
+pub fn test_add_assign_pt_rejects_base2k_mismatch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1278,12 +1258,12 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
         host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots::<Standard>(), mismatched_base2k, PT_PREC.k());
     pt.set_meta(PT_PREC.meta());
     let before = snapshot::<BE, _, Standard>(&ct);
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_assign(&mut ct, &pt, s)).unwrap_err();
     assert_ckks_error(
-        "add_pt_vec_base2k_mismatch",
+        "add_pt_base2k_mismatch",
         &err,
         CKKSCompositionError::PlaintextBase2KMismatch {
-            op: "ckks_add_pt_vec_assign",
+            op: "ckks_add_assign",
             ct_base2k: params.base2k,
             pt_base2k: mismatched_base2k.as_usize(),
         },
@@ -1291,14 +1271,13 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
     assert_eq!(
         snapshot::<BE, _, Standard>(&ct),
         before,
-        "a refused ckks_add_pt_vec_assign wrote res"
+        "a refused ckks_add_assign wrote res"
     );
 }
 
 /// A narrower destination, which the copy of `a` would write, keeps its content when the plaintext's checks refuse:
-/// a plaintext of another radix (`PlaintextBase2KMismatch`) and a coefficient past the plaintext's degree
-/// (`PlaintextCoefficientOutOfRange`), on an empty arena and on the query.
-pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
+/// a plaintext of another radix (`PlaintextBase2KMismatch`), on an empty arena and on the query.
+pub fn test_add_into_pt_rejects_plaintext_before_copy<BE, F, E>(
     params: crate::test_suite::CKKSTestParams,
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
@@ -1316,7 +1295,6 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
         },
     };
     use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
-    use poulpy_core::layouts::LWEInfos;
     let b = params.base2k;
     let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
     let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
@@ -1330,42 +1308,20 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
     use crate::api::CKKSAddOps;
     let a = fixture_ciphertext(module, &ct_layout, 41);
     let pt = fixture_plaintext(module, &other_radix, 43);
-    let same_radix = fixture_plaintext(module, &pt_layout, 44);
-    let n = same_radix.n().as_usize();
     let mut res = fixture_ciphertext(
         module,
         &layout(params, params.rank, 2 * b + 3, b - 1, 0, SlotsKind::Complex),
         31,
     );
     let radix = CKKSCompositionError::PlaintextBase2KMismatch {
-        op: "ckks_add_pt_vec_into",
+        op: "ckks_add_into",
         ct_base2k: b,
         pt_base2k: b - 1,
     };
-    for bytes in [0, module.ckks_add_pt_vec_tmp_bytes(res.max_size())] {
+    for bytes in [0, module.ckks_add_tmp_bytes(res.max_size())] {
         let before = snapshot::<BE, _, Standard>(&res);
-        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_add_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
-        assert_ckks_error("add_pt_vec_into: plaintext of another radix", &err, radix.clone());
-        assert_eq!(
-            snapshot::<BE, _, Standard>(&res),
-            before,
-            "a refused plaintext form wrote dst"
-        );
-    }
-    for bytes in [0, module.ckks_add_pt_const_tmp_bytes(res.max_size())] {
-        let before = snapshot::<BE, _, Standard>(&res);
-        let err =
-            with_scratch::<BE, _>(bytes, |s| module.ckks_add_pt_const_into(&mut res, 0, &a, &same_radix, n, s)).unwrap_err();
-        assert_ckks_error(
-            "add_pt_const_into: coefficient past the plaintext",
-            &err,
-            CKKSCompositionError::PlaintextCoefficientOutOfRange {
-                op: "ckks_add_pt_const_into",
-                role: "plaintext",
-                coeff: n,
-                n,
-            },
-        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_add_into(&mut res, &a, &pt, s)).unwrap_err();
+        assert_ckks_error("add_into_pt: plaintext of another radix", &err, radix.clone());
         assert_eq!(
             snapshot::<BE, _, Standard>(&res),
             before,

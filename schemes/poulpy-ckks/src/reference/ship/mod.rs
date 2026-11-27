@@ -127,7 +127,7 @@ pub trait CKKSShipReference<BE: Backend>: Borrow<Module<BE>> + Sized {
     /// The runtime validation of the output, input and key layouts, then an arena below the selected
     /// `ckks_ship_bootstrap_tmp_bytes`, refuse before any write. Then poulpy-core's `glwe_keyswitch` of `input` into a
     /// carved ciphertext under the dense-to-sparse key (carrying the input's metadata), the selected
-    /// `ckks_ship_coeff_encodings`, a leaf 0 (poulpy-core's `glwe_zero` then `ckks_add_pt_vec_assign` of the constant
+    /// `ckks_ship_coeff_encodings`, a leaf 0 (poulpy-core's `glwe_zero` then `ckks_add_assign` of the constant
     /// encoding), one leaf per index key (the selected `ckks_ship_masking_accumulate` then `ckks_ship_mux_rotate` per
     /// mux group), and a binary product tree of `ckks_mul_into` under the tensor key, an odd leftover carrying to the
     /// next level, a tree that exhausts the budget being `MultiplicationPrecisionUnderflow`, and

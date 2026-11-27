@@ -3,46 +3,57 @@
 use super::parity::helpers::{snapshot, with_scratch};
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
+use poulpy_hal::source::Source;
+
+use poulpy_core::layouts::{
+    Diagonals, Evaluate, GLWEAutomorphismKeyPrepared, GLWEPlaintextInfos, LWEInfos, LinearTransformationStrategy,
+    galois_is_identity, galois_of_rotation, prepared::GLWESecretPrepared,
+};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, Ring, ScratchArena, Standard},
+    layouts::{
+        Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ScratchOwned, Standard,
+    },
 };
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
+        CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
         LinearTransformation, LinearTransformationPrepared,
     },
-    layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    error::DIVISOR,
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, ComplexDiagonals},
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
-            assert_ckks_error, assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_self_into_tmp_bytes,
-            quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            assert_ckks_error, assert_ckks_internal, assert_decrypt_precision, assert_mul_pt_output_meta, ckks_encrypt, dirty_ct,
+            gen_atk, gen_sk, gen_sk_with_raw, pt_self_into_tmp_bytes, quantize, test_vector_1, test_vector_2, upload_pt,
+            want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
 };
 
-/// The slot count of these tests, an eighth of the degree, so the plaintexts' degree `N / 4` clears every backend floor
-/// at the suite's `N = 256`.
+/// The slot count of these tests, an eighth of the degree: plaintexts of degree `N / 4`, besides the sub-floor
+/// plaintexts of the ciphertext of degree `MIN_DEGREE` the add/sub/mul test embeds.
 fn test_slots(params: &CKKSTestParams) -> usize {
     params.n / 8
 }
 
 /// `ct + pt`, `ct - pt`, `ct * pt` and `ct *= pt` for `pt` of `m < N/2` slots decrypt to the expected values within the
-/// suite precision; a plaintext degree that does not embed is an error.
+/// suite precision; a plaintext degree that does not embed is an error. On a ciphertext of degree `MIN_DEGREE`,
+/// `ckks_encrypt_sk` and `ckks_mul_pt_into` of a plaintext below it give the digits of its embedding, labelled with the
+/// sparsity of its degree.
 pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -70,13 +81,13 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     };
 
     let mut res = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(res.max_size()), |s| {
-        module.ckks_add_pt_vec_into(&mut res, &ct, &pt, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(res.max_size()), |s| {
+        module.ckks_add_into(&mut res, &ct, &pt, s)
     })
     .unwrap();
     check("add_pt", &res, want_add(&re1, &im1, &q_re2, &q_im2), &mut scratch.borrow());
-    with_scratch::<BE, _>(module.ckks_sub_pt_vec_tmp_bytes(res.max_size()), |s| {
-        module.ckks_sub_pt_vec_into(&mut res, &ct, &pt, s)
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(res.max_size()), |s| {
+        module.ckks_sub_into(&mut res, &ct, &pt, s)
     })
     .unwrap();
     check(
@@ -86,14 +97,14 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
         &mut scratch.borrow(),
     );
     // The plaintext is prepared at its own degree and read through the convolution's embedding slot.
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&res, &ct, &pt), |s| {
-        module.ckks_mul_pt_vec_into(&mut res, &ct, &pt, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&res, &ct, &pt), |s| {
+        module.ckks_mul_pt_into(&mut res, &ct, &pt, s)
     })
     .unwrap();
     check("mul_pt", &res, want_mul(&re1, &im1, &q_re2, &q_im2), &mut scratch.borrow());
     let mut assigned = encrypt(&mut scratch.borrow());
-    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&assigned, &assigned, &pt), |s| {
-        module.ckks_mul_pt_vec_assign(&mut assigned, &pt, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&assigned, &assigned, &pt), |s| {
+        module.ckks_mul_pt_assign(&mut assigned, &pt, s)
     })
     .unwrap();
     check(
@@ -108,55 +119,130 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     odd.set_meta(prec.meta());
     let odd = upload_pt(module, &odd);
     let before = snapshot::<BE, _, Standard>(&res);
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_into(&mut res, &ct, &odd, s)).unwrap_err();
     assert_ckks_error(
-        "ckks_add_pt_vec_into of a plaintext of degree 3",
+        "ckks_add_into of a plaintext of degree 3",
         &err,
         CKKSCompositionError::PlaintextDegreeMismatch {
-            op: "ckks_add_pt_vec_into",
+            op: "ckks_add_into",
             ct_n: ct.n().as_usize(),
             pt_n: 3,
+            rule: DIVISOR,
         },
     );
-    assert_eq!(
-        snapshot::<BE, _, Standard>(&res),
-        before,
-        "a refused ckks_add_pt_vec_into wrote res"
-    );
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
+    assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused ckks_add_into wrote res");
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_pt_into(&mut res, &ct, &odd, s)).unwrap_err();
     assert_ckks_error(
-        "ckks_mul_pt_vec_into of a plaintext of degree 3",
+        "ckks_mul_pt_into of a plaintext of degree 3",
         &err,
         CKKSCompositionError::PlaintextDegreeMismatch {
-            op: "ckks_mul_pt_vec_into",
+            op: "ckks_mul_pt_into",
             ct_n: ct.n().as_usize(),
             pt_n: 3,
+            rule: DIVISOR,
         },
     );
     assert_eq!(
         snapshot::<BE, _, Standard>(&res),
         before,
-        "a refused ckks_mul_pt_vec_into wrote res"
+        "a refused ckks_mul_pt_into wrote res"
     );
-    // A degree below the backend floor is an error too.
-    let mut tiny = host_module.ckks_plaintext_alloc((BE::MIN_DEGREE / 2).into(), params.base2k.into(), prec.k());
-    tiny.set_meta(prec.meta());
-    let tiny = upload_pt(module, &tiny);
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &tiny, s)).unwrap_err();
-    assert_ckks_error(
-        "ckks_add_pt_vec_into of a plaintext below the backend floor",
-        &err,
-        CKKSCompositionError::PlaintextDegreeMismatch {
-            op: "ckks_add_pt_vec_into",
-            ct_n: ct.n().as_usize(),
-            pt_n: BE::MIN_DEGREE / 2,
-        },
-    );
-    assert_eq!(
-        snapshot::<BE, _, Standard>(&res),
-        before,
-        "a refused ckks_add_pt_vec_into wrote res"
-    );
+
+    // At a ciphertext of degree MIN_DEGREE, a plaintext below it is embedded: the encryption and the product equal those
+    // of its embedding in digits, each on exactly its (poisoned) query and refused one byte below, and label the
+    // sparsity their plaintexts prove.
+    let floor = BE::MIN_DEGREE;
+    if floor >= 2 {
+        let low_params = CKKSTestParams {
+            n: floor,
+            hw: floor / 2,
+            ..params
+        };
+        let low_sk = gen_sk(&low_params, module, host_module, [7u8; 32]);
+        let (low_n, stride) = (floor / 2, 2);
+        let values: Vec<F> = (0..low_n).map(|i| F::from_f64((i as f64 + 1.0) / 64.0).unwrap()).collect();
+        let embedded_values: Vec<F> = (0..floor)
+            .map(|j| if j % stride == 0 { values[j / stride] } else { F::zero() })
+            .collect();
+        let host = |n: usize, coeffs: &[F]| {
+            let mut pt = host_module.ckks_plaintext_alloc(n.into(), params.base2k.into(), prec.k());
+            pt.set_meta(prec.meta());
+            pt.encode_host_floats(coeffs).unwrap();
+            upload_pt(module, &pt)
+        };
+        let (low_pt, embedded_pt) = (host(low_n, &values), host(floor, &embedded_values));
+        let sparsity = |pt: &CKKSPlaintextOwned<BE>| (floor / pt.n().as_usize()).ilog2() as usize;
+        let encrypt_low = |ct: &mut CKKSCiphertextOwned<BE>, pt: &CKKSPlaintextOwned<BE>| {
+            let bytes = module.ckks_encrypt_sk_tmp_bytes(&*ct);
+            let before = snapshot::<BE, _, Standard>(&*ct);
+            let (mut xe, mut xa) = (Source::new([11; 32]), Source::new([12; 32]));
+            let short = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_encrypt_sk(ct, pt, &low_sk, &mut xe, &mut xa, s));
+            assert_ckks_internal(
+                "a short encryption",
+                &short.unwrap_err(),
+                "ckks_encrypt_sk: scratch below its query",
+            );
+            assert_eq!(
+                snapshot::<BE, _, Standard>(&*ct),
+                before,
+                "a short encryption wrote the ciphertext"
+            );
+            assert_eq!(
+                (xe.new_seed(), xa.new_seed()),
+                (Source::new([11; 32]).new_seed(), Source::new([12; 32]).new_seed()),
+                "a short encryption drew from its sources"
+            );
+            let (mut xe, mut xa) = (Source::new([11; 32]), Source::new([12; 32]));
+            with_scratch::<BE, _>(bytes, |s| module.ckks_encrypt_sk(ct, pt, &low_sk, &mut xe, &mut xa, s)).unwrap();
+            let want = GLWEPlaintextMeta {
+                log_sparsity: sparsity(pt),
+                ..pt.meta()
+            };
+            assert_eq!((ct.k().as_usize(), ct.meta()), (params.k, want), "labels of an encryption");
+        };
+        let mut embedded_ct = alloc_ct(&low_params, module, params.k);
+        encrypt_low(&mut embedded_ct, &embedded_pt);
+        let mut low_ct = dirty_ct(module, &embedded_ct, params.k);
+        encrypt_low(&mut low_ct, &low_pt);
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&low_ct).digits,
+            snapshot::<BE, _, Standard>(&embedded_ct).digits,
+            "a sub-floor plaintext encrypts as its embedding"
+        );
+
+        let mul = |out: &mut CKKSCiphertextOwned<BE>, pt: &CKKSPlaintextOwned<BE>| {
+            let dst_k = out.k().as_usize();
+            let bytes = module.ckks_mul_pt_tmp_bytes(&*out, &low_ct, pt);
+            let before = snapshot::<BE, _, Standard>(&*out);
+            let short = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_pt_into(out, &low_ct, pt, s));
+            assert_ckks_internal(
+                "a short product",
+                &short.unwrap_err(),
+                "ckks_mul_pt_into needs a scratch arena",
+            );
+            assert_eq!(snapshot::<BE, _, Standard>(&*out), before, "a short product wrote dst");
+            with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_into(out, &low_ct, pt, s)).unwrap();
+            assert_mul_pt_output_meta("labels of a product", out, dst_k, &low_ct, pt);
+            assert_eq!(
+                (out.slots(), out.log_sparsity(), out.slot_layout()),
+                (
+                    low_ct.slots().join(pt.slots()),
+                    low_ct.log_sparsity().min(sparsity(pt)),
+                    low_ct.slot_layout()
+                ),
+                "labels of a product"
+            );
+        };
+        let mut embedded_product = alloc_ct(&low_params, module, params.k);
+        mul(&mut embedded_product, &embedded_pt);
+        let mut product = dirty_ct(module, &low_ct, params.k);
+        mul(&mut product, &low_pt);
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&product).digits,
+            snapshot::<BE, _, Standard>(&embedded_product).digits,
+            "a sub-floor plaintext multiplies as its embedding"
+        );
+    }
 }
 
 /// A six-diagonal complex matrix on `m` slots (the shape `linear_transformation.rs` uses).
@@ -165,13 +251,13 @@ fn matrix<F: TestScalar>(m: usize) -> ComplexDiagonals<F> {
     let mut im = Diagonals::<F>::new(m);
     for i in 0..6usize {
         re.set(
-            poulpy_core::layouts::galois_of_rotation(i as i64),
+            galois_of_rotation(i as i64),
             (0..m)
                 .map(|j| F::from_f64(0.25 * (i as f64 + 1.0) / (1.0 + (j % 8) as f64)).unwrap())
                 .collect(),
         );
         im.set(
-            poulpy_core::layouts::galois_of_rotation(i as i64),
+            galois_of_rotation(i as i64),
             (0..m)
                 .map(|j| F::from_f64(0.125 * (i as f64 + 1.0) / (1.0 + ((j + 3) % 8) as f64)).unwrap())
                 .collect(),
@@ -204,15 +290,17 @@ where
 }
 
 /// `dec(lt(enc(a), B)) ≈ B·a` for a map of `m < N/2` slots, whose diagonals are plaintexts of `m` slots, on the prepared
-/// path (the prepared slots take their degree) and on the streamed path.
+/// path (the prepared slots take their degree, at least the backend's floor, on exactly the preparation's query, one byte
+/// below refused) and on the streamed path, for `N/8` slots and for 2, whose diagonals lie below every backend's floor,
+/// and for a map of 2 slots mixing diagonals of degrees 2 and 4.
 pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingHostOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -221,21 +309,48 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
-    let m = test_slots(&params);
+    for m in [test_slots(&params), 2] {
+        linear_transformation_diagonal_slots::<BE, F, E>(params, module, host_module, m);
+    }
+    linear_transformation_mixed_sub_floor_degrees::<BE, F, E>(params, module, host_module);
+}
+
+/// What a map `b` of `m` slots runs on: the encoder of `m` slots, the secret, the parameters of keys at four digits with
+/// an arena of their queries, the transformation of `b`, its keys, `enc(a)` and `B·a`.
+struct LtFixture<BE: Backend, F, E> {
+    encoder: ReferenceEncoder<E>,
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    key_params: CKKSTestParams,
+    scratch: ScratchOwned<BE>,
+    lt: LinearTransformation<CKKSPlaintextOwned<BE>>,
+    atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    ct: CKKSCiphertextOwned<BE>,
+    want: (Vec<F>, Vec<F>),
+}
+
+fn lt_fixture<BE, F, E>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    m: usize,
+    b: &ComplexDiagonals<F>,
+) -> LtFixture<BE, F, E>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F, Standard>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (a_re, a_im) = test_vector_1::<F>(m);
-    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
     let key_params = CKKSTestParams {
         dsize: params.dsize.max(4),
-        ..params
+        ..*params
     };
     let mut scratch = alloc_scratch(&key_params, module);
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
-    let b = matrix::<F>(m);
-    let lt = encode_lt(module, &params, &b, strategy, &mut scratch.borrow());
-    let first = lt.first_diagonal_plaintext().unwrap();
-    assert_eq!(first.n().as_usize(), 2 * m, "diagonal is not a plaintext of the map's slots");
-
+    let lt = encode_lt(module, params, b, strategy, &mut scratch.borrow());
     let order = module.cyclotomic_order::<Standard>();
     let mut atks = HashMap::new();
     for p in lt.galois_elements(order) {
@@ -243,7 +358,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
             .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
     let ct = ckks_encrypt(
-        &params,
+        params,
         module,
         host_module,
         &encoder,
@@ -253,16 +368,181 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let (want_re, want_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
+    let want = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
+    LtFixture {
+        encoder,
+        sk,
+        key_params,
+        scratch,
+        lt,
+        atks,
+        ct,
+        want,
+    }
+}
 
-    // Prepared path: the slots are allocated and prepared at the diagonals' degree under the one module.
+/// A map of 2 slots whose diagonals sit at degrees 2 and 4, below every backend's floor and prepared at it: the
+/// preparation, refusing one byte below a nonzero query, and the prepared and streamed evaluations accept the mix, each
+/// on exactly the query of the narrowest diagonal, and give `B·a` with the same bits and labels.
+fn linear_transformation_mixed_sub_floor_degrees<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingHostOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let m = 2;
+    let value = |x: f64| F::from_f64(x).unwrap();
+    let (mut re, mut im) = (Diagonals::<F>::new(m), Diagonals::<F>::new(m));
+    re.set(galois_of_rotation(0), vec![value(0.5)]);
+    im.set(galois_of_rotation(0), vec![value(-0.25)]);
+    re.set(galois_of_rotation(1), vec![value(0.375), value(-0.125)]);
+    im.set(galois_of_rotation(1), vec![value(0.0625), value(0.25)]);
+    let b = ComplexDiagonals::new(re, im);
+    let LtFixture {
+        encoder,
+        sk,
+        key_params,
+        mut scratch,
+        mut lt,
+        atks,
+        ct,
+        want: (want_re, want_im),
+    } = lt_fixture::<BE, F, E>(&params, module, host_module, m, &b);
+    // The constant diagonal 0 at its own period, one slot of degree 2.
+    let prec = params.prec();
+    let constant = lt
+        .giant_steps
+        .iter_mut()
+        .find(|gs| galois_is_identity(gs.galois))
+        .and_then(|gs| gs.diagonals.iter_mut().find(|d| galois_is_identity(d.baby_galois)))
+        .unwrap();
+    let mut narrow = module.ckks_plaintext_alloc_from_slots(1, params.base2k.into(), prec.k());
+    narrow.set_meta_checked(prec.meta()).unwrap();
+    module
+        .ckks_encode_slots_host_into(&mut narrow, &[value(0.5)], &[value(-0.25)], &mut scratch.borrow())
+        .unwrap();
+    constant.plaintext = narrow;
+    let diagonals = || lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).map(|d| &d.plaintext);
+    let mut degrees: Vec<usize> = diagonals().map(|pt| pt.n().as_usize()).collect();
+    degrees.sort_unstable();
+    degrees.dedup();
+    assert_eq!(degrees, [2, 4], "the diagonals do not mix degrees 2 and 4");
+    let narrowest = diagonals().min_by_key(|pt| pt.n()).unwrap();
+    let atk_layout = key_params.atk_layout();
+
+    let mut prepared = LinearTransformationPrepared::<BE, Standard>::alloc_prepared_from_index(module, &lt.index(), narrowest);
+    let bytes = module.ckks_linear_transformation_rhs_prepare_tmp_bytes(narrowest);
+    if bytes > 0 {
+        let err = with_scratch::<BE, _>(bytes - 1, |s| {
+            module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
+        })
+        .unwrap_err();
+        assert_ckks_internal(
+            "mixed degrees, one byte short",
+            &err,
+            "ckks_linear_transformation_rhs_prepare: scratch below its query",
+        );
+    }
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
+    })
+    .unwrap();
+
+    let mut outputs = Vec::new();
+    for (label, streamed) in [("mixed degrees, prepared", false), ("mixed degrees, streamed", true)] {
+        let bytes = module.ckks_linear_transformation_eval_self_tmp_bytes(
+            streamed,
+            &ct,
+            narrowest,
+            &lt.index(),
+            &atk_layout,
+            &atk_layout,
+        );
+        let mut out = alloc_ct(&params, module, params.k);
+        with_scratch::<BE, _>(bytes, |s| match streamed {
+            true => module.ckks_linear_transformation_eval_self_into(&mut out, &ct, &lt, &atks, s),
+            false => module.ckks_linear_transformation_eval_self_into(&mut out, &ct, &prepared, &atks, s),
+        })
+        .unwrap();
+        assert_decrypt_precision(
+            label,
+            &params,
+            module,
+            &encoder,
+            &out,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
+        outputs.push(snapshot::<BE, _, Standard>(&out));
+    }
+    assert_eq!(
+        outputs[0], outputs[1],
+        "the prepared and streamed mixes differ in bits or labels"
+    );
+}
+
+fn linear_transformation_diagonal_slots<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    m: usize,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingHostOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let LtFixture {
+        encoder,
+        sk,
+        key_params,
+        mut scratch,
+        lt,
+        atks,
+        ct,
+        want: (want_re, want_im),
+    } = lt_fixture::<BE, F, E>(&params, module, host_module, m, &matrix::<F>(m));
+    let first = lt.first_diagonal_plaintext().unwrap();
+    assert_eq!(first.n().as_usize(), 2 * m, "diagonal is not a plaintext of the map's slots");
+
+    // Prepared path: the slots are allocated and prepared at the diagonals' degree, or at the floor below it.
     let mut prepared = LinearTransformationPrepared::<BE, Standard>::alloc_prepared_from_index(module, &lt.index(), first);
     assert_eq!(
         prepared.first_diagonal_plaintext().unwrap().n().as_usize(),
-        2 * m,
+        (2 * m).max(BE::MIN_DEGREE),
         "prepared slot is not at the diagonals' degree"
     );
-    with_scratch::<BE, _>(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first), |s| {
+    let bytes = module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first);
+    if bytes > 0 {
+        let err = with_scratch::<BE, _>(bytes - 1, |s| {
+            module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
+        })
+        .unwrap_err();
+        assert_ckks_internal(
+            "one byte short",
+            &err,
+            "ckks_linear_transformation_rhs_prepare: scratch below its query",
+        );
+    }
+    with_scratch::<BE, _>(bytes, |s| {
         module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
     })
     .unwrap();
@@ -284,13 +564,15 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    // Streamed path: the same transformation with its plaintext diagonals,
-    // prepared on the fly at their degree.
+    // Streamed path: the same transformation with its plaintext diagonals, prepared on the fly at their degree, or at
+    // the floor below it, on exactly the query of its narrowest diagonal.
+    let atk_layout = key_params.atk_layout();
+    let streamed_bytes =
+        module.ckks_linear_transformation_eval_self_tmp_bytes(true, &ct, first, &lt.index(), &atk_layout, &atk_layout);
     let mut ct_streamed = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(
-        pt_self_into_tmp_bytes(module, true, &ct, &lt.index(), &key_params.atk_layout()),
-        |s| module.ckks_linear_transformation_eval_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
-    )
+    with_scratch::<BE, _>(streamed_bytes, |s| {
+        module.ckks_linear_transformation_eval_self_into(&mut ct_streamed, &ct, &lt, &atks, s)
+    })
     .unwrap();
     assert_decrypt_precision(
         "lt_streamed",

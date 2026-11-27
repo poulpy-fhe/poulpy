@@ -404,10 +404,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, R>,
         b_col: usize,
-        b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        by_const::<RT, R>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, false);
+        by_const::<RT, R>(cnv_offset, res, res_col, a, a_col, b, b_col, false);
     }
 
     fn cnv_by_const_apply_add_tmp_bytes(
@@ -429,10 +428,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, R>,
         b_col: usize,
-        b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        by_const::<RT, R>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, true);
+        by_const::<RT, R>(cnv_offset, res, res_col, a, a_col, b, b_col, true);
     }
 }
 
@@ -445,13 +443,13 @@ fn by_const<RT: GpuRuntime, R: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
     b_col: usize,
-    b_coeff: usize,
     accumulate: bool,
 ) {
     assert_dense(res, "cnv_by_const_apply");
     assert_dense(a, "cnv_by_const_apply");
     assert_dense(b, "cnv_by_const_apply");
     assert!(a.n() == res.n(), "cnv_by_const_apply: a.n() != res.n()");
+    assert!(b.n() == 1, "cnv_by_const_apply: b is not a constant");
     let Some(res) = big_column_mut(res, res_col) else { return };
     let (Some(a), Some(b)) = (column_ref(a, a_col), column_ref(b, b_col)) else {
         if !accumulate {
@@ -459,5 +457,5 @@ fn by_const<RT: GpuRuntime, R: Ring>(
         }
         return;
     };
-    convolution_by_const::<RT>(&res, &a, &b, b_coeff, cnv_offset, accumulate);
+    convolution_by_const::<RT>(&res, &a, &b, cnv_offset, accumulate);
 }

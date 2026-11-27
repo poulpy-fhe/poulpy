@@ -1020,7 +1020,7 @@ where
         + BE::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
 }
 
-/// `res += a (x) b[b_coeff]`, with the same untouched-limb contract as
+/// `res += a (x) b`, with the same untouched-limb contract as
 /// [`cnv_apply_dft_add_derived`].
 #[doc(hidden)]
 pub fn cnv_by_const_apply_add_derived<BE, Rg: Ring>(
@@ -1032,7 +1032,6 @@ pub fn cnv_by_const_apply_add_derived<BE, Rg: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
-    b_coeff: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: HalCnvImpl<Rg>,
@@ -1040,7 +1039,7 @@ pub fn cnv_by_const_apply_add_derived<BE, Rg: Ring>(
     let res_size: usize = ZnxInfos::size(res);
     let (mut tmp, mut scratch) =
         ScratchArenaTakeVecZnxBig::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
-    BE::cnv_by_const_apply(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, b_coeff, &mut scratch);
+    BE::cnv_by_const_apply(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, &mut scratch);
     BE::vec_znx_big_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
 

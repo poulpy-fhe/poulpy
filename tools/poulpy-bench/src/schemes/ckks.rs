@@ -7,23 +7,23 @@ use std::{collections::HashMap, hint::black_box};
 use crate::schemes::params::CkksBenchParams;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_ckks::{
-    GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
+    CKKSCtBounds, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLeftOperandPreparedFactory,
         CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRightOperandPreparedFactory, CKKSRotateOps,
         CKKSSubOps, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPrepared,
         LinearTransformationStrategy,
     },
-    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
     GLWEFill, GLWENormalize,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         Base2K, Degree, Dnum, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyAlloc,
-        GLWETensorKeyLayout, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-        LinearTransformationPlan, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, galois_is_identity,
-        galois_of_rotation, galois_rotation, k_digit_of,
+        GLWETensorKeyLayout, GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
+        LinearTransformationGiantStep, LinearTransformationPlan, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
+        galois_is_identity, galois_of_rotation, galois_rotation, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
     test_suite::keys::fill_by_digit,
@@ -81,28 +81,80 @@ fn atk_layout(cp: &CkksBenchParams) -> GLWEAutomorphismKeyLayout {
     }
 }
 
-pub fn runner_ckks_add_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
+/// The second operand of the add, sub and product runners, filled uniform on the backend from `source` at the
+/// ciphertexts' metadata: a ciphertext, a plaintext of every slot or a constant, a plaintext of degree 1.
+pub trait BenchOperand<BE: Backend<ZnxWord = i64>> {
+    type Operand: GLWEToBackendRef<BE> + CKKSCtBounds;
+    fn alloc(module: &Module<BE>, cp: &CkksBenchParams, source: &mut Source) -> Self::Operand
+    where
+        Module<BE>: GLWEFill<BE>;
+}
+
+pub(crate) struct CiphertextOperand;
+pub(crate) struct PlaintextOperand;
+pub(crate) struct ConstantOperand;
+
+impl<BE: Backend<ZnxWord = i64>> BenchOperand<BE> for CiphertextOperand {
+    type Operand = CKKSCiphertextOwned<BE>;
+    fn alloc(module: &Module<BE>, cp: &CkksBenchParams, source: &mut Source) -> Self::Operand
+    where
+        Module<BE>: GLWEFill<BE>,
+    {
+        let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout(cp));
+        module.glwe_fill_from_source(&mut ct, source);
+        ct.set_meta_checked(ckks_ct_meta(cp)).unwrap();
+        ct
+    }
+}
+
+impl<BE: Backend<ZnxWord = i64>> BenchOperand<BE> for PlaintextOperand {
+    type Operand = CKKSPlaintextOwned<BE>;
+    fn alloc(module: &Module<BE>, cp: &CkksBenchParams, source: &mut Source) -> Self::Operand
+    where
+        Module<BE>: GLWEFill<BE>,
+    {
+        let mut pt = module.ckks_plaintext_alloc_from_slots(
+            module.ckks_max_slots::<Standard>(),
+            Base2K(cp.base2k as u32),
+            TorusPrecision(cp.k as u32),
+        );
+        module.glwe_fill_from_source(&mut pt, source);
+        pt.set_meta(ckks_ct_meta(cp));
+        pt
+    }
+}
+
+impl<BE: Backend<ZnxWord = i64>> BenchOperand<BE> for ConstantOperand {
+    type Operand = CKKSPlaintextOwned<BE>;
+    fn alloc(module: &Module<BE>, cp: &CkksBenchParams, source: &mut Source) -> Self::Operand
+    where
+        Module<BE>: GLWEFill<BE>,
+    {
+        let mut cst = module.ckks_plaintext_alloc(1usize.into(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+        module.glwe_fill_from_source(&mut cst, source);
+        cst.set_meta(ckks_ct_meta(cp));
+        cst
+    }
+}
+
+/// `ckks_add_into` of a ciphertext and the second operand `O`.
+pub fn runner_ckks_add_into<BE: Backend<ZnxWord = i64>, M: Measurement, O: BenchOperand<BE>>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE> + GLWEFill<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_b = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_b.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_tmp_bytes(ct_layout.size()));
+    let mut source = Source::new([0u8; 32]);
+    let (ct_a, b) = (
+        CiphertextOperand::alloc(&module, cp, &mut source),
+        O::alloc(&module, cp, &mut source),
+    );
+    let mut ct_dst = CiphertextOperand::alloc(&module, cp, &mut source);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_tmp_bytes(ckks_layout(cp).size()));
 
     bencher.iter(|| {
-        module
-            .ckks_add_into(&mut ct_dst, &ct_a, &ct_b, &mut scratch.borrow())
-            .unwrap();
+        module.ckks_add_into(&mut ct_dst, &ct_a, &b, &mut scratch.borrow()).unwrap();
         module.synchronize();
         black_box(());
     });
@@ -198,152 +250,24 @@ where
     });
 }
 
-pub fn runner_ckks_add_pt_vec_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
-{
-    let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut pt = module.ckks_plaintext_alloc_from_slots(
-        module.ckks_max_slots::<Standard>(),
-        Base2K(cp.base2k as u32),
-        TorusPrecision(cp.k as u32),
-    );
-    pt.set_meta(meta);
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_vec_tmp_bytes(ct_layout.size()));
-
-    bencher.iter(|| {
-        module
-            .ckks_add_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
-            .unwrap();
-        module.synchronize();
-        black_box(());
-    });
-}
-
-pub fn runner_ckks_add_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
+/// `ckks_sub_into` of a ciphertext and the second operand `O`.
+pub fn runner_ckks_sub_into<BE: Backend<ZnxWord = i64>, M: Measurement, O: BenchOperand<BE>>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE> + GLWEFill<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut cst = module.ckks_plaintext_alloc(2usize.into(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
-    cst.set_meta(meta);
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_const_tmp_bytes(ct_layout.size()));
-
-    bencher.iter(|| {
-        module
-            .ckks_add_pt_const_into(&mut ct_dst, 0, &ct_a, &cst, 0, &mut scratch.borrow())
-            .unwrap();
-        module.synchronize();
-        black_box(());
-    });
-}
-
-pub fn runner_ckks_sub_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
-{
-    let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_b = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_b.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_tmp_bytes(ct_layout.size()));
-
-    bencher.iter(|| {
-        module
-            .ckks_sub_into(&mut ct_dst, &ct_a, &ct_b, &mut scratch.borrow())
-            .unwrap();
-        module.synchronize();
-        black_box(());
-    });
-}
-
-pub fn runner_ckks_sub_pt_vec_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
-{
-    let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut pt = module.ckks_plaintext_alloc_from_slots(
-        module.ckks_max_slots::<Standard>(),
-        Base2K(cp.base2k as u32),
-        TorusPrecision(cp.k as u32),
+    let mut source = Source::new([0u8; 32]);
+    let (ct_a, b) = (
+        CiphertextOperand::alloc(&module, cp, &mut source),
+        O::alloc(&module, cp, &mut source),
     );
-    pt.set_meta(meta);
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes(ct_layout.size()));
-
-    bencher.iter(|| {
-        module
-            .ckks_sub_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
-            .unwrap();
-        module.synchronize();
-        black_box(());
-    });
-}
-
-pub fn runner_ckks_sub_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
-{
-    let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut cst = module.ckks_plaintext_alloc(2usize.into(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
-    cst.set_meta(meta);
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_const_tmp_bytes(ct_layout.size()));
+    let mut ct_dst = CiphertextOperand::alloc(&module, cp, &mut source);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_tmp_bytes(ckks_layout(cp).size()));
 
     bencher.iter(|| {
-        module
-            .ckks_sub_pt_const_into(&mut ct_dst, 0, &ct_a, &cst, 0, &mut scratch.borrow())
-            .unwrap();
+        module.ckks_sub_into(&mut ct_dst, &ct_a, &b, &mut scratch.borrow()).unwrap();
         module.synchronize();
         black_box(());
     });
@@ -450,66 +374,26 @@ where
     });
 }
 
-pub fn runner_ckks_mul_pt_vec_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE>,
-{
-    let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut pt = module.ckks_plaintext_alloc_from_slots(
-        module.ckks_max_slots::<Standard>(),
-        Base2K(cp.base2k as u32),
-        TorusPrecision(cp.k as u32),
-    );
-    pt.set_meta(meta);
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt));
-
-    bencher.iter(|| {
-        module
-            .ckks_mul_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
-            .unwrap();
-        module.synchronize();
-        black_box(());
-    });
-}
-
-pub fn runner_ckks_mul_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
+/// `ckks_mul_pt_into` of a ciphertext and the plaintext operand `O`.
+pub fn runner_ckks_mul_pt_into<BE: Backend<ZnxWord = i64>, M: Measurement, O: BenchOperand<BE>>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE> + GLWEFill<BE>,
+    O::Operand: IntPolyInfos,
 {
     let module = Module::<BE>::new(cp.n as u64);
-
-    let ct_layout = ckks_layout(cp);
-    let meta = ckks_ct_meta(cp);
-
-    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    ct_a.set_meta_checked(meta).unwrap();
-    ct_dst.set_meta_checked(meta).unwrap();
-
-    let mut const_full = module.ckks_plaintext_alloc_from_slots(
-        module.ckks_max_slots::<Standard>(),
-        Base2K(cp.base2k as u32),
-        TorusPrecision(cp.k as u32),
+    let mut source = Source::new([0u8; 32]);
+    let (ct_a, pt) = (
+        CiphertextOperand::alloc(&module, cp, &mut source),
+        O::alloc(&module, cp, &mut source),
     );
-    const_full.set_meta(meta);
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
+    let mut ct_dst = CiphertextOperand::alloc(&module, cp, &mut source);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_tmp_bytes(&ct_dst, &ct_a, &pt));
 
     bencher.iter(|| {
         module
-            .ckks_mul_pt_const_into(&mut ct_dst, &ct_a, &const_full, 0, &mut scratch.borrow())
+            .ckks_mul_pt_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());

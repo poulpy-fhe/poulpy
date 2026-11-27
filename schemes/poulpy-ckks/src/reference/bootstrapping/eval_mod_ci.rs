@@ -62,7 +62,7 @@ where
             .glwe_keyswitch_tmp_bytes(&embedded, &embedded, trace_key)
             .max(module.glwe_ci_trace_tmp_bytes(boot_layout, &embedded));
     let pre = match &eval_mod_ci.pre.0 {
-        CIPreForm::Product(u) => module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, u),
+        CIPreForm::Product(u) => module.ckks_mul_pt_tmp_bytes(&embedded, &embedded, u),
         // The baby steps of `even` and the outputs of the two folded factors beside
         // their evaluation, then the odd one's embedding beside its rotation.
         CIPreForm::Folded { plans, .. } => {
@@ -83,7 +83,7 @@ where
         }
     };
     let conversions = pre
-        .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
+        .max(module.ckks_mul_pt_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
         .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
         .max(<Module<BE> as CKKSPow2Ops<BE, ConjugateInvariant>>::ckks_mul_pow2_tmp_bytes(
             module,
@@ -191,7 +191,7 @@ where
         CIPreForm::Product(u) => {
             embedded.set_k(a.k());
             module.glwe_switch_degree(&mut embedded, a);
-            module.ckks_mul_pt_vec_assign(&mut embedded, u, &mut scratch)?;
+            module.ckks_mul_pt_assign(&mut embedded, u, &mut scratch)?;
         }
         CIPreForm::Folded { even, odd, plans } => {
             ci_folded_pre(module, &mut embedded, a, [even, odd], &plans[0], keys, &mut scratch)?
@@ -242,7 +242,7 @@ where
     embedded.set_k(reduced.k());
     module.glwe_ci_embed(&mut embedded, &reduced);
     module.glwe_keyswitch_assign(&mut embedded, &embed_key.to_backend_ref(), &mut scratch);
-    module.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.post, &mut scratch)?;
+    module.ckks_mul_pt_assign(&mut embedded, &eval_mod_ci.post, &mut scratch)?;
     res.set_k(embedded.k());
     module.glwe_switch_degree(res, &embedded);
     res.set_meta(embedded.meta());

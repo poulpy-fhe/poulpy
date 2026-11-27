@@ -568,10 +568,8 @@ where
     let plaintexts = terms
         .iter()
         .map(|term| {
-            module.ckks_right_operand_prepared_alloc_from_infos(
-                &term.plaintext::<BE, M, Rg>(module, layout.base2k),
-                PrepareHint::Reuse,
-            )
+            module
+                .ckks_right_operand_prepared_alloc_from_infos(&term.plaintext::<M, Rg>(module, layout.base2k), PrepareHint::Reuse)
         })
         .collect();
     let maps = shapes.map(|map| map.alloc_prepared::<BE, M, Rg>(module, layout.base2k));

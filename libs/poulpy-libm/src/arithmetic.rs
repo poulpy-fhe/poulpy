@@ -28,11 +28,11 @@ pub trait CKKSArithmeticOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Metadata
     ///
-    /// As `ckks_mul_add_ct_into` on an accumulator holding `c` at the layout of `res`.
+    /// As `ckks_mul_add_into` on an accumulator holding `c` at the layout of `res`.
     ///
     /// # Errors
     ///
-    /// The errors of `ckks_copy` and `ckks_mul_add_ct_into`. The product accumulates in scratch, so `res` is untouched on
+    /// The errors of `ckks_copy` and `ckks_mul_add_into`. The product accumulates in scratch, so `res` is untouched on
     /// `Err`.
     fn ckks_fma<R, A, B, C, H>(
         &self,
@@ -97,7 +97,7 @@ where
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(res))
             + self
                 .ckks_copy_tmp_bytes(res, c)
-                .max(self.ckks_mul_add_ct_tmp_bytes(res, a, b, tsk))
+                .max(self.ckks_mul_add_tmp_bytes(res, a, b, tsk))
                 .max(self.ckks_copy_tmp_bytes(res, res))
     }
 
@@ -112,7 +112,7 @@ where
         scratch.scope(|scratch_local| {
             let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
             self.ckks_copy(&mut acc, c, &mut scratch_local)?;
-            self.ckks_mul_add_ct_into(&mut acc, a, b, tsk, &mut scratch_local)?;
+            self.ckks_mul_add_into(&mut acc, a, b, tsk, &mut scratch_local)?;
             self.ckks_copy(res, &acc, &mut scratch_local)?;
             Ok(())
         })

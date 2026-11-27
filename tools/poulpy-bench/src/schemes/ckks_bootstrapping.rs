@@ -1,10 +1,12 @@
-//! Full-slot CKKS bootstrapping benchmark.
+//! CKKS bootstrapping benchmark, of the full layout and of the replicated presets.
 //!
 //! Two benchmarks per preset in [`poulpy_ckks::presets::bootstrapping::all`],
 //! at the radix the backend's failure model selects: the preset, and the preset
 //! with the keys of power-of-two rotations only
 //! ([`BootstrappingPreset::with_power_of_two_keys`]), labelled by
 //! [`preset_label`](poulpy_ckks::test_suite::presets::preset_label) with a `+pow2` suffix.
+//! Then one benchmark per row of [`replicated_presets`], labelled with its maps, batch, period and output `k`, at
+//! its own radix, on a backend whose model selects at least that radix for every preset of the full layout.
 //! Criterion's name filter selects a preset by its name. The setup, bootstrap call, and precision measurement use
 //! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
@@ -22,7 +24,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BootstrappingPresetRun, PresetRunModule, preset_for_backend, preset_label},
+        presets::{BootstrappingPresetRun, PresetRunModule, preset_for_backend, preset_label, replicated_presets},
     },
 };
 use poulpy_core::{
@@ -124,7 +126,8 @@ fn check_precision(backend: &str, id: &str, preset: &BootstrappingPreset, (re, i
 /// Exercises every preset at the radix
 /// [`preset_for_backend`](poulpy_ckks::test_suite::presets::preset_for_backend)
 /// selects for `BE`, EvalMod running on the conjugate-invariant ring for the presets
-/// that put it there.
+/// that put it there, then every row of [`replicated_presets`] at its own radix when
+/// that radix is at most each one selected.
 pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend + HostStaged + MaxBase2k,
@@ -216,17 +219,27 @@ where
     let backend = backend_name::<BE>();
     let mut group = c.benchmark_group(format!("{backend}/ckks/{name}"));
     group.sample_size(10);
+    let mut presets = Vec::new();
     for nominal in all().unwrap() {
         // Each preset, then its variant with the keys of power-of-two rotations only.
         for preset in [nominal.clone(), nominal.with_power_of_two_keys().unwrap()] {
-            let preset = preset_for_backend::<BE>(&preset).unwrap();
-            runner_ckks_bootstrapping(
-                &mut group,
-                preset,
-                |preset| BootstrappingPresetRun::<BE, BC>::setup(preset),
-                record,
-            );
+            presets.push(preset_for_backend::<BE>(&preset).unwrap());
         }
+    }
+    // The model does not cover the replicated maps: they run at their own radix where it holds for the full layout.
+    let base2k = presets.iter().map(BootstrappingPreset::base2k).min().unwrap();
+    presets.extend(
+        replicated_presets(usize::MAX)
+            .into_iter()
+            .filter(|preset| preset.base2k() <= base2k),
+    );
+    for preset in presets {
+        runner_ckks_bootstrapping(
+            &mut group,
+            preset,
+            |preset| BootstrappingPresetRun::<BE, BC>::setup(preset),
+            record,
+        );
     }
     group.finish();
 }

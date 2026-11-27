@@ -247,7 +247,7 @@ fn by_const_kernel(
     a_base: u32,
     a_stride: u32,
     a_size: u32,
-    // The selected coefficient of limb 0 of `b`.
+    // Limb 0 of the degree-1 `b`.
     b_base: u32,
     b_stride: u32,
     b_size: u32,
@@ -327,20 +327,11 @@ pub(crate) fn const_product(
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) const CONST_TERMS: usize = 4;
 
-/// `res[j][i] = sum_{u + v = j + offset} a[u][i] * b[v][b_coeff]` for every
-/// limb of `res`, added to `res` when `accumulate`. Limbs without a term are
-/// zero, or unchanged when accumulating. `b` may have any degree.
-pub(crate) fn convolution_by_const<RT: GpuRuntime>(
-    res: &Column,
-    a: &Column,
-    b: &Column,
-    b_coeff: usize,
-    offset: usize,
-    accumulate: bool,
-) {
+/// `res[j][i] = sum_{u + v = j + offset} a[u][i] * b[v]` for every limb of
+/// `res`, `b` of degree 1, added to `res` when `accumulate`. Limbs without a
+/// term are zero, or unchanged when accumulating.
+pub(crate) fn convolution_by_const<RT: GpuRuntime>(res: &Column, a: &Column, b: &Column, offset: usize, accumulate: bool) {
     assert!(res.words == 2 && a.words == 1 && b.words == 1);
-    assert!(a.n == res.n, "cnv_by_const_apply: a.n() != res.n()");
-    assert!(b_coeff < b.n || b.size == 0, "cnv_by_const_apply: b_coeff out of range");
     if res.size == 0 || res.n == 0 {
         return;
     }
@@ -360,7 +351,7 @@ pub(crate) fn convolution_by_const<RT: GpuRuntime>(
             a.base,
             a.stride,
             a.size as u32,
-            b.base + b_coeff as u32,
+            b.base,
             b.stride,
             b.size as u32,
             offset.min(a.size + b.size) as u32,

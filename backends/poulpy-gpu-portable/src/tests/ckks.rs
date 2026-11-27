@@ -1,6 +1,16 @@
 //! The upstream `poulpy-ckks` suites, with `NTT4x30Portable` as the comparison backend.
 
+use poulpy_ckks::{
+    CKKSCompositionError,
+    api::{CKKSAddOps, CKKSSubOps},
+    test_suite::{
+        helpers::{assert_ckks_error, ckks_spec},
+        parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
+    },
+};
+use poulpy_core::{GLWEFill, layouts::LWEInfos};
 use poulpy_cpu_portable::NTT4x30Portable;
+use poulpy_hal::layouts::{ConjugateInvariant, Module, Ring, Standard};
 
 type Gpu = crate::NTT4x30Gpu<super::Runtime>;
 
@@ -232,18 +242,82 @@ fn small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<Gpu, NTT4x30Portable>();
 }
 
-/// The derived `ckks_bootstrap` of the small preset records as a graph and issues no host read, write or
-/// synchronization, so every step stays on the device.
+/// The derived `ckks_bootstrap` of the small preset, on the full and a replicated layout, records as a graph and issues
+/// no host read, write or synchronization, so every step stays on the device.
 #[test]
 fn small_s2c_bootstrap_records_without_host_events() {
-    let mut run = poulpy_ckks::test_suite::presets::small_s2c_preset_run_with_client::<Gpu, NTT4x30Portable>();
-    // Compiles the kernels and fills the pools, so the recording is of a steady-state bootstrap.
-    run.bootstrap();
+    let replicated = poulpy_ckks::shaping::ShapingUnit::U16_40.layout(3).unwrap();
+    for slot_layout in [poulpy_ckks::SlotLayout::Full, poulpy_ckks::SlotLayout::Replicated(replicated)] {
+        let mut run = poulpy_ckks::test_suite::presets::small_preset_run_with_client::<Gpu, NTT4x30Portable>(slot_layout);
+        // Compiles the kernels and fills the pools, so the recording is of a steady-state bootstrap.
+        run.bootstrap();
+        let run = std::cell::RefCell::new(run);
+        let replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
+        assert!(replay.launches() > 0, "{slot_layout:?}");
+        let host = replay.host_events();
+        assert_eq!((host.reads, host.writes, host.syncs), (0, 0, 0), "{slot_layout:?}");
+    }
+}
+
+/// Both replicated conversions, onto the layout and back, record as a graph and issue no host read, write or
+/// synchronization.
+#[test]
+fn replicated_conversions_record_without_host_events() {
+    let params = poulpy_ckks::test_suite::CKKSTestParams {
+        n: 64,
+        hw: 48,
+        base2k: 52,
+        ..poulpy_ckks::test_suite::BASE52_PARAMS_F64
+    };
+    let module = Module::<Gpu>::new(params.n as u64);
+    let mut run =
+        poulpy_ckks::test_suite::parity::replicated_conversions_run::<Gpu, f64, poulpy_hal::layouts::Standard>(params, &module);
+    // Compiles the kernels and fills the pools, so the recording is of a steady-state run.
+    run();
+    poulpy_hal::api::ModuleSynchronize::synchronize(&module);
     let run = std::cell::RefCell::new(run);
-    let replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
+    let replay = crate::Replay::<super::Runtime>::record(|| (run.borrow_mut())());
     assert!(replay.launches() > 0);
     let host = replay.host_events();
     assert_eq!((host.reads, host.writes, host.syncs), (0, 0, 0));
+}
+
+/// The cached unit shifts refuse a ciphertext above the module's degree as their default bodies do, under their own
+/// names, on both rings.
+#[test]
+fn unit_shifts_refuse_as_their_default_bodies() {
+    unit_shift_refusals::<Standard>();
+    unit_shift_refusals::<ConjugateInvariant>();
+}
+
+fn unit_shift_refusals<Rg: Ring>()
+where
+    Module<Gpu>: GLWEFill<Gpu, Rg> + CKKSAddOps<Gpu, Rg> + CKKSSubOps<Gpu, Rg>,
+{
+    let module = Module::<Gpu>::new(64);
+    let small = Module::<Gpu>::new(32);
+    let layout = ckks_spec(64, 52, 40, 64);
+    for (op, add) in [("ckks_add_one_assign", true), ("ckks_sub_one_assign", false)] {
+        let mut dst = fixture_ciphertext::<Gpu, Rg>(&module, &layout, 7);
+        let before = snapshot::<Gpu, _, Rg>(&dst);
+        let size = dst.max_size();
+        let bytes = if add {
+            <Module<Gpu> as CKKSAddOps<Gpu, Rg>>::ckks_add_one_tmp_bytes(&small, size)
+        } else {
+            <Module<Gpu> as CKKSSubOps<Gpu, Rg>>::ckks_sub_one_tmp_bytes(&small, size)
+        };
+        let err = with_scratch::<Gpu, _>(bytes, |s| {
+            if add {
+                <Module<Gpu> as CKKSAddOps<Gpu, Rg>>::ckks_add_one_assign(&small, &mut dst, s)
+            } else {
+                <Module<Gpu> as CKKSSubOps<Gpu, Rg>>::ckks_sub_one_assign(&small, &mut dst, s)
+            }
+        })
+        .unwrap_err();
+        let reason = "operand degree exceeds the module degree".into();
+        assert_ckks_error(op, &err, CKKSCompositionError::InvalidOperand { op, reason });
+        assert_eq!(snapshot::<Gpu, _, Rg>(&dst), before, "{op}: refused call changed dst");
+    }
 }
 
 /// Serializes the full-size tests: each takes about 20 GB of device memory, and the
@@ -264,12 +338,9 @@ fn bootstrapping_presets_meet_precision() {
 /// encrypted and outputs decrypted by the portable client, bootstraps evaluated on the device.
 #[test]
 #[ignore = "full-size logN14 to logN16 replicated presets: minutes on the device; run in release"]
-fn replicated_bootstrapping_presets_meet_precision() {
+fn ckks_bootstrap_replicated_presets() {
     let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision_with_client::<
-        Gpu,
-        poulpy_cpu_portable::NTT4x30Portable,
-    >(52);
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_replicated_presets_with_client::<Gpu, NTT4x30Portable>(52);
 }
 
 /// One preset at full size: its measured precision, then the kernel launches
@@ -420,7 +491,7 @@ fn conjugate_invariant_encoding_matches_portable() {
     use poulpy_core::layouts::GLWEToBackendRef;
     use poulpy_hal::{
         api::{ModuleN, ScratchOwnedAlloc},
-        layouts::{Backend, ConjugateInvariant, HostBytesBackend, Module, ScratchOwned},
+        layouts::{Backend, HostBytesBackend, ScratchOwned},
     };
 
     /// The limbs of the plaintext and the values it decodes to.

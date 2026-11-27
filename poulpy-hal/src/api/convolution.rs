@@ -124,14 +124,14 @@ pub trait CnvOps<BE: Backend, Rg: Ring = Standard> {
     /// ```
     fn cnv_by_const_apply_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Writes the convolution of `a[a_col]` with coefficient `b_coeff` of `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
+    /// Writes the convolution of `a[a_col]` with the constant `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
     ///
     /// ```text
-    /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
+    /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// definition res[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v,b_coeff]; other columns of res are unchanged
-    /// domain     res: a VecZnxBig of degree N; a: a dense VecZnx of degree N; b: a dense VecZnx of any degree, b_coeff < b.n(); res.size(), a.size() and b.size() >= 1
+    /// definition res[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; other columns of res are unchanged
+    /// domain     res: a VecZnxBig of degree N; a: a dense VecZnx of degree N; b: a dense VecZnx of degree 1; res.size(), a.size() and b.size() >= 1
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size()); every coefficient of each partial sum and result is representable in BigWord
     /// ensures    the selected column holds the limb window of the constant convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
     /// test       test_convolution_by_const, test_cnv_by_const_rejects_degree_mismatch
@@ -146,7 +146,6 @@ pub trait CnvOps<BE: Backend, Rg: Ring = Standard> {
         a_col: usize,
         b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
@@ -162,13 +161,13 @@ pub trait CnvOps<BE: Backend, Rg: Ring = Standard> {
     /// ```
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Adds the convolution of `a[a_col]` with coefficient `b_coeff` of `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
+    /// Adds the convolution of `a[a_col]` with the constant `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
     ///
     /// ```text
-    /// op         cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
+    /// op         cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition res[res_col,j] = old(res)[res_col,j] + sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v,b_coeff]; selected-column limbs for which the sum index set is empty and other columns of res are unchanged
+    /// definition res[res_col,j] = old(res)[res_col,j] + sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; selected-column limbs for which the sum index set is empty and other columns of res are unchanged
     /// domain     as for cnv_by_const_apply
     /// requires   scratch >= cnv_by_const_apply_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size()); every coefficient of each partial sum and result is representable in BigWord
     /// ensures    the selected column gains the constant convolution; limbs outside its support retain their old value
@@ -186,7 +185,6 @@ pub trait CnvOps<BE: Backend, Rg: Ring = Standard> {
         a_col: usize,
         b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
 

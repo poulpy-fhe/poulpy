@@ -272,11 +272,13 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
                 let rotation = (a >> (level + 1)) as i64;
                 let key = keys
                     .get_automorphism_key(galois_element(rotation, 2 * n as i64), ct.k())
-                    .map_err(|source| poulpy_ckks::CKKSCompositionError::MissingAutomorphismKey {
-                        op: "ckks_slot_trace_assign",
-                        rotation,
-                        k: ct.k().into(),
-                        source,
+                    .map_err(|source| {
+                        poulpy_ckks::CKKSCompositionError::automorphism_key_lookup(
+                            "ckks_slot_trace_assign",
+                            rotation,
+                            ct.k().into(),
+                            source,
+                        )
                     })?;
                 poulpy_core::GLWEAutomorphism::glwe_automorphism_add_assign(module, ct, &key, rest);
             }

@@ -89,9 +89,10 @@ fn ntt4x30_small_c2s_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Oracle>();
 }
 
-/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
+/// Full logN14 to logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::test_ckks_bootstrap_replicated_presets_with_client;
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
@@ -104,17 +105,12 @@ mod bootstrapping_presets {
     fn fft64_presets_meet_precision() {
         bootstrapping_presets_meet_precision::<crate::FFT64Oracle>();
     }
-}
 
-/// Full logN14 to logN16 replicated bootstraps per preset: slow, so opt in with `--ignored`.
-mod replicated_bootstrapping_presets {
-    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
-    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
-
+    // FFT64 types do not run the replicated presets: no FFT64 radix is measured against them.
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
-    fn ntt4x30_presets_meet_precision() {
-        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle>(52);
+    fn ntt4x30_ckks_bootstrap_replicated_presets() {
+        test_ckks_bootstrap_replicated_presets_with_client::<crate::NTT4x30Oracle, crate::NTT4x30Oracle>(52);
     }
 }
 

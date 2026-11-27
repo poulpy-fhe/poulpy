@@ -43,12 +43,15 @@ where
     let mut source: Source = Source::new([0u8; 32]);
 
     let a_cols: usize = 2;
+    let b_cols: usize = 2;
     let a_size: usize = 15;
     let b_size: usize = 15;
     let res_size: usize = a_size + b_size;
 
     let mut a_backend = module.vec_znx_alloc(n, a_cols, a_size);
-    let mut b = VecZnx::alloc(n, 1, b_size);
+    let mut b = VecZnx::alloc(1, b_cols, b_size);
+    // The constants embedded at degree n, for the naive convolution.
+    let mut b_embedded = VecZnx::alloc(n, b_cols, b_size);
 
     let mut res_want = VecZnx::alloc(n, 1, res_size);
     let mut res_big: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(n, 1, res_size);
@@ -57,9 +60,13 @@ where
     let a = download_vec_znx::<BE, Rg>(&a_backend);
 
     let mask = (1 << base2k) - 1;
-    for j in 0..1 {
-        let r = source.next_u64() & mask;
-        b.at_mut(0, j)[0] = ((r << (64 - 17)) as i64) >> (64 - 17);
+    for col in 0..b_cols {
+        for j in 0..b_size {
+            let r = source.next_u64() & mask;
+            let digit = ((r << (64 - 17)) as i64) >> (64 - 17);
+            b.at_mut(col, j)[0] = digit;
+            b_embedded.at_mut(col, j)[0] = digit;
+        }
     }
 
     let b_backend = upload_vec_znx::<BE, Rg>(&b);
@@ -70,7 +77,7 @@ where
             .max(module.vec_znx_normalize_tmp_bytes()),
     );
 
-    for a_col in 0..a.cols() {
+    for (a_col, b_col) in (0..a_cols).flat_map(|a_col| (0..b_cols).map(move |b_col| (a_col, b_col))) {
         for cnv_offset in 0..res_size {
             module.cnv_by_const_apply(
                 cnv_offset,
@@ -79,8 +86,7 @@ where
                 &vec_znx_backend_ref::<BE, Rg>(&a_backend),
                 a_col,
                 &vec_znx_backend_ref::<BE, Rg>(&b_backend),
-                0,
-                0,
+                b_col,
                 &mut scratch.arena(),
             );
 
@@ -107,8 +113,8 @@ where
                 0,
                 &a,
                 a_col,
-                &b,
-                0,
+                &b_embedded,
+                b_col,
                 &mut scratch_setup.arena(),
             );
 
@@ -138,7 +144,7 @@ where
     let res_size: usize = a_size + b_size;
 
     let mut a_backend = module.vec_znx_alloc(n, a_cols, a_size);
-    let mut b_backend = module.vec_znx_alloc(n, 1, b_size);
+    let mut b_backend = module.vec_znx_alloc(1, 2, b_size);
     module.vec_znx_fill_uniform_source_all(17, a_size * 17, &mut a_backend, &mut source);
     module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_backend, &mut source);
 
@@ -161,7 +167,6 @@ where
                 0,
                 &vec_znx_backend_ref::<BE, Rg>(&b_backend),
                 0,
-                0,
                 &mut scratch_apply.arena(),
             );
             module.cnv_by_const_apply_add(
@@ -171,7 +176,6 @@ where
                 &vec_znx_backend_ref::<BE, Rg>(&a_backend),
                 1,
                 &vec_znx_backend_ref::<BE, Rg>(&b_backend),
-                0,
                 1,
                 &mut scratch_add.arena(),
             );
@@ -185,7 +189,6 @@ where
                 0,
                 &vec_znx_backend_ref::<BE, Rg>(&b_backend),
                 0,
-                0,
                 &mut scratch_apply.arena(),
             );
             module.cnv_by_const_apply(
@@ -195,7 +198,6 @@ where
                 &vec_znx_backend_ref::<BE, Rg>(&a_backend),
                 1,
                 &vec_znx_backend_ref::<BE, Rg>(&b_backend),
-                0,
                 1,
                 &mut scratch_apply.arena(),
             );
@@ -1091,8 +1093,9 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
 }
 
 /// `cnv_by_const_apply` and `cnv_by_const_apply_add` reject a first operand
-/// whose degree is not the module degree, in release builds too: the kernels
-/// would otherwise truncate the coefficient loop to the shorter operand. The
+/// whose degree is not the module degree, and a constant whose degree is not 1,
+/// in release builds too: the kernels would otherwise truncate the coefficient
+/// loop to the shorter operand or read one coefficient of a polynomial. The
 /// destination is left unchanged.
 pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
@@ -1102,55 +1105,39 @@ pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBack
 {
     let size = 2usize;
     let mut source = Source::new([6u8; 32]);
-    let mut a_be = module.vec_znx_alloc(params.n / 2, 1, size);
-    module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut a_be, &mut source);
-    let mut b_be = module.vec_znx_alloc(params.n, 1, size);
-    module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut b_be, &mut source);
+    let mut operand = |n: usize| {
+        let mut x = module.vec_znx_alloc(n, 1, size);
+        module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut x, &mut source);
+        x
+    };
+    let (a_half, a_full, b_const, b_full) = (operand(params.n / 2), operand(params.n), operand(1), operand(params.n));
     let mut res: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(params.n, 1, size);
-    module.vec_znx_big_from_small(&mut res.to_backend_mut(), 0, &vec_znx_backend_ref::<BE, Rg>(&b_be), 0);
+    module.vec_znx_big_from_small(&mut res.to_backend_mut(), 0, &vec_znx_backend_ref::<BE, Rg>(&b_full), 0);
     let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, size, size, size));
     let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(0, size, size, size));
 
-    macro_rules! rejects {
-        ($op:literal, $call:expr) => {{
+    for (case, a, b) in [("a.n() != res.n()", &a_half, &b_const), ("b.n() != 1", &a_full, &b_full)] {
+        let (a, b) = (vec_znx_backend_ref::<BE, Rg>(a), vec_znx_backend_ref::<BE, Rg>(b));
+        for add in [false, true] {
             let before = BE::to_host_bytes(DataView::data(&res));
-            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| $call)).is_err();
-            assert!(panicked, concat!($op, " accepted a.n() != res.n() instead of panicking"));
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if add {
+                    module.cnv_by_const_apply_add(0, &mut res.to_backend_mut(), 0, &a, 0, &b, 0, &mut scratch_add.arena())
+                } else {
+                    module.cnv_by_const_apply(0, &mut res.to_backend_mut(), 0, &a, 0, &b, 0, &mut scratch_apply.arena())
+                }
+            }))
+            .is_err();
+            assert!(
+                panicked,
+                "cnv_by_const_apply (add {add}) accepted {case} instead of panicking"
+            );
             assert!(
                 before == BE::to_host_bytes(DataView::data(&res)),
-                concat!($op, " wrote its destination before rejecting a.n() != res.n()")
+                "cnv_by_const_apply (add {add}) wrote its destination before rejecting {case}"
             );
-        }};
+        }
     }
-
-    rejects!(
-        "cnv_by_const_apply",
-        module.cnv_by_const_apply(
-            0,
-            &mut res.to_backend_mut(),
-            0,
-            &vec_znx_backend_ref::<BE, Rg>(&a_be),
-            0,
-            &vec_znx_backend_ref::<BE, Rg>(&b_be),
-            0,
-            0,
-            &mut scratch_apply.arena(),
-        )
-    );
-    rejects!(
-        "cnv_by_const_apply_add",
-        module.cnv_by_const_apply_add(
-            0,
-            &mut res.to_backend_mut(),
-            0,
-            &vec_znx_backend_ref::<BE, Rg>(&a_be),
-            0,
-            &vec_znx_backend_ref::<BE, Rg>(&b_be),
-            0,
-            0,
-            &mut scratch_add.arena(),
-        )
-    );
 }
 
 /// `switch_ring_{a.n() -> n}(a)` on the backend, a copy when `a` is dense.

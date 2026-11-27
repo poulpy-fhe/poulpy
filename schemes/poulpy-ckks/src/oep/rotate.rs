@@ -64,7 +64,7 @@ pub unsafe trait CKKSRotateImpl<Rg: Ring = Standard>: Backend + super::CKKSCopyI
     /// Default body: `ckks_rotate_into_derived`. A shift whose Galois element `ckks_galois_element(k)` is `1` (a
     /// multiple of the slot count) is the selected `ckks_copy` then the noise record cleared, with no key lookup. Any
     /// other shift looks up the automorphism key of the element at `min(src.k(), dst.k())`, then
-    /// [`Self::ckks_rotate_with_key_into`]. A missing key is `MissingAutomorphismKey`.
+    /// [`Self::ckks_rotate_with_key_into`]. A missing key is `MissingAutomorphismKey`, one too narrow `AutomorphismKeyTooNarrow`.
     fn ckks_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
         k: i64,
@@ -83,7 +83,7 @@ pub unsafe trait CKKSRotateImpl<Rg: Ring = Standard>: Backend + super::CKKSCopyI
 
     /// Default body: `ckks_rotate_assign_derived`. A shift whose Galois element is `1` clears the noise record and does
     /// nothing else. Any other shift looks up the automorphism key of the element at `dst.k()`, then
-    /// [`Self::ckks_rotate_with_key_assign`]. A missing key is `MissingAutomorphismKey`.
+    /// [`Self::ckks_rotate_with_key_assign`]. A missing key is `MissingAutomorphismKey`, one too narrow `AutomorphismKeyTooNarrow`.
     fn ckks_rotate_assign<Dst, H>(
         module: &Module<Self>,
         k: i64,

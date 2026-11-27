@@ -13,10 +13,11 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{BSGSPolynomialInfos, CKKSComplexPolynomialEvaluationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
+    error::DIVISOR,
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
-        BSGSPolynomial, Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, ComplexPolynomial, Parity, Polynomial,
-        PolynomialInputTransform, SplitStrategy,
+        BSGSPolynomial, Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, ComplexPolynomial, DEFAULT_SPLIT_STRATEGY, Parity,
+        Polynomial, PolynomialInputTransform, SplitStrategy,
     },
     power_basis::{CKKSPowerBasisGen, CKKSPowerBasisInsert, PowerBasis},
     test_suite::CKKSTestParams,
@@ -25,8 +26,8 @@ use crate::{
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
-    assert_ckks_error, assert_decrypt_precision, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec, dirty_ct, gen_sk_with_raw,
-    gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
+    assert_ckks_error, assert_decrypt_precision, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_spec, dirty_ct,
+    gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 use crate::SlotsKind;
@@ -138,9 +139,15 @@ fn eval_encoded_bsgs<F: TestScalar, Rg: Ring>(poly: &BSGSPolynomial<CKKSPlaintex
 
     let mut steps = Vec::with_capacity(poly.baby_steps().len());
     for coeffs_pt in poly.baby_steps().iter() {
-        let degree = coeffs_pt.n().as_usize() - 1;
-        let mut coeffs = vec![F::zero(); coeffs_pt.n().as_usize()];
-        coeffs_pt.decode_host_floats(&mut coeffs).unwrap();
+        let degree = coeffs_pt.len() - 1;
+        let coeffs: Vec<F> = coeffs_pt
+            .iter()
+            .map(|pt| {
+                let mut values = vec![F::zero(); pt.n().as_usize()];
+                pt.decode_host_floats(&mut values).unwrap();
+                values[0]
+            })
+            .collect();
         let value = coeffs.iter().enumerate().fold(F::zero(), |acc, (i, &c)| {
             let basis_value = match poly.basis() {
                 Basis::Monomial => x.powi(i as i32),
@@ -576,49 +583,54 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused evaluation wrote res");
 }
 
-/// A real polynomial reporting no baby step, which a custom [`BSGSPolynomialInfos`] may.
-struct NoBabySteps<'a, C>(&'a BSGSPolynomial<C>);
+/// A real polynomial reporting no baby step, or its baby steps without constant, which a custom
+/// [`BSGSPolynomialInfos`] may.
+struct Malformed<'a, C> {
+    poly: &'a BSGSPolynomial<C>,
+    empty_steps: bool,
+}
 
-impl<BE, C, Rg: Ring> BSGSPolynomialInfos<BE, Rg> for NoBabySteps<'_, C>
+impl<BE, C, Rg: Ring> BSGSPolynomialInfos<BE, Rg> for Malformed<'_, C>
 where
     BE: poulpy_hal::layouts::Backend,
-    C: GLWEToBackendRef<BE, Rg> + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::BSGSMeta + IntPolyInfos,
+    C: poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::BSGSMeta + IntPolyInfos,
 {
     type Coeffs = C;
 
     fn degree(&self) -> usize {
-        self.0.degree()
+        self.poly.degree()
     }
 
     fn baby_steps(&self) -> usize {
-        0
+        if self.empty_steps { self.poly.baby_steps().len() } else { 0 }
     }
 
-    fn baby_step(&self, i: usize) -> &C {
-        self.0.baby_step(i)
+    fn baby_step(&self, i: usize) -> &[C] {
+        if self.empty_steps { &[] } else { self.poly.baby_step(i) }
     }
 
     fn basis(&self) -> Basis {
-        self.0.basis()
+        self.poly.basis()
     }
 
     fn parity(&self) -> Parity {
-        self.0.parity()
+        self.poly.parity()
     }
 
     fn log_split(&self) -> usize {
-        self.0.log_split()
+        self.poly.log_split()
     }
 
     fn split_strategy(&self) -> SplitStrategy {
-        BSGSPolynomialInfos::<BE, Rg>::split_strategy(self.0)
+        BSGSPolynomialInfos::<BE, Rg>::split_strategy(self.poly)
     }
 }
 
-/// Polynomials the evaluation cannot run are `InvalidOperand` of the invoked method on an empty arena, `res`
-/// untouched: a real polynomial without baby step, complex parts differing in baby-step count, degree, parity, basis or
-/// the length of a baby step, a complex basis other than the power basis', and, for the one-shot form, complex parts
-/// of different input transforms.
+/// Polynomials the evaluation cannot run are refused on an empty arena, `res` untouched: `InvalidOperand` of the
+/// invoked method for a real polynomial without baby step or with a baby step without constant, complex parts differing
+/// in baby-step count, degree, parity or basis, a complex basis other than the power basis', and, for the one-shot form,
+/// complex parts of different input transforms; `PlaintextDegreeMismatch` for constants above the input's degree, the
+/// input untouched too.
 pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -675,7 +687,10 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
     let quadratic = [0.125, -0.25, 0.0625];
     let mono3 = upload(&encode(Basis::Monomial, &cubic, None));
     let monomial_basis = PowerBasis::new(Basis::Monomial, alloc_ct(&params, module, params.k));
-    let no_baby_steps = NoBabySteps(&mono3);
+    let no_baby_steps = Malformed {
+        poly: &mono3,
+        empty_steps: false,
+    };
     refused("no baby step", REAL_FROM_BASIS, "the polynomial has no baby step", &|res| {
         with_scratch::<BE, _>(0, |s| {
             module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, &monomial_basis, &no_baby_steps, &tsk, s)
@@ -686,19 +701,77 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
             module.ckks_eval_poly_real_const_coeffs(res, &x, &no_baby_steps, &tsk, s)
         })
     });
+    let empty = Malformed {
+        poly: &mono3,
+        empty_steps: true,
+    };
+    const EMPTY: &str = "a baby step holds no constant";
+    refused("empty baby step", REAL_FROM_BASIS, EMPTY, &|res| {
+        with_scratch::<BE, _>(0, |s| {
+            module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, &monomial_basis, &empty, &tsk, s)
+        })
+    });
+    refused("empty baby step, one-shot", REAL, EMPTY, &|res| {
+        with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_real_const_coeffs(res, &x, &empty, &tsk, s))
+    });
+
+    // Constants of the module's degree for an input of half of it.
+    let half = CKKSTestParams {
+        n: params.n / 2,
+        ..params
+    };
+    let wide = Polynomial::new(Basis::Monomial, cubic.to_vec())
+        .decompose_bsgs_with(DEFAULT_SPLIT_STRATEGY, |values: &[f64]| {
+            Ok(values
+                .iter()
+                .map(|&value| {
+                    ckks_pt_cst_full::<BE, F, Standard>(
+                        host_module,
+                        module,
+                        params.base2k.into(),
+                        PT_PREC,
+                        params.n / 2,
+                        Some(value),
+                        None,
+                    )
+                })
+                .collect())
+        })
+        .unwrap();
+    let sub_basis = PowerBasis::new(
+        Basis::Monomial,
+        dirty_ct(module, &alloc_ct(&half, module, params.k), params.k),
+    );
+    let sub_x = sub_basis.get_stored(1).unwrap();
+    let mut sub_res = dirty_ct(module, sub_x, params.k);
+    for op in [REAL_FROM_BASIS, REAL] {
+        let before = (snapshot::<BE, _, Standard>(&sub_res), snapshot::<BE, _, Standard>(sub_x));
+        let err = with_scratch::<BE, _>(0, |s| {
+            if op == REAL {
+                module.ckks_eval_poly_real_const_coeffs(&mut sub_res, sub_x, &wide, &tsk, s)
+            } else {
+                module.ckks_eval_poly_real_const_coeffs_from_power_basis(&mut sub_res, &sub_basis, &wide, &tsk, s)
+            }
+        })
+        .expect_err(op);
+        assert_ckks_error(
+            op,
+            &err,
+            CKKSCompositionError::PlaintextDegreeMismatch {
+                op,
+                ct_n: half.n,
+                pt_n: params.n,
+                rule: DIVISOR,
+            },
+        );
+        assert_eq!(
+            (snapshot::<BE, _, Standard>(&sub_res), snapshot::<BE, _, Standard>(sub_x)),
+            before,
+            "{op}: a refused evaluation wrote res or the input"
+        );
+    }
 
     let mono2_host = encode(Basis::Monomial, &quadratic, None);
-    let steps = mono2_host.baby_steps();
-    assert_ne!(
-        steps[0].n(),
-        steps[1].n(),
-        "test precondition: the quadratic's baby steps differ in length"
-    );
-    let mut i = steps.len();
-    let mono2_reversed = mono2_host.map_baby_steps_ref(|_| {
-        i -= 1;
-        upload_pt(module, &steps[i])
-    });
     let part = |coeffs: &[f64], basis: Basis, parity: Option<Parity>| upload(&encode(basis, coeffs, parity));
     let odd = [0.0, -0.25, 0.0, 0.03125];
     let cases = [
@@ -728,23 +801,15 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
         re: part(&odd, Basis::Monomial, Some(Parity::Odd)),
         im: part(&odd, Basis::Monomial, Some(Parity::Full)),
     };
-    let lengths = ComplexBSGSPolynomial {
-        re: upload(&mono2_host),
-        im: mono2_reversed,
-    };
-    for (label, poly, reason) in [
-        ("parity", &parities, "real/imag parities differ"),
-        ("baby-step length", &lengths, "real/imag baby-step lengths differ"),
-    ] {
-        refused(label, COMPLEX_FROM_BASIS, reason, &|res| {
-            with_scratch::<BE, _>(0, |s| {
-                module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &monomial_basis, poly, &tsk, s)
-            })
-        });
-        refused(&format!("{label}, one-shot"), COMPLEX, reason, &|res| {
-            with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_complex_const_coeffs(res, &x, poly, &tsk, s))
-        });
-    }
+    const PARITIES: &str = "real/imag parities differ";
+    refused("parity", COMPLEX_FROM_BASIS, PARITIES, &|res| {
+        with_scratch::<BE, _>(0, |s| {
+            module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &monomial_basis, &parities, &tsk, s)
+        })
+    });
+    refused("parity, one-shot", COMPLEX, PARITIES, &|res| {
+        with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_complex_const_coeffs(res, &x, &parities, &tsk, s))
+    });
 
     let complex = ComplexBSGSPolynomial {
         re: part(&cubic, Basis::Monomial, None),
@@ -1897,7 +1962,7 @@ fn eval_poly_const_coeffs_complex_fold<BE, F, E>(
     let n_baby = bsgs_host.re.baby_steps().len();
     assert!(n_baby >= 2, "fold requires at least two baby steps");
     assert_eq!(
-        bsgs_host.re.baby_step(n_baby - 1).n().as_usize(),
+        bsgs_host.re.baby_step(n_baby - 1).len(),
         1,
         "fold requires a lone trailing constant baby step"
     );
@@ -2080,10 +2145,11 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
         },
     };
     use crate::{
-        CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+        CKKSCompositionError, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
         api::CKKSApproximationOps,
         layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, PolynomialApproximation},
-        polynomial::{BSGSPolynomial, Basis, Polynomial, SplitStrategy},
+        polynomial::{Basis, CKKSPolynomialEncode, Polynomial, SplitStrategy},
+        test_suite::helpers::upload_pt,
     };
     let b = params.base2k;
     let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE, Standard>> {
@@ -2094,12 +2160,20 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
         });
         Ok(pt)
     };
-    let poly: BSGSPolynomial<CKKSPlaintextOwned<BE, Standard>> = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
-        .decompose_bsgs_with(SplitStrategy::MinDepth, |c| coeffs(c.len()))
-        .unwrap();
+    let coeff_meta = CoeffsMeta {
+        k: (2 * b).into(),
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(b / 2),
+            ..Default::default()
+        },
+    };
+    let poly = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
+        .encode_bsgs_with::<Standard>(host_module, b.into(), coeff_meta, SplitStrategy::MinDepth)
+        .unwrap()
+        .map_baby_steps_ref(|pt| upload_pt(module, pt));
     let approximation = PolynomialApproximation {
         poly,
-        affine: Some(coeffs(2).unwrap()),
+        affine: Some([coeffs(1).unwrap(), coeffs(1).unwrap()]),
         scale_pow2: None,
         coeff_log_delta: b / 2,
     };

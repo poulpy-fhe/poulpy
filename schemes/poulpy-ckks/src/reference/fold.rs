@@ -551,12 +551,7 @@ where
                 .chain(sparse_split_galois_elements(n, log_g).map(|p| (p, src.k() + log_g as u32)));
             let mut keys = Vec::new();
             for (p, k) in required {
-                let missing = |source| CKKSCompositionError::MissingAutomorphismKey {
-                    op: OP,
-                    rotation: p,
-                    k: k.into(),
-                    source,
-                };
+                let missing = |source| CKKSCompositionError::automorphism_key_lookup(OP, p, k.into(), source);
                 let key = automorphisms
                     .ok_or_else(|| {
                         missing(poulpy_core::CoreError::GGLWEKeyUse {
@@ -655,15 +650,9 @@ where
     let mut image = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     let mut difference = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     for (level, p) in sparse_split_galois_elements(n, log_g).enumerate() {
-        let key =
-            automorphisms
-                .get_automorphism_key(p, wide.k)
-                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                    op: "ckks_unfold",
-                    rotation: p,
-                    k: wide.k.into(),
-                    source,
-                })?;
+        let key = automorphisms
+            .get_automorphism_key(p, wide.k)
+            .map_err(|source| CKKSCompositionError::automorphism_key_lookup("ckks_unfold", p, wide.k.into(), source))?;
         let mut odds = Vec::with_capacity(nodes.len());
         for node in &mut nodes {
             module.glwe_automorphism(&mut image, node, &key, scratch);

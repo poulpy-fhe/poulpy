@@ -8,8 +8,7 @@ use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulOps, CKKSSubOps},
-    ckks_ensure, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, ensure_plaintext_const_operand, ensure_plaintext_vec_operand,
-    get_mul_ct_params,
+    ckks_ensure, ckks_mul_pt_checks, ensure_plaintext_operand, get_mul_ct_params,
     layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
     mul_ct_log_delta, mul_pt_log_delta,
     oep::{CKKSAffineImpl, CKKSMulAddImpl, CKKSMulSubImpl},
@@ -40,41 +39,23 @@ where
     })
 }
 
-/// The checks the addition of coefficient `offset_coeff` of `cst` at coefficient 0 runs on `dst` once the product left
-/// it at `log_budget`.
-fn check_affine_offset_const<R: CKKSCtBounds, P: CKKSInfos>(
-    op: &'static str,
-    dst: &R,
-    log_budget: usize,
-    cst: &P,
-    offset_coeff: usize,
-) -> Result<()> {
-    ensure_plaintext_const_operand(
-        op,
-        dst.base2k().as_usize(),
-        dst.n().as_usize(),
-        0,
-        log_budget,
-        cst,
-        offset_coeff,
-    )
+/// The checks the addition of `offset` runs on `dst` once the product left it at `log_budget`.
+fn check_affine_offset<R: CKKSCtBounds, P: CKKSInfos>(op: &'static str, dst: &R, log_budget: usize, offset: &P) -> Result<()> {
+    ensure_plaintext_operand(op, dst.base2k().as_usize(), dst.n().as_usize(), log_budget, offset)
 }
 
-/// The checks the addition of `offset` runs on `dst` once the product left it at `log_budget`.
-fn check_affine_offset_vec<BE: Backend, R: CKKSCtBounds, P: CKKSInfos>(
-    op: &'static str,
-    dst: &R,
-    log_budget: usize,
-    offset: &P,
-) -> Result<()> {
-    ensure_plaintext_vec_operand(
-        op,
-        dst.base2k().as_usize(),
-        dst.n().as_usize(),
-        log_budget,
-        offset,
-        BE::MIN_DEGREE,
-    )
+/// The refusal the addition of `offset` to the product of `a`, at scale `2^log_delta`, would raise: on a replicated
+/// layout, an offset of a finer scale. Refused under `op`, before the product writes.
+fn check_affine_offset_scale<A: CKKSCtBounds, P: CKKSInfos>(op: &'static str, a: &A, log_delta: usize, offset: &P) -> Result<()> {
+    if offset.log_delta() > log_delta {
+        crate::layouts::validation::reject_replicated_scales(
+            op,
+            crate::GLWEPlaintextInfos::slot_layout(a),
+            log_delta,
+            offset.log_delta(),
+        )?;
+    }
+    Ok(())
 }
 
 /// The checks the accumulation of a fused multiply-accumulate runs before the product: one slot
@@ -92,7 +73,7 @@ fn check_accumulation<const K: usize>(
     Ok(slot_layout)
 }
 
-pub(crate) fn ckks_mul_add_ct_tmp_bytes_derived<BE, R, A, B, T, Rg: Ring>(
+pub(crate) fn ckks_mul_add_tmp_bytes_derived<BE, R, A, B, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -112,7 +93,7 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_mul_add_pt_vec_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_mul_add_pt_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
 where
     BE: CKKSMulAddImpl<Rg>,
     R: CKKSCtBounds,
@@ -121,24 +102,11 @@ where
 {
     module.glwe_bytes_of_from_infos(res)
         + module
-            .ckks_mul_pt_vec_tmp_bytes(res, a, b)
+            .ckks_mul_pt_tmp_bytes(res, a, b)
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_mul_add_pt_const_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
-where
-    BE: CKKSMulAddImpl<Rg>,
-    R: CKKSCtBounds,
-    A: CKKSCtBounds,
-    P: CKKSInfos,
-{
-    module.glwe_bytes_of_from_infos(res)
-        + module
-            .ckks_mul_pt_const_tmp_bytes(res, a, b)
-            .max(module.ckks_add_tmp_bytes(res.size()))
-}
-
-pub(crate) fn ckks_mul_add_ct_into_derived<BE, Dst, A, B, H, Rg: Ring>(
+pub(crate) fn ckks_mul_add_into_derived<BE, Dst, A, B, H, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     a: &A,
@@ -153,7 +121,7 @@ where
     B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     H: GetTensorKey<BE, Rg>,
 {
-    const OP: &str = "ckks_mul_add_ct_into";
+    const OP: &str = "ckks_mul_add_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n(), b.n()])?;
     let slot_layout = check_accumulation(
         OP,
@@ -176,7 +144,7 @@ where
         tsk,
     );
     let key = tensor_key_at(OP, tsk, key_k)?;
-    let bytes = ckks_mul_add_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
+    let bytes = ckks_mul_add_tmp_bytes_derived(module, &*dst, a, b, &key);
     mul_then_combine(
         OP,
         bytes,
@@ -187,7 +155,7 @@ where
     )
 }
 
-pub(crate) fn ckks_mul_add_pt_vec_into_derived<BE, Dst, A, P, Rg: Ring>(
+pub(crate) fn ckks_mul_add_pt_into_derived<BE, Dst, A, P, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     a: &A,
@@ -200,131 +168,31 @@ where
     A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
-    const OP: &str = "ckks_mul_add_pt_vec_into";
+    const OP: &str = "ckks_mul_add_pt_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     check_accumulation(
         OP,
         [
             crate::GLWEPlaintextInfos::slot_layout(&*dst),
             crate::GLWEPlaintextInfos::slot_layout(a),
-            crate::GLWEPlaintextInfos::slot_layout(pt),
+            crate::layouts::validation::factor_layout(a, pt),
         ],
         dst.log_delta(),
         mul_pt_log_delta(a.log_delta()),
     )?;
-    ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
-    let bytes = ckks_mul_add_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
+    ckks_mul_pt_checks(OP, &*dst, a, pt)?;
+    let bytes = ckks_mul_add_pt_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
         OP,
         bytes,
         dst,
         scratch,
-        |tmp, s| module.ckks_mul_pt_vec_into(tmp, a, pt, s),
+        |tmp, s| module.ckks_mul_pt_into(tmp, a, pt, s),
         |dst, tmp, s| module.ckks_add_assign(dst, tmp, s),
     )
 }
 
-pub(crate) fn ckks_mul_add_pt_const_into_derived<BE, Dst, A, P, Rg: Ring>(
-    module: &Module<BE>,
-    dst: &mut Dst,
-    a: &A,
-    pt: &P,
-    pt_coeff: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: CKKSMulAddImpl<Rg>,
-    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
-{
-    const OP: &str = "ckks_mul_add_pt_const_into";
-    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
-    check_accumulation(
-        OP,
-        [
-            crate::GLWEPlaintextInfos::slot_layout(&*dst),
-            crate::GLWEPlaintextInfos::slot_layout(a),
-        ],
-        dst.log_delta(),
-        mul_pt_log_delta(a.log_delta()),
-    )?;
-    ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
-    let bytes = ckks_mul_add_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
-    mul_then_combine(
-        OP,
-        bytes,
-        dst,
-        scratch,
-        |tmp, s| module.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
-        |dst, tmp, s| module.ckks_add_assign(dst, tmp, s),
-    )
-}
-
-pub(crate) fn ckks_affine_pt_const_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(
-    module: &Module<BE>,
-    res: &R,
-    a: &A,
-    affine_const: &P,
-) -> usize
-where
-    BE: CKKSAffineImpl<Rg>,
-    R: CKKSCtBounds,
-    A: CKKSCtBounds,
-    P: CKKSInfos,
-{
-    module
-        .ckks_mul_pt_const_tmp_bytes(res, a, affine_const)
-        .max(module.ckks_add_pt_const_tmp_bytes(res.size()))
-}
-
-pub(crate) fn ckks_affine_pt_const_into_derived<BE, Dst, A, P, Rg: Ring>(
-    module: &Module<BE>,
-    dst: &mut Dst,
-    a: &A,
-    affine_const: &P,
-    offset_coeff: usize,
-    scale_coeff: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: CKKSAffineImpl<Rg>,
-    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
-{
-    const OP: &str = "ckks_affine_pt_const_into";
-    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
-    crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
-    let (log_budget, _, _) = ckks_mul_pt_const_checks(OP, &*dst, a, affine_const, scale_coeff)?;
-    check_affine_offset_const(OP, &*dst, log_budget, affine_const, offset_coeff)?;
-    module.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
-    module.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
-}
-
-pub(crate) fn ckks_affine_pt_const_assign_derived<BE, Dst, P, Rg: Ring>(
-    module: &Module<BE>,
-    dst: &mut Dst,
-    affine_const: &P,
-    offset_coeff: usize,
-    scale_coeff: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: CKKSAffineImpl<Rg>,
-    Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-    P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
-{
-    const OP: &str = "ckks_affine_pt_const_assign";
-    crate::ensure_operand_degrees(OP, module, [dst.n()])?;
-    crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(dst))?;
-    let (log_budget, _, _) = ckks_mul_pt_const_checks(OP, &*dst, &*dst, affine_const, scale_coeff)?;
-    check_affine_offset_const(OP, &*dst, log_budget, affine_const, offset_coeff)?;
-    module.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
-    module.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
-}
-
-pub(crate) fn ckks_affine_pt_vec_tmp_bytes_derived<BE, R, A, S, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, scale: &S) -> usize
+pub(crate) fn ckks_affine_pt_tmp_bytes_derived<BE, R, A, S, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, scale: &S) -> usize
 where
     BE: CKKSAffineImpl<Rg>,
     R: CKKSCtBounds,
@@ -332,11 +200,11 @@ where
     S: CKKSInfos,
 {
     module
-        .ckks_mul_pt_vec_tmp_bytes(res, a, scale)
-        .max(module.ckks_add_pt_vec_tmp_bytes(res.size()))
+        .ckks_mul_pt_tmp_bytes(res, a, scale)
+        .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_affine_pt_vec_into_derived<BE, Dst, A, S, P, Rg: Ring>(
+pub(crate) fn ckks_affine_pt_into_derived<BE, Dst, A, S, P, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     a: &A,
@@ -351,23 +219,24 @@ where
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
-    const OP: &str = "ckks_affine_pt_vec_into";
+    const OP: &str = "ckks_affine_pt_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     crate::layouts::validation::product_layout(
         OP,
         &[
             crate::GLWEPlaintextInfos::slot_layout(a),
-            crate::GLWEPlaintextInfos::slot_layout(scale),
+            crate::layouts::validation::factor_layout(a, scale),
             crate::GLWEPlaintextInfos::slot_layout(offset),
         ],
     )?;
-    let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, scale)?;
-    check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
-    module.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
-    module.ckks_add_pt_vec_assign(dst, offset, scratch)
+    let (log_budget, log_delta, _) = ckks_mul_pt_checks(OP, &*dst, a, scale)?;
+    check_affine_offset(OP, &*dst, log_budget, offset)?;
+    check_affine_offset_scale(OP, a, log_delta, offset)?;
+    module.ckks_mul_pt_into(dst, a, scale, scratch)?;
+    module.ckks_add_assign(dst, offset, scratch)
 }
 
-pub(crate) fn ckks_affine_pt_vec_assign_derived<BE, Dst, S, P, Rg: Ring>(
+pub(crate) fn ckks_affine_pt_assign_derived<BE, Dst, S, P, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     scale: &S,
@@ -380,23 +249,24 @@ where
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
-    const OP: &str = "ckks_affine_pt_vec_assign";
+    const OP: &str = "ckks_affine_pt_assign";
     crate::ensure_operand_degrees(OP, module, [dst.n()])?;
     crate::layouts::validation::product_layout(
         OP,
         &[
             crate::GLWEPlaintextInfos::slot_layout(dst),
-            crate::GLWEPlaintextInfos::slot_layout(scale),
+            crate::layouts::validation::factor_layout(&*dst, scale),
             crate::GLWEPlaintextInfos::slot_layout(offset),
         ],
     )?;
-    let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, &*dst, scale)?;
-    check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
-    module.ckks_mul_pt_vec_assign(dst, scale, scratch)?;
-    module.ckks_add_pt_vec_assign(dst, offset, scratch)
+    let (log_budget, log_delta, _) = ckks_mul_pt_checks(OP, &*dst, &*dst, scale)?;
+    check_affine_offset(OP, &*dst, log_budget, offset)?;
+    check_affine_offset_scale(OP, &*dst, log_delta, offset)?;
+    module.ckks_mul_pt_assign(dst, scale, scratch)?;
+    module.ckks_add_assign(dst, offset, scratch)
 }
 
-pub(crate) fn ckks_mul_sub_ct_tmp_bytes_derived<BE, R, A, B, T, Rg: Ring>(
+pub(crate) fn ckks_mul_sub_tmp_bytes_derived<BE, R, A, B, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -416,7 +286,7 @@ where
             .max(module.ckks_sub_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_mul_sub_pt_vec_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_mul_sub_pt_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
 where
     BE: CKKSMulSubImpl<Rg>,
     R: CKKSCtBounds,
@@ -425,24 +295,11 @@ where
 {
     module.glwe_bytes_of_from_infos(res)
         + module
-            .ckks_mul_pt_vec_tmp_bytes(res, a, b)
+            .ckks_mul_pt_tmp_bytes(res, a, b)
             .max(module.ckks_sub_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_mul_sub_pt_const_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
-where
-    BE: CKKSMulSubImpl<Rg>,
-    R: CKKSCtBounds,
-    A: CKKSCtBounds,
-    P: CKKSInfos,
-{
-    module.glwe_bytes_of_from_infos(res)
-        + module
-            .ckks_mul_pt_const_tmp_bytes(res, a, b)
-            .max(module.ckks_sub_tmp_bytes(res.size()))
-}
-
-pub(crate) fn ckks_mul_sub_ct_into_derived<BE, Dst, A, B, H, Rg: Ring>(
+pub(crate) fn ckks_mul_sub_into_derived<BE, Dst, A, B, H, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     a: &A,
@@ -457,7 +314,7 @@ where
     B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     H: GetTensorKey<BE, Rg>,
 {
-    const OP: &str = "ckks_mul_sub_ct_into";
+    const OP: &str = "ckks_mul_sub_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n(), b.n()])?;
     let slot_layout = check_accumulation(
         OP,
@@ -480,7 +337,7 @@ where
         tsk,
     );
     let key = tensor_key_at(OP, tsk, key_k)?;
-    let bytes = ckks_mul_sub_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
+    let bytes = ckks_mul_sub_tmp_bytes_derived(module, &*dst, a, b, &key);
     mul_then_combine(
         OP,
         bytes,
@@ -491,7 +348,7 @@ where
     )
 }
 
-pub(crate) fn ckks_mul_sub_pt_vec_into_derived<BE, Dst, A, P, Rg: Ring>(
+pub(crate) fn ckks_mul_sub_pt_into_derived<BE, Dst, A, P, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     a: &A,
@@ -504,63 +361,26 @@ where
     A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
-    const OP: &str = "ckks_mul_sub_pt_vec_into";
+    const OP: &str = "ckks_mul_sub_pt_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     check_accumulation(
         OP,
         [
             crate::GLWEPlaintextInfos::slot_layout(&*dst),
             crate::GLWEPlaintextInfos::slot_layout(a),
-            crate::GLWEPlaintextInfos::slot_layout(pt),
+            crate::layouts::validation::factor_layout(a, pt),
         ],
         dst.log_delta(),
         mul_pt_log_delta(a.log_delta()),
     )?;
-    ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
-    let bytes = ckks_mul_sub_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
+    ckks_mul_pt_checks(OP, &*dst, a, pt)?;
+    let bytes = ckks_mul_sub_pt_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
         OP,
         bytes,
         dst,
         scratch,
-        |tmp, s| module.ckks_mul_pt_vec_into(tmp, a, pt, s),
-        |dst, tmp, s| module.ckks_sub_assign(dst, tmp, s),
-    )
-}
-
-pub(crate) fn ckks_mul_sub_pt_const_into_derived<BE, Dst, A, P, Rg: Ring>(
-    module: &Module<BE>,
-    dst: &mut Dst,
-    a: &A,
-    pt: &P,
-    pt_coeff: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: CKKSMulSubImpl<Rg>,
-    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
-{
-    const OP: &str = "ckks_mul_sub_pt_const_into";
-    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
-    check_accumulation(
-        OP,
-        [
-            crate::GLWEPlaintextInfos::slot_layout(&*dst),
-            crate::GLWEPlaintextInfos::slot_layout(a),
-        ],
-        dst.log_delta(),
-        mul_pt_log_delta(a.log_delta()),
-    )?;
-    ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
-    let bytes = ckks_mul_sub_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
-    mul_then_combine(
-        OP,
-        bytes,
-        dst,
-        scratch,
-        |tmp, s| module.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
+        |tmp, s| module.ckks_mul_pt_into(tmp, a, pt, s),
         |dst, tmp, s| module.ckks_sub_assign(dst, tmp, s),
     )
 }

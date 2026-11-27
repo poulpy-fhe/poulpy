@@ -1,6 +1,5 @@
 //! Trigonometric functions.
 
-use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 mod inverse;
 
@@ -156,8 +155,8 @@ pub trait CKKSTrigOps<BE: Backend, Rg: Ring = Standard> {
         S: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
-        Q: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        Q: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>;
 
     declare_unary_op!(ckks_tan_tmp_bytes, ckks_tan, TanPlan, "tan");
@@ -209,8 +208,8 @@ where
         S: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
-        Q: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        Q: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {

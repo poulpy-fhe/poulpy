@@ -13,7 +13,7 @@ use poulpy_hal::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSMulOps,
-    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -354,10 +354,12 @@ where
         .map(|(&av, &bv)| step(av - bv + epsilon) * step(bv - av + epsilon))
         .collect();
 
-    let mut host_constants = host_module.ckks_plaintext_alloc(3usize.into(), base.base2k.into(), coeff_meta.k());
-    host_constants.set_meta(coeff_meta.meta());
-    host_constants.encode_host_floats(&[lo, hi, epsilon]).unwrap();
-    let constants = upload_pt(module, &host_constants);
+    let constants = [lo, hi, epsilon].map(|v| {
+        upload_pt(
+            module,
+            &crate::plan::encode_constant(host_module, base.base2k.into(), coeff_meta, v).unwrap(),
+        )
+    });
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
@@ -405,9 +407,8 @@ where
             module.ckks_indicator(
                 &mut res,
                 &ca,
-                &constants,
-                0,
-                1,
+                &constants[0],
+                &constants[1],
                 &composite,
                 &tsk,
                 &conj_key,
@@ -418,8 +419,7 @@ where
                 &mut res,
                 &ca,
                 &cb,
-                &constants,
-                2,
+                &constants[2],
                 &composite,
                 &tsk,
                 &conj_key,

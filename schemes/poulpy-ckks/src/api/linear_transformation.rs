@@ -99,7 +99,8 @@ pub fn ckks_linear_transformation_output_k<P: LtDiagonalMeta>(
 }
 
 /// Layout of a plaintext diagonal of a transform on a ciphertext of layout `ct`, at its degree, `base2k` and storage
-/// width: the diagonal the scratch queries take for a transform of plaintext diagonals.
+/// width: the diagonal the scratch queries take for a transform of plaintext diagonals at that degree. A streamed
+/// transform of narrower diagonals is queried with its narrowest one.
 pub fn ckks_plaintext_diagonal_layout<C: GLWEInfos>(ct: &C) -> GLWELayout {
     GLWELayout {
         n: ct.n(),
@@ -158,10 +159,13 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
 ///
 /// The `_self_` variants allocate and prepare the baby cache internally for code
 /// paths that evaluate a transform once.
+///
+/// The five evaluation queries (`ckks_linear_transformation_eval[_streamed|_sum[_streamed]|_self]_tmp_bytes`) are
+/// bounds: they take the largest route at their layouts and one representative key and tensor-key layout.
 pub trait CKKSLinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     // ----- tmp_bytes -----
 
-    /// Scratch bytes required by [`Self::ckks_linear_transformation_rhs_prepare`].
+    /// Scratch bytes required by [`Self::ckks_linear_transformation_rhs_prepare`], `pt_infos` the narrowest diagonal.
     fn ckks_linear_transformation_rhs_prepare_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
         P: GLWEInfos;
@@ -220,7 +224,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// schedule `plan` (its [`index`](LinearTransformation::index)) with diagonals of the layout `diagonal`, streamed
     /// when `streamed`, else resident, `diagonal`, `tsk` and `key` as in
     /// [`Self::ckks_linear_transformation_eval_tmp_bytes`]: a working copy of `ct` and the baby-step cache beside the
-    /// larger of the baby-step and evaluation queries.
+    /// larger of the baby-step and evaluation queries, the `_into` form using no working copy.
     #[allow(clippy::too_many_arguments)]
     fn ckks_linear_transformation_eval_self_tmp_bytes<C, D, K, T>(
         &self,
@@ -279,8 +283,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// `prepared` must have been sized via
     /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
-    /// diagonals' degree, which may be below the ring degree, and rank;
-    /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass. The diagonals are CKKS plaintexts, or
+    /// diagonals' degree, which may be below the ring degree, a plaintext diagonal below the backend's minimum degree
+    /// being lifted to it, and rank; `lt.first_diagonal_plaintext()` is the proxy every caller should pass. The diagonals are CKKS plaintexts, or
     /// ciphertexts of the source's rank, which the transform then multiplies as ciphertexts and whose smallest
     /// sparsity it records.
     ///
@@ -343,11 +347,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     ///   a degree above the module's;
     /// - for ciphertext diagonals, in this order, `PreparedOperandLayoutMismatch` for a diagonal of another degree,
     ///   `base2k` or rank than `dst`, `InvalidOperand` past `base2k` 62 or for `babies` prepared from a source of another
-    ///   width than `src`, and `MissingRelinearizationKey` without the tensor key;
+    ///   width than `src`, and `MissingRelinearizationKey` without the tensor key and `RelinearizationKeyTooNarrow` for one too narrow;
     /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the budget rule leaves no result
     ///   at `dst`'s width;
-    /// - `MissingAutomorphismKey`, naming the Galois element at `src`'s order, for a non-identity giant step of `lt`
-    ///   with no key at the output width;
+    /// - `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, naming the Galois element at `src`'s order, for a
+    ///   non-identity giant step of `lt` with no key at the output width;
     /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby steps.
     fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,

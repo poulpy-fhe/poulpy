@@ -137,12 +137,7 @@ where
     let key = keys
         .rotation_keys()
         .get_automorphism_key(element, input_k)
-        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op,
-            rotation: element,
-            k: input_k.into(),
-            source,
-        })?;
+        .map_err(|source| CKKSCompositionError::automorphism_key_lookup(op, element, input_k.into(), source))?;
     validate_key_shape(
         op,
         &format!("PaCo automorphism key {element} at precision {input_k}"),
@@ -166,11 +161,7 @@ where
     let key = keys
         .tensor_key()
         .get_tensor_key(input_k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op,
-            k: input_k.into(),
-            source,
-        })?;
+        .map_err(|source| CKKSCompositionError::tensor_key_lookup(op, input_k.into(), source))?;
     validate_key_shape(
         op,
         &format!("PaCo relinearization key at precision {input_k}"),
@@ -416,9 +407,9 @@ where
     // product `Σ_t Enc(σ_t)·β_t` over the four structured-secret ciphertexts:
     // `bsk[0]·β[0]` seeds `output`, and each remaining `bsk[t]·β[t]`
     // accumulates through `temporary`.
-    module.ckks_mul_pt_vec_into(output, &bsk[0], &beta[0], scratch)?;
+    module.ckks_mul_pt_into(output, &bsk[0], &beta[0], scratch)?;
     for index in 1..4 {
-        module.ckks_mul_pt_vec_into(&mut temporary, &bsk[index], &beta[index], scratch)?;
+        module.ckks_mul_pt_into(&mut temporary, &bsk[index], &beta[index], scratch)?;
         module.ckks_add_assign(output, &temporary, scratch)?;
     }
     // The blind-rotation multiplies target `output.k()` (= working_k), so the phase is
@@ -451,7 +442,7 @@ where
         PaCoPsiTailMaterial::Mask { mu, rotation } => {
             module.ckks_conjugate_rotate_into(*rotation, &mut temporary, output, keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
-            module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
+            module.ckks_mul_pt_assign(output, mu, scratch)?;
         }
     }
 

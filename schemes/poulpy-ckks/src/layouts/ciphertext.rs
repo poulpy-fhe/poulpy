@@ -31,7 +31,11 @@ pub struct CKKSCiphertext<D: Data, W: ZnxWord, Rg: Ring = Standard> {
 }
 
 impl<D: Data, W: ZnxWord, Rg: Ring> CKKSCiphertext<D, W, Rg> {
+    /// # Panics
+    ///
+    /// For a rank-0 `inner`: rank 0 is a plaintext, which the operations taking either read across its allocation.
     pub(crate) fn from_inner(inner: GLWE<D, W, Rg>, meta: GLWEPlaintextMeta) -> Self {
+        assert!(inner.rank().as_usize() > 0, "a CKKS ciphertext has rank at least 1");
         let mut ct = Self { inner };
         ct.set_meta(meta);
         ct
@@ -308,7 +312,11 @@ pub struct CKKSCiphertextViewMut<'a, BE: Backend + 'a, Rg: Ring = Standard> {
 }
 
 impl<'a, BE: Backend + 'a, Rg: Ring> CKKSCiphertextViewMut<'a, BE, Rg> {
+    /// # Panics
+    ///
+    /// For a rank-0 `inner`, as [`CKKSCiphertext`].
     pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE, Rg>, meta: GLWEPlaintextMeta) -> Self {
+        assert!(inner.rank().as_usize() > 0, "a CKKS ciphertext has rank at least 1");
         let mut ct = Self { inner };
         ct.set_meta(meta);
         ct
@@ -427,7 +435,7 @@ pub trait ScratchArenaTakeCKKSPlaintext<'a, BE: Backend>: ScratchArenaTakeGLWEPl
 
 impl<'a, BE: Backend> ScratchArenaTakeCKKSPlaintext<'a, BE> for ScratchArena<'a, BE> {}
 
-/// Carves [`CKKSCiphertext`] views from a [`ScratchArena`].
+/// Carves [`CKKSCiphertext`] views from a [`ScratchArena`]; each panics for rank 0, a plaintext's.
 pub trait ScratchArenaTakeCKKSCiphertext<'a, BE: Backend>: ScratchArenaTakeGLWE<'a, BE> + Sized {
     fn take_ckks_ciphertext_scratch<I, Rg: Ring>(
         self,

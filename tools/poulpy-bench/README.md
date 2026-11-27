@@ -175,7 +175,9 @@ cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- --
 and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
 Each preset runs twice: as defined, and with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), labelled with a `+pow2` suffix (`n16_d35_k685_p19_s2c_ffr_ci+pow2`).
 A filter on a preset name selects both.
-Each case checks the precision of its first call against the preset's advertised minimum before timing it.
+Each row of `poulpy_ckks::test_suite::presets::replicated_presets` follows, once, at its own radix, on a backend whose model selects at least that radix for every preset of the full layout (the NTT backends),
+its id marked with its maps, batch, period and output `k` (`n14_d20_k109_p21_s2c[dense,k=16,R=16,output_k=109]`).
+Each case checks the precision of its first call against the preset's advertised minimum, if it advertises one, before timing it.
 `schemes::suites::bench_ckks_bootstrapping_with_client::<BE, BC>` runs the same cases on `BE` with the
 secret, keys and ciphertexts of a client backend `BC`, for an evaluating backend that generates no keys;
 it times the bootstrap on `BE` to completion.

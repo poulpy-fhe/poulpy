@@ -36,7 +36,7 @@ pub unsafe trait BlasJklsImpl<Rg: Ring = Standard>: Backend {
     /// The JKLS kernel over prepared terms, relinearized once. Reproduces
     /// [`blas_jkls_block_reference`](crate::reference::BlasJklsReference::blas_jkls_block_reference) bit for bit,
     /// digits and CKKS metadata, within [`Self::blas_jkls_block_tmp_bytes`]: `res = sum_t lhs[t] rhs[t]` as
-    /// poulpy-ckks's `ckks_dot_product_ct` computes it for the terms the pairs were prepared from, which share one
+    /// poulpy-ckks's `ckks_dot_product` computes it for the terms the pairs were prepared from, which share one
     /// layout per side. The pairs are terms prepared once by poulpy-ckks's `ckks_left_operand_prepare_alloc` and
     /// `ckks_right_operand_prepare_alloc`, which report the terms they were prepared from and give their convolution operands through
     /// `cnv()`: the kernel transforms no operand.
@@ -115,9 +115,9 @@ pub unsafe trait BlasJklsImpl<Rg: Ring = Standard>: Backend {
     /// map hook, then copied by poulpy-ckks's `ckks_copy` into a block of the terms' layout, and term `k >= 1` is
     /// `masks[k - 1]` evaluated by the map hook from that same evaluation of `first`. Each term is prepared by
     /// `ckks_left_operand_prepare_alloc` and multiplied by `plaintexts[o * sources.len() + l][k % len]` read through `galois[k]`.
-    /// Block `o` of `res` receives poulpy-ckks's `ckks_dot_product_prepared_pt_vec_dft` of the first source's terms,
-    /// `ckks_dot_product_prepared_pt_vec_dft_add` of each next source's, in order, into one transform-domain accumulator,
-    /// then `ckks_dot_product_prepared_pt_vec_from_dft`: `ckks_dot_product_prepared_pt_vec` over every term, sources in order
+    /// Block `o` of `res` receives poulpy-ckks's `ckks_dot_product_prepared_pt_dft` of the first source's terms,
+    /// `ckks_dot_product_prepared_pt_dft_add` of each next source's, in order, into one transform-domain accumulator,
+    /// then `ckks_dot_product_prepared_pt_from_dft`: `ckks_dot_product_prepared_pt` over every term, sources in order
     /// and terms in order within a source, normalized once.
     ///
     /// **Fixed:** the circuit above; on an FFT backend, which adds in floating point, the order of the terms and their

@@ -1,6 +1,5 @@
 //! Inverse trigonometric functions.
 
-use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
@@ -17,10 +16,11 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena}
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops},
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
+use crate::plan::encode_constant;
 use crate::{
     approximation::{ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function},
     plan::{declare_unary_op, define_unary_plan, impl_unary_op},
@@ -75,7 +75,7 @@ impl Default for Atan2Options {
 pub struct Atan2Plan<F, P> {
     pub(crate) atan: AtanPlan<P>,
     pub(crate) sign: SignComposite<F, P>,
-    pub(crate) constants: P,
+    pub(crate) constants: [P; 2],
     pub(crate) reciprocal_iters: usize,
     pub(crate) ratio_bound: f64,
     pub(crate) sign_tau: f64,
@@ -246,11 +246,8 @@ where
             "atan2: normalized sign gap exceeds input_bound"
         );
         let normalizer = F::from_f64(2.0f64.powi(-(normalization_steps as i32))).unwrap();
-        let mut constants = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k());
-        constants.set_meta(coeff_meta.meta());
-        constants
-            .encode_host_floats(&[F::PI() / (F::one() + F::one()), normalizer])
-            .context("atan2: constant encoding failed")?;
+        let encode = |value| encode_constant(module, base2k, coeff_meta, value).context("atan2: constant encoding failed");
+        let constants = [encode(F::PI() / (F::one() + F::one()))?, encode(normalizer)?];
         Ok(Self {
             atan,
             sign,
@@ -276,8 +273,8 @@ impl<F, P> Atan2Plan<F, P> {
         &self.sign
     }
 
-    /// Encoded `pi/2` and the normalization factor.
-    pub fn constants(&self) -> &P {
+    /// The constants `[pi/2, normalization factor]`.
+    pub fn constants(&self) -> &[P; 2] {
         &self.constants
     }
 
@@ -335,7 +332,7 @@ impl<F, P> Atan2Plan<F, P> {
         Atan2Plan {
             atan: self.atan.map_plaintexts(&mut f),
             sign: self.sign.map_plaintexts(&mut f),
-            constants: f(&self.constants),
+            constants: self.constants.each_ref().map(&mut f),
             reciprocal_iters: self.reciprocal_iters,
             ratio_bound: self.ratio_bound,
             sign_tau: self.sign_tau,
@@ -411,7 +408,7 @@ pub trait CKKSAtan2Ops<BE: Backend, Rg: Ring = Standard> {
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         Y: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
         K: GetAutomorphismKey<BE, Rg>;
 }
@@ -441,11 +438,11 @@ where
         // Both signs, the ratio, the correction and the angle. All but the sign of `y` have the layout of `x`.
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(x)).max(BE::scratch_aligned(self.glwe_bytes_of_from_infos(y)));
         5 * ct
-            + ckks_sign_tmp_bytes::<Rg, _>(self, x, x, &plan.constants, tsk, keys)
-                .max(ckks_sign_tmp_bytes::<Rg, _>(self, y, y, &plan.constants, tsk, keys))
+            + ckks_sign_tmp_bytes::<Rg, _>(self, x, x, &plan.constants[0], tsk, keys)
+                .max(ckks_sign_tmp_bytes::<Rg, _>(self, y, y, &plan.constants[0], tsk, keys))
                 .max(self.ckks_copy_tmp_bytes(x, x))
                 .max(self.ckks_copy_tmp_bytes(x, y))
-                .max(self.ckks_mul_pt_const_tmp_bytes(x, x, &plan.constants))
+                .max(self.ckks_mul_pt_tmp_bytes(x, x, &plan.constants[0]))
                 .max(self.ckks_goldschmidt_division_assign_tmp_bytes(x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, x, x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, y, x, tsk))
@@ -468,7 +465,7 @@ where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         Y: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
         K: GetAutomorphismKey<BE, Rg>,
     {
@@ -481,8 +478,8 @@ where
             self.ckks_copy(&mut ratio, x, &mut scratch_local)?;
             self.ckks_copy(&mut correction, y, &mut scratch_local)?;
             if plan.normalization_steps > 0 {
-                self.ckks_mul_pt_const_assign(&mut ratio, &plan.constants, 1, &mut scratch_local)?;
-                self.ckks_mul_pt_const_assign(&mut correction, &plan.constants, 1, &mut scratch_local)?;
+                self.ckks_mul_pt_assign(&mut ratio, &plan.constants[1], &mut scratch_local)?;
+                self.ckks_mul_pt_assign(&mut correction, &plan.constants[1], &mut scratch_local)?;
             }
             ckks_sign_into(self, false, &mut sign_x, &ratio, &plan.sign, tsk, keys, &mut scratch_local)?;
             ckks_sign_into(
@@ -505,7 +502,7 @@ where
             self.ckks_mul_into(&mut correction, &sign_y, &sign_x, tsk, &mut scratch_local)?;
             self.ckks_neg_assign(&mut correction)?;
             self.ckks_add_assign(&mut correction, &sign_y, &mut scratch_local)?;
-            self.ckks_mul_pt_const_assign(&mut correction, &plan.constants, 0, &mut scratch_local)?;
+            self.ckks_mul_pt_assign(&mut correction, &plan.constants[0], &mut scratch_local)?;
             self.ckks_add_into(res, &angle, &correction, &mut scratch_local)?;
             Ok(())
         })

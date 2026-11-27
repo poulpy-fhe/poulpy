@@ -642,7 +642,10 @@ where
 {
     let coeff_count = if im.is_some() { 2 } else { 1 };
     let mut host_pt = host_module.ckks_plaintext_alloc(coeff_count.into(), base2k, prec.k());
-    host_pt.set_meta(prec.meta());
+    host_pt.set_meta(GLWEPlaintextMeta {
+        slots: if im.is_some() { SlotsKind::Complex } else { SlotsKind::Real },
+        ..prec.meta()
+    });
     let mut packed: Vec<F> = vec![F::zero(); coeff_count];
     if let Some(r) = re {
         packed[0] = to_scalar(r);
@@ -799,8 +802,6 @@ where
     atk_prepared
 }
 
-/// Key source that records the Galois element and precision of each lookup, tensor-key lookups under element 0;
-/// shareable across threads.
 /// Asserts that the key lookups `seen` start with those of an entry check, `entry` in its order, and that the lookups
 /// after them use each key at most, and at the widest, at its widest width in `entry`.
 pub(crate) fn assert_entry_then_widest(label: &str, seen: &[(i64, usize)], entry: &[(i64, usize)]) {
@@ -821,6 +822,8 @@ pub(crate) fn assert_entry_then_widest(label: &str, seen: &[(i64, usize)], entry
     assert_eq!(widest(run), widest(entry), "{label}: widest use of each key");
 }
 
+/// Key source that records the Galois element and precision of each lookup, tensor-key lookups under element 0;
+/// shareable across threads.
 pub(crate) struct QueryLog<'a, K> {
     keys: &'a K,
     seen: Mutex<Vec<(i64, TorusPrecision)>>,

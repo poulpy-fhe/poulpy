@@ -982,7 +982,7 @@ unsafe impl<F: DFTFamily, Rg: OracleRing> HalCnvImpl<Rg> for Oracle<F> {
         0
     }
 
-    // res[j] = sum_{i + l = j + cnv_offset} a[a_col, i] b[b_col, l, b_coeff]
+    // res[j] = sum_{i + l = j + cnv_offset} a[a_col, i] b[b_col, l]
     fn cnv_by_const_apply(
         _module: &Module<Self>,
         cnv_offset: usize,
@@ -992,13 +992,13 @@ unsafe impl<F: DFTFamily, Rg: OracleRing> HalCnvImpl<Rg> for Oracle<F> {
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_dense(res, "cnv_by_const_apply");
         assert_dense(a, "cnv_by_const_apply");
         assert_dense(b, "cnv_by_const_apply");
         assert_eq!(res.n(), a.n());
+        assert!(b.n() == 1, "cnv_by_const_apply: b is not a constant");
         let bound = (a.size() + b.size()).saturating_sub(1);
         for j in 0..res.size() {
             let out = res.at_mut(res_col, j);
@@ -1008,7 +1008,7 @@ unsafe impl<F: DFTFamily, Rg: OracleRing> HalCnvImpl<Rg> for Oracle<F> {
             };
             for i in 0..a.size().min(k + 1) {
                 if k - i < b.size() {
-                    let scalar = F::Big::from(b.at(b_col, k - i)[b_coeff]);
+                    let scalar = F::Big::from(b.at(b_col, k - i)[0]);
                     for (r, &x) in out.iter_mut().zip(a.at(a_col, i)) {
                         *r = r.add(F::Big::from(x).mul(scalar));
                     }

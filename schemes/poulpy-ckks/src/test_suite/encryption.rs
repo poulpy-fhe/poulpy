@@ -12,6 +12,7 @@ use crate::Scale;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSDecryptOps, CKKSEncryptOps},
+    error::SPARSE_DIVISOR,
     layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc},
 };
 use poulpy_core::{
@@ -513,6 +514,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
             op: "ckks_decrypt",
             ct_n: params.n,
             pt_n: params.n / 2,
+            rule: SPARSE_DIVISOR,
         },
     );
     assert_eq!(

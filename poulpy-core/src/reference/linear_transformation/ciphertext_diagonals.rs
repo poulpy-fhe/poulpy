@@ -22,16 +22,15 @@ use crate::{
     gadget::{cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
     layouts::{
         GGLWEInfos, GLWEDiagonalProd, GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, LinearTransformation, TorusPrecision,
-        prepared::{
-            GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, LinearTransformationBabySteps,
-        },
+        prepared::{GLWETensorKeyPreparedBackendRef, LinearTransformationBabySteps},
     },
     oep::{GGLWEProductDigitsStridedImpl, GLWETensoringImpl},
     reference::{
         keyswitching::GGLWEProductReference,
         linear_transformation::giant_steps::GiantProducts,
         operations::{
-            GLWETensoringReference, OnePassShape, glwe_relinearize_columns, glwe_relinearize_columns_tmp_bytes, one_pass_shape,
+            GLWETensoringReference, OnePassShape, Resolved, glwe_relinearize_columns, glwe_relinearize_columns_tmp_bytes,
+            one_pass_shape, product_tensor_k,
         },
     },
 };
@@ -86,12 +85,14 @@ where
                 }
             }
         }
-        // 2. The tensor at the wider operand's width, and its key looked up once (`GetTensorKey::get_tensor_key`).
+        // 2. The key looked up once at the wider operand's width (`GetTensorKey::get_tensor_key`), and the tensor at the
+        //    width of `res` where it is wider, as far as the key decomposes (`product_tensor_k`).
+        let operands_k = lhs.k().max(diagonal.k());
+        let tsk = tsk_source.get_tensor_key(operands_k).unwrap_or_else(|e| panic!("{e}"));
         let tensor = GLWELayout {
-            k: lhs.k().max(diagonal.k()),
+            k: product_tensor_k(operands_k, res.k, &tsk),
             ..res
         };
-        let tsk = tsk_source.get_tensor_key(tensor.k).unwrap_or_else(|e| panic!("{e}"));
         // 3. The route and the column limbs (`one_pass_shape`): one-pass at rank 1, `cnv_offset >= base2k` and `tsk` at
         //    the base2k of `res` while it keeps the two-step noise, else a tensor.
         let shape = one_pass_shape(
@@ -225,18 +226,9 @@ where
     }
 }
 
-/// The tensor key looked up once, the source of every product.
-struct Resolved<'k, 'a, BE: Backend + 'a, Rg: Ring>(&'k GLWETensorKeyPreparedBackendRef<'a, BE, Rg>);
-
-impl<'a, BE: Backend + 'a, Rg: Ring> GetTensorKey<BE, Rg> for Resolved<'_, 'a, BE, Rg> {
-    fn lookup_tensor_key(&self, _k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
-        Ok(GLWETensorKeyPrepared(GGLWEPreparedToBackendRef::to_backend_ref(&self.0)))
-    }
-}
-
 /// Bytes the product of a giant step of [`CiphertextProducts`] takes beside it, into a result of the layout `res`
-/// from babies of `a_size` limbs and diagonals of `b_size` limbs through a tensor of width `tensor_k`: the result, the
-/// tensor columns in DFT and the larger of the baby-step kernel and the relinearization of either route.
+/// from babies of `a_size` limbs and diagonals of `b_size` limbs of widths up to `tensor_k`: the result, the tensor
+/// columns in DFT and the larger of the baby-step kernel and the relinearization of either route.
 pub(super) fn ciphertext_products_tmp_bytes<BE, R, K, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
@@ -253,7 +245,7 @@ where
 {
     let (n, cols, base2k) = (res.n().as_usize(), res.rank().as_usize() + 1, res.base2k().as_usize());
     let tensor = GLWELayout {
-        k: tensor_k,
+        k: product_tensor_k(tensor_k, res.k(), tsk),
         ..res.glwe_layout()
     };
     // The widest columns, at any offset.

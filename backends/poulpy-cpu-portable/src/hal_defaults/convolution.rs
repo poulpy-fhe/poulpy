@@ -143,7 +143,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
@@ -155,7 +154,7 @@ where
         let mut res_ref = res.to_backend_mut();
         let bytes = convolution_by_const_apply_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, i64>(scratch.borrow(), bytes / size_of::<i64>());
-        convolution_by_const_apply_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        convolution_by_const_apply_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -168,7 +167,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
@@ -180,7 +178,7 @@ where
         let mut res_ref = res.to_backend_mut();
         let bytes = convolution_by_const_apply_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, i64>(scratch.borrow(), bytes / size_of::<i64>());
-        convolution_by_const_apply_add_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        convolution_by_const_apply_add_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -434,7 +432,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<BigWord = i128, DftWord = Q120bScalar, ZnxWord = i64> + 'static,
@@ -454,7 +451,6 @@ where
             a_col,
             b,
             b_col,
-            b_coeff,
             tmp,
         );
     }
@@ -469,7 +465,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<BigWord = i128, DftWord = Q120bScalar, ZnxWord = i64> + 'static,
@@ -489,7 +484,6 @@ where
             a_col,
             b,
             b_col,
-            b_coeff,
             tmp,
         );
     }

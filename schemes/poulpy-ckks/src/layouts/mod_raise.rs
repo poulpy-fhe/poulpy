@@ -35,7 +35,8 @@ impl ModRaisePlan {
         self.lift.as_ref()
     }
 
-    /// S2C-first: bits fused into the shift of ModUp, so `log_delta_out = a.k() + c2s_guard_bits`.
+    /// S2C-first: bits fused into the shift of ModUp, so `log_delta_out = a.k() + c2s_guard_bits`, the C2S guard bits
+    /// of the plan less the working bits SlotsToCoeffs leaves.
     pub fn c2s_guard_bits(&self) -> usize {
         self.c2s_guard_bits
     }

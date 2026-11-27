@@ -1,12 +1,12 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
-use poulpy_hal::layouts::{Backend, Data, Ring, ScratchArena, Standard, VecZnxDftBackendMut};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard, VecZnxDftBackendMut};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 
 /// Sum over a slice of ciphertexts.
@@ -71,23 +71,17 @@ pub trait CKKSAddManyOps<BE: Backend, Rg: Ring = Standard> {
 /// scratch for the intermediate product instead of requiring a caller-visible
 /// ciphertext allocation.
 pub trait CKKSMulAddOps<BE: Backend, Rg: Ring = Standard> {
-    /// Scratch bytes for [`Self::ckks_mul_add_ct_into`] with result `res` and
+    /// Scratch bytes for [`Self::ckks_mul_add_into`] with result `res` and
     /// multiplication operands `a`, `b` (the internal product is carved at the
     /// widest of the three).
-    fn ckks_mul_add_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_mul_add_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_mul_add_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos;
-
-    fn ckks_mul_add_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_mul_add_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
@@ -111,7 +105,7 @@ pub trait CKKSMulAddOps<BE: Backend, Rg: Ring = Standard> {
     /// log_budget_out = min(dst.log_budget, prod_budget)
     ///                  − max(0, min(dst.k(), prod_k) − dst.k())
     /// ```
-    fn ckks_mul_add_ct_into<Dst, A, B, H>(
+    fn ckks_mul_add_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -125,7 +119,7 @@ pub trait CKKSMulAddOps<BE: Backend, Rg: Ring = Standard> {
         B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetTensorKey<BE, Rg>;
 
-    /// Computes `dst += a * pt` where `pt` is a full plaintext polynomial.
+    /// Computes `dst += a * pt` where `pt` is a plaintext of a degree dividing the ciphertext's, a constant included.
     ///
     /// # Metadata
     ///
@@ -139,23 +133,14 @@ pub trait CKKSMulAddOps<BE: Backend, Rg: Ring = Standard> {
     /// log_budget_out = min(dst.log_budget, prod_budget)
     ///                  − max(0, min(dst.k(), prod_k) − dst.k())
     /// ```
-    fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst += a * pt[pt_coeff]`.
     ///
-    /// Metadata follows the same rule as [`Self::ckks_mul_add_pt_vec_into`].
-    fn ckks_mul_add_pt_const_into<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    /// # Errors
+    ///
+    /// In this order, before any write to `dst`: `InvalidOperand` when `dst`, `a` and `pt` do not share one slot
+    /// layout, a degree-1 `pt` on the full layout taking any, or on a replicated layout when `dst.log_delta` is not `a.log_delta`; the operand refusals of
+    /// [`CKKSMulOps::ckks_mul_pt_into`](crate::api::CKKSMulOps::ckks_mul_pt_into) of `a` by `pt` into `dst`; then
+    /// `Internal` for a `scratch` below [`Self::ckks_mul_add_pt_tmp_bytes`]. `dst` is untouched on refusal.
+    fn ckks_mul_add_pt_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
@@ -166,80 +151,16 @@ pub trait CKKSMulAddOps<BE: Backend, Rg: Ring = Standard> {
 ///
 /// Combines a plaintext multiplication followed by a plaintext addition.
 /// Both `scale` and `offset` must be CKKS plaintexts compatible with the
-/// ciphertext's remaining capacity.
+/// ciphertext's remaining capacity, constants included at their natural degree.
 pub trait CKKSAffineOps<BE: Backend, Rg: Ring = Standard> {
-    fn ckks_affine_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, affine_const: &P) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos;
-
-    /// Computes `dst = a * affine_const[scale_coeff] + affine_const[offset_coeff]`.
-    ///
-    /// Reads two quantized scalar constants from `affine_const`: one for the
-    /// multiplicative scale (at `scale_coeff`) and one for the additive offset
-    /// (at `offset_coeff`).  The offset is always applied to ZNX coefficient 0
-    /// of `dst` (the real-slot constant term).  Use
-    /// [`CKKSAddOps::ckks_add_pt_const_into`](crate::api::CKKSAddOps::ckks_add_pt_const_into)
-    /// directly if you need to target a different destination coefficient.
-    ///
-    /// # Metadata
-    ///
-    /// The operation is `mul` then `add`.  The `add` step does not consume
-    /// capacity, so the net cost is from the `mul` step only:
-    ///
-    /// ```text
-    /// natural_eff_k  = a.k() − affine_const.log_delta
-    /// offset         = max(0, natural_eff_k − dst.k())
-    ///
-    /// log_delta_out  = a.log_delta
-    /// log_budget_out = a.log_budget − affine_const.log_delta − offset
-    /// ```
-    ///
-    /// **Net capacity consumed**: `affine_const.log_delta + offset` bits.
-    fn ckks_affine_pt_const_into<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        affine_const: &P,
-        offset_coeff: usize,
-        scale_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst = dst * affine_const[scale_coeff] + affine_const[offset_coeff]` in-place.
-    ///
-    /// For an in-place operation `dst` acts as both source and destination.
-    /// No destination-capacity offset applies:
-    ///
-    /// ```text
-    /// log_delta_out  = dst.log_delta
-    /// log_budget_out = dst.log_budget − affine_const.log_delta
-    /// ```
-    fn ckks_affine_pt_const_assign<Dst, P>(
-        &self,
-        dst: &mut Dst,
-        affine_const: &P,
-        offset_coeff: usize,
-        scale_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
-
-    fn ckks_affine_pt_vec_tmp_bytes<R, A, S>(&self, res: &R, a: &A, scale: &S) -> usize
+    fn ckks_affine_pt_tmp_bytes<R, A, S>(&self, res: &R, a: &A, scale: &S) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         S: CKKSInfos;
 
-    /// Computes `dst = a * scale + offset` where `scale` and `offset` are full
-    /// plaintext polynomials in the ZNX domain.
+    /// Computes `dst = a * scale + offset` where `scale` and `offset` are plaintexts of a degree dividing the
+    /// ciphertext's, constants included.
     ///
     /// # Metadata
     ///
@@ -247,18 +168,31 @@ pub trait CKKSAffineOps<BE: Backend, Rg: Ring = Standard> {
     /// `mul scale` step:
     ///
     /// ```text
-    /// natural_eff_k  = a.k() − scale.log_delta
-    /// offset_bits    = max(0, natural_eff_k − dst.k())
+    /// natural_eff_k    = a.k() − scale.log_delta
+    /// offset_bits      = max(0, natural_eff_k − dst.k())
     ///
-    /// log_delta_out  = a.log_delta
-    /// log_budget_out = a.log_budget − scale.log_delta − offset_bits
+    /// log_delta_out    = a.log_delta
+    /// log_budget_out   = a.log_budget − scale.log_delta − offset_bits
+    /// slots_out        = a.slots.join(scale.slots).join(offset.slots)
+    /// log_sparsity_out = min(a.log_sparsity, log2(N / scale.n), log2(N / offset.n))
     /// ```
     ///
     /// **Net capacity consumed**: `scale.log_delta + offset_bits` bits.
     ///
     /// **Precondition**: `(a.log_budget − scale.log_delta) + offset.log_delta >= offset.k()`
     /// (the offset plaintext must fit in the ciphertext headroom after the multiply).
-    fn ckks_affine_pt_vec_into<Dst, A, S, P>(
+    ///
+    /// # Errors
+    ///
+    /// In this order, before any write to `dst`: `InvalidOperand` when `a`, `scale` and `offset` do not share one slot
+    /// layout, a degree-1 `scale` on the full layout taking any; the operand refusals of [`CKKSMulOps::ckks_mul_pt_into`](crate::api::CKKSMulOps::ckks_mul_pt_into) of
+    /// `a` by `scale` into `dst`; `PlaintextBase2KMismatch` for an `offset` of another radix than `dst`,
+    /// `PlaintextDegreeMismatch` for one whose degree is not `dst`'s or a power-of-two divisor of it, and
+    /// `PlaintextAlignmentImpossible` when the precondition above fails; `InvalidOperand` for an `offset` of a finer
+    /// scale than `a` on a replicated layout; then `Internal`, from the product, for a `scratch` below
+    /// [`CKKSMulOps::ckks_mul_pt_tmp_bytes`](crate::api::CKKSMulOps::ckks_mul_pt_tmp_bytes). `dst` is untouched on
+    /// these refusals.
+    fn ckks_affine_pt_into<Dst, A, S, P>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -280,7 +214,11 @@ pub trait CKKSAffineOps<BE: Backend, Rg: Ring = Standard> {
     /// log_delta_out  = dst.log_delta
     /// log_budget_out = dst.log_budget − scale.log_delta
     /// ```
-    fn ckks_affine_pt_vec_assign<Dst, S, P>(
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Self::ckks_affine_pt_into`] with `dst` as `a`, in its order. `dst` is untouched on these refusals.
+    fn ckks_affine_pt_assign<Dst, S, P>(
         &self,
         dst: &mut Dst,
         scale: &S,
@@ -295,23 +233,17 @@ pub trait CKKSAffineOps<BE: Backend, Rg: Ring = Standard> {
 
 /// Fused multiply-subtract: `dst -= a * b`.
 pub trait CKKSMulSubOps<BE: Backend, Rg: Ring = Standard> {
-    /// Scratch bytes for [`Self::ckks_mul_sub_ct_into`] with result `res` and
+    /// Scratch bytes for [`Self::ckks_mul_sub_into`] with result `res` and
     /// multiplication operands `a`, `b` (the internal product is carved at the
     /// widest of the three).
-    fn ckks_mul_sub_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_mul_sub_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_mul_sub_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos;
-
-    fn ckks_mul_sub_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_mul_sub_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
@@ -320,8 +252,8 @@ pub trait CKKSMulSubOps<BE: Backend, Rg: Ring = Standard> {
     /// Computes `dst -= a * b` using tensor-product keyswitching via `tsk`.
     ///
     /// Metadata follows the same rule as
-    /// [`CKKSMulAddOps::ckks_mul_add_ct_into`] with `+=` replaced by `-=`.
-    fn ckks_mul_sub_ct_into<Dst, A, B, H>(
+    /// [`CKKSMulAddOps::ckks_mul_add_into`] with `+=` replaced by `-=`.
+    fn ckks_mul_sub_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -335,28 +267,16 @@ pub trait CKKSMulSubOps<BE: Backend, Rg: Ring = Standard> {
         B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetTensorKey<BE, Rg>;
 
-    /// Computes `dst -= a * pt` where `pt` is a full plaintext polynomial.
+    /// Computes `dst -= a * pt` where `pt` is a plaintext of a degree dividing the ciphertext's, a constant included.
     ///
     /// Metadata follows the same rule as
-    /// [`CKKSMulAddOps::ckks_mul_add_pt_vec_into`].
-    fn ckks_mul_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst -= a * pt[pt_coeff]`.
+    /// [`CKKSMulAddOps::ckks_mul_add_pt_into`].
     ///
-    /// Metadata follows the same rule as
-    /// [`CKKSMulAddOps::ckks_mul_add_pt_const_into`].
-    fn ckks_mul_sub_pt_const_into<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    /// # Errors
+    ///
+    /// Those of [`CKKSMulAddOps::ckks_mul_add_pt_into`], in its order, against [`Self::ckks_mul_sub_pt_tmp_bytes`].
+    /// `dst` is untouched on refusal.
+    fn ckks_mul_sub_pt_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
@@ -367,23 +287,20 @@ pub trait CKKSMulSubOps<BE: Backend, Rg: Ring = Standard> {
 ///
 /// Computes the weighted sum `dst = Σ a[i] * b[i]` over all pairs.
 pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
-    /// Scratch bytes for [`Self::ckks_dot_product_ct`] over `n` input pairs;
+    /// Scratch bytes for [`Self::ckks_dot_product`] over `n` input pairs;
     /// `a`/`b` describe the widest input pair (the internal products are carved
     /// at `max(a.k, b.k)`).
-    fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_dot_product_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_dot_product_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        P: CKKSInfos;
-
-    fn ckks_dot_product_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    /// Scratch bytes for [`Self::ckks_dot_product_pt`], whatever the number of pairs: `a` a ciphertext of the most limbs
+    /// and `b` a plaintext layout of the largest degree and the largest `k` among the pairs, which two plaintexts may
+    /// set. A smaller degree under-reports.
+    fn ckks_dot_product_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
@@ -400,7 +317,7 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     /// in slice order: `base2k` must hold `a.len()` times the products of one
     /// pair (`Module::max_base2k`). This path returns its errors before writing
     /// `dst` and leaves it canonical. Other inputs are `ckks_mul_into` then
-    /// `ckks_mul_add_ct_into` per pair, so a later pair can fail after `dst` was
+    /// `ckks_mul_add_into` per pair, so a later pair can fail after `dst` was
     /// written.
     ///
     /// # Metadata
@@ -415,7 +332,7 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     /// log_delta_out  = a[i].log_delta
     /// log_budget_out = a[i].log_budget − a[i].log_delta − offset
     /// ```
-    fn ckks_dot_product_ct<Dst, A, B, H>(
+    fn ckks_dot_product<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &[&A],
@@ -438,7 +355,7 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
         B: CKKSCtBounds,
         T: GGLWEInfos;
 
-    /// [`Self::ckks_dot_product_ct`] of the ciphertexts `a[i]` and `b[i]` were
+    /// [`Self::ckks_dot_product`] of the ciphertexts `a[i]` and `b[i]` were
     /// prepared from by
     /// [`CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare_alloc`](crate::api::CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare_alloc)
     /// and
@@ -463,9 +380,9 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE, Rg>;
 
-    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_vec`] for terms prepared like `a` and plaintexts prepared like
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt`] for terms prepared like `a` and plaintexts prepared like
     /// `b`, whatever their number: pass the prepared operands, whose infos report their sources, or those sources.
-    fn ckks_dot_product_prepared_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_dot_product_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: GLWEInfos,
@@ -480,12 +397,12 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     /// rotated by `r`. It is core's `glwe_mul_prepared_plain_sum`: no operand is transformed in the call, so prepared
     /// terms serve every sum that shares them, and the products are added in the transform domain in slice order and
     /// normalized once. One term through `1` is
-    /// [`CKKSMulOps::ckks_mul_pt_vec_into`](crate::api::CKKSMulOps::ckks_mul_pt_vec_into) of the ciphertext and the
+    /// [`CKKSMulOps::ckks_mul_pt_into`](crate::api::CKKSMulOps::ckks_mul_pt_into) of the ciphertext and the
     /// plaintext it was prepared from, bit for bit.
     ///
     /// # Metadata
     ///
-    /// The rule of `ckks_mul_pt_vec_into`, which the terms, sharing one layout and scale, give alike, with the joined
+    /// The rule of `ckks_mul_pt_into`, which the terms, sharing one layout and scale, give alike, with the joined
     /// slot kind and the smallest `log_sparsity` of the pairs:
     ///
     /// ```text
@@ -501,9 +418,9 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     /// Before writing `dst`: `InvalidOperand` for `a` and `b` empty or of two lengths, or for `galois` of another
     /// length; as [`Self::ckks_dot_product_prepared`], `PreparedOperandLayoutMismatch` for a term of another degree,
     /// `base2k` or rank than `dst`; `InvalidOperand` for an even Galois element, a plaintext not of rank 0 at `dst`'s `base2k`, or a side whose operands do not share one
-    /// layout and scale; `PlaintextDegreeMismatch` for a plaintext whose degree does not embed into `dst`'s; and the
-    /// errors of the rule.
-    fn ckks_dot_product_prepared_pt_vec<Dst>(
+    /// layout and scale; `PlaintextDegreeMismatch` for a plaintext whose degree is not `dst`'s or a power-of-two
+    /// divisor of it; and the errors of the rule.
+    fn ckks_dot_product_prepared_pt<Dst>(
         &self,
         dst: &mut Dst,
         a: &[&CKKSLeftOperandPrepared<BE, Rg>],
@@ -514,21 +431,21 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_vec_add`] into `res` for terms prepared like `a` and plaintexts
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_add`] into `res` for terms prepared like `a` and plaintexts
     /// prepared like `b`, whatever their number: pass the prepared operands, whose infos report their sources, or those
     /// sources.
-    fn ckks_dot_product_prepared_pt_vec_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_dot_product_prepared_pt_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos;
 
-    /// Computes `res += Σ a[t] · σ_{galois[t]}(b[t])`: the sum of [`Self::ckks_dot_product_prepared_pt_vec`], added to `res`
+    /// Computes `res += Σ a[t] · σ_{galois[t]}(b[t])`: the sum of [`Self::ckks_dot_product_prepared_pt`], added to `res`
     /// before its one normalization (core's `glwe_mul_prepared_plain_sum_add`), so the total is rounded once, with no
     /// temporary.
     ///
     /// `res` holds the sum's frame: the scale of the terms and the width the rule of
-    /// [`CKKSMulOps::ckks_mul_pt_vec_into`](crate::api::CKKSMulOps::ckks_mul_pt_vec_into) leaves into it, so the sum is
+    /// [`CKKSMulOps::ckks_mul_pt_into`](crate::api::CKKSMulOps::ckks_mul_pt_into) leaves into it, so the sum is
     /// written at `res`'s width and scale and `res`'s value enters exactly. A masked insertion into a ciphertext of
     /// diagonals reads one prepared mask through the Galois element of each shift, then re-prepares the updated diagonals
     /// with
@@ -541,10 +458,10 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// Before writing `res`: those of [`Self::ckks_dot_product_prepared_pt_vec`], `InvalidOperand` when the sum's rule leaves
+    /// Before writing `res`: those of [`Self::ckks_dot_product_prepared_pt`], `InvalidOperand` when the sum's rule leaves
     /// another scale or budget than `res`'s, and `Internal` for a `scratch` below
-    /// [`Self::ckks_dot_product_prepared_pt_vec_add_tmp_bytes`].
-    fn ckks_dot_product_prepared_pt_vec_add<R>(
+    /// [`Self::ckks_dot_product_prepared_pt_add_tmp_bytes`].
+    fn ckks_dot_product_prepared_pt_add<R>(
         &self,
         res: &mut R,
         a: &[&CKKSLeftOperandPrepared<BE, Rg>],
@@ -555,29 +472,29 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_vec_dft`] for terms prepared like `a` and plaintexts prepared
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_dft`] for terms prepared like `a` and plaintexts prepared
     /// like `b`, whatever their number.
-    fn ckks_dot_product_prepared_pt_vec_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos;
 
-    /// [`Self::ckks_dot_product_prepared_pt_vec`] into `acc`, before its normalization: `acc` receives, in the transform
+    /// [`Self::ckks_dot_product_prepared_pt`] into `acc`, before its normalization: `acc` receives, in the transform
     /// domain, the sum poulpy-core's `glwe_mul_prepared_plain_sum_dft` forms at the offset of the rule of
-    /// `ckks_mul_pt_vec_into` for a destination of `res`'s layout and metadata. `acc` holds the degree of `res`, its
+    /// `ckks_mul_pt_into` for a destination of `res`'s layout and metadata. `acc` holds the degree of `res`, its
     /// `rank + 1` columns and `a[0].size() + b[0].size()` limbs. Sums added by
-    /// [`Self::ckks_dot_product_prepared_pt_vec_dft_add`] for the same `res`, over terms of one layout and scale and
-    /// plaintexts of another, are finished by [`Self::ckks_dot_product_prepared_pt_vec_from_dft`]: that is
-    /// `ckks_dot_product_prepared_pt_vec` of the terms of every call, bit for bit, metadata included when every pair has the
+    /// [`Self::ckks_dot_product_prepared_pt_dft_add`] for the same `res`, over terms of one layout and scale and
+    /// plaintexts of another, are finished by [`Self::ckks_dot_product_prepared_pt_from_dft`]: that is
+    /// `ckks_dot_product_prepared_pt` of the terms of every call, bit for bit, metadata included when every pair has the
     /// slot kind and sparsity of the pair the finish reads. `acc` carries no metadata, and nothing checks the calls of one
     /// sum against each other: that is the caller's.
     ///
     /// # Errors
     ///
-    /// Before writing `acc`: those of [`Self::ckks_dot_product_prepared_pt_vec`] with `res` as the destination, and
+    /// Before writing `acc`: those of [`Self::ckks_dot_product_prepared_pt`] with `res` as the destination, and
     /// `InvalidOperand` for `acc` of another degree, column count or limb count.
-    fn ckks_dot_product_prepared_pt_vec_dft<R>(
+    fn ckks_dot_product_prepared_pt_dft<R>(
         &self,
         acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res: &R,
@@ -589,20 +506,20 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: CKKSCtBounds;
 
-    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_vec_dft_add`] for terms prepared like `a` and plaintexts
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_dft_add`] for terms prepared like `a` and plaintexts
     /// prepared like `b`, whatever their number.
-    fn ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_dot_product_prepared_pt_dft_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos;
 
-    /// `acc += Σ a[t] · σ_{galois[t]}(b[t])`, the sum of [`Self::ckks_dot_product_prepared_pt_vec_dft`] added to `acc`.
+    /// `acc += Σ a[t] · σ_{galois[t]}(b[t])`, the sum of [`Self::ckks_dot_product_prepared_pt_dft`] added to `acc`.
     ///
     /// # Errors
     ///
-    /// As [`Self::ckks_dot_product_prepared_pt_vec_dft`].
-    fn ckks_dot_product_prepared_pt_vec_dft_add<R>(
+    /// As [`Self::ckks_dot_product_prepared_pt_dft`].
+    fn ckks_dot_product_prepared_pt_dft_add<R>(
         &self,
         acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res: &R,
@@ -614,25 +531,25 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: CKKSCtBounds;
 
-    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_vec_from_dft`] into `res` from terms prepared like `a` and
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_from_dft`] into `res` from terms prepared like `a` and
     /// plaintexts prepared like `b`.
-    fn ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_dot_product_prepared_pt_from_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos;
 
-    /// Finishes a sum of [`Self::ckks_dot_product_prepared_pt_vec_dft`] into `res`: stamps `res` with the metadata
-    /// `ckks_dot_product_prepared_pt_vec` gives the pair `(a, b)`, a term and a plaintext of the sum, then normalizes each
+    /// Finishes a sum of [`Self::ckks_dot_product_prepared_pt_dft`] into `res`: stamps `res` with the metadata
+    /// `ckks_dot_product_prepared_pt` gives the pair `(a, b)`, a term and a plaintext of the sum, then normalizes each
     /// column of `acc` once into `res`, at `res.k()`, canonical. `acc` is unspecified afterwards.
     ///
     /// # Errors
     ///
     /// Before writing `res`: `PreparedOperandLayoutMismatch` for `a` of another degree, `base2k` or rank than `res`;
     /// `InvalidOperand` for `b` not a plaintext at `res`'s `base2k` or for `acc` of another degree, column count or limb
-    /// count than [`Self::ckks_dot_product_prepared_pt_vec_dft`] takes; `PlaintextDegreeMismatch` for `b` of a degree that
-    /// does not embed into `res`'s; and the errors of the rule.
-    fn ckks_dot_product_prepared_pt_vec_from_dft<Dst>(
+    /// count than [`Self::ckks_dot_product_prepared_pt_dft`] takes; `PlaintextDegreeMismatch` for `b` of a degree that
+    /// is not `res`'s or a power-of-two divisor of it; and the errors of the rule.
+    fn ckks_dot_product_prepared_pt_from_dft<Dst>(
         &self,
         res: &mut Dst,
         acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
@@ -643,43 +560,36 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.
+    /// Computes `dst = Σ a[i] * b[i]` over ciphertext-plaintext pairs, each `b[i]` a plaintext of any power-of-two
+    /// degree dividing the ciphertexts', constants and polynomials mixed.
+    ///
+    /// Each product lands at the rule of [`CKKSMulOps::ckks_mul_pt_into`](crate::api::CKKSMulOps::ckks_mul_pt_into)
+    /// into `dst`, offset to the smallest budget; the products are summed and rounded once into `dst`, with shaping
+    /// on a replicated layout.
     ///
     /// # Metadata
     ///
     /// ```text
-    /// natural_eff_k  = a[i].k() − b[i].log_delta
-    /// offset         = max(0, natural_eff_k − dst.k())
-    ///
-    /// log_delta_out  = a[i].log_delta
-    /// log_budget_out = a[i].log_budget − b[i].log_delta − offset
+    /// log_budget_out   = min_i budget_i,  budget_i the ckks_mul_pt_into budget of pair i into dst
+    /// log_delta_out    = min_i delta_i
+    /// log_sparsity_out = min_i min(a[i].log_sparsity, log2(N / b[i].n))
+    /// slots_out        = join of every a[i].slots and b[i].slots
+    /// slot_layout_out  = the pairs' shared layout
+    /// canonical flag   = set
     /// ```
-    fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, Rg>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, Rg>],
-        b: &[&E],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        CKKSCiphertext<Dst, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
-        CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + LWEInfos + GLWEInfos,
-        E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos;
-
-    /// Computes `dst = Σ a[i] * b[i][pt_coeffs[i]]` over ciphertext–scalar-constant pairs.
     ///
-    /// Each `b[i]` contributes a single ZNX coefficient `pt_coeffs[i]`.
-    /// Metadata follows the same rule as [`Self::ckks_dot_product_pt_vec`].
-    fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, Rg>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, Rg>],
-        b: &[&E],
-        pt_coeffs: &[usize],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    /// # Errors
+    ///
+    /// Before any write to `dst`:
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for empty or length-mismatched slices, an
+    /// operand above the module's degree, a ciphertext of another degree, rank or radix than `dst`, slot layouts that
+    /// differ or, on a replicated layout, ciphertext scales that differ; each
+    /// pair's refusals of `ckks_mul_pt_into`; then `Internal` for `scratch` below
+    /// [`Self::ckks_dot_product_pt_tmp_bytes`] of the ciphertext of the most limbs and the plaintexts' largest degree
+    /// and `k`.
+    fn ckks_dot_product_pt<Dst, A, B>(&self, dst: &mut Dst, a: &[&A], b: &[&B], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
-        CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + LWEInfos + GLWEInfos,
-        E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos;
 }

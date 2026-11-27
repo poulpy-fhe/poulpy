@@ -306,7 +306,7 @@ pub(crate) struct RotationUse {
 /// Receives the look-ups of an enumerator, which stops at the first error.
 pub(crate) type UseSink<'f> = &'f mut dyn FnMut(RotationUse) -> Result<()>;
 
-/// Fails with `MissingAutomorphismKey` unless `keys` holds a key for `u`, or with `InvalidOperand` unless it is of the
+/// Fails with `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` unless `keys` holds a key for `u`, or with `InvalidOperand` unless it is of the
 /// rank of the blocks it switches. Element 1 is the identity, which poulpy-ckks applies without a key.
 pub(crate) fn ensure_rotation<BE, M, K, Rg: Ring>(op: &'static str, module: &M, keys: &K, u: RotationUse) -> Result<()>
 where
@@ -320,16 +320,11 @@ where
     }
     let key = keys
         .get_automorphism_key(p, u.k)
-        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op,
-            rotation: u.rotation,
-            k: u.k.into(),
-            source,
-        })?;
+        .map_err(|source| CKKSCompositionError::automorphism_key_lookup(op, u.rotation, u.k.into(), source))?;
     ensure_key_rank(op, "rotation", key.rank(), u.rank)
 }
 
-/// Fails with `MissingRelinearizationKey` unless `keys` holds a tensor key at width `k`, then with `InvalidOperand`
+/// Fails with `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow` unless `keys` holds a tensor key at width `k`, then with `InvalidOperand`
 /// unless it is of `rank`, that of the blocks it relinearizes.
 pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring>(
     op: &'static str,
@@ -339,7 +334,7 @@ pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring>(
 ) -> Result<()> {
     let key = keys
         .get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+        .map_err(|source| CKKSCompositionError::tensor_key_lookup(op, k.into(), source))?;
     ensure_key_rank(op, "tensor", key.rank(), rank)
 }
 
@@ -356,7 +351,7 @@ fn ensure_key_rank(op: &'static str, kind: &str, key: Rank, blocks: Rank) -> Res
 ///
 /// These are poulpy-ckks's widths on inputs it evaluates. On an input it rejects with a budget error, this may name a key
 /// poulpy-ckks never looks up for that input: a store holding exactly the widths in use then fails the validator with
-/// `MissingAutomorphismKey` instead of that budget error.
+/// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` instead of that budget error.
 pub(crate) fn lt_uses<P: LtDiagonalMeta>(
     lt: &LinearTransformation<P>,
     src_k: TorusPrecision,
@@ -526,7 +521,7 @@ where
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey`, or `InvalidOperand` for a
+/// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or `InvalidOperand` for a
 /// key of another rank.
 pub fn validate_blas_rotate<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
@@ -547,7 +542,7 @@ pub fn validate_blas_rotate<BE: Backend, Rg: Ring>(
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or
 /// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_sum<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
@@ -605,7 +600,7 @@ fn rotation_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> Torus
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout or context it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a grid, shape, layout or context it rejects, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or
 /// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_transpose<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
@@ -893,8 +888,8 @@ fn ensure_masks<BE: Backend, Rg: Ring>(
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout, radix or context it rejects, then, key by key, `MissingAutomorphismKey`
-/// or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
+/// `InvalidOperand` for a grid, shape, layout, radix or context it rejects, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`
+/// or `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE, Rg>,
@@ -926,7 +921,7 @@ pub fn validate_blas_matmul<BE: Backend, Rg: Ring>(
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, layout or context it rejects or for `res` of another shape, then, key by key,
-/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+/// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul_left_operand_prepare<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
@@ -989,7 +984,7 @@ fn ensure_allocated(op: &'static str, res: &impl BlasMatMulOperandInfos, want: B
 /// # Errors
 ///
 /// `InvalidOperand` for an operand without a batch record, or a grid, shape, layout, radix or context it rejects, then,
-/// key by key, `MissingAutomorphismKey` or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
+/// key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow` or `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul_prepared<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE, Rg>,
@@ -1024,7 +1019,7 @@ pub fn validate_blas_matmul_prepared<BE: Backend, Rg: Ring>(
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, shape, layout, operand, count or context it rejects, then, key by key,
-/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+/// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul_pt_right<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE, Rg>,
@@ -1321,7 +1316,7 @@ pub(crate) fn pt_left_uses<P: LtDiagonalMeta>(
 /// # Errors
 ///
 /// `InvalidOperand` for a vector, shape, layout, operand or period it rejects, then, key by key,
-/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+/// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matvec_pt<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasVectorRef<BE, Rg>,
@@ -1386,7 +1381,7 @@ fn ensure_line(op: &'static str, line: BlasGridLine, g: &impl BlasGridInfos, bat
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, line, vector, shape, layout, operand or period it rejects, then, key by key,
-/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+/// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_grid_to_vector<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasVectorRef<BE, Rg>,
@@ -1412,7 +1407,7 @@ pub fn validate_blas_grid_to_vector<BE: Backend, Rg: Ring>(
 /// # Errors
 ///
 /// `InvalidOperand` for a vector, grid, shape, operand, line, layout or period it rejects, then, key by key,
-/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+/// `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_vector_to_grid<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE, Rg>,
@@ -1512,8 +1507,8 @@ fn ensure_diagonal_ciphertext<Rg: Ring>(
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a vector, layout, radix or matrix it rejects, then, key by key, `MissingAutomorphismKey`, then
-/// `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
+/// `InvalidOperand` for a vector, layout, radix or matrix it rejects, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, then
+/// `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matvec_diagonal<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasVectorRef<BE, Rg>,
@@ -1563,7 +1558,7 @@ pub(crate) fn matvec_diagonal_tensor(m: &BlasDiagonalCiphertextLayout, a: &impl 
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a vector, layout, matrix or mask it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a vector, layout, matrix or mask it rejects, then, key by key, `MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`, or
 /// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_append_row_diagonal<BE: Backend, Rg: Ring>(
     module: &Module<BE>,

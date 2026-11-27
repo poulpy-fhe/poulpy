@@ -31,9 +31,13 @@ use crate::numerics::CKKSFloat;
 use num_traits::Float;
 use poulpy_core::layouts::{Diagonals, galois_of_rotation, galois_rotation};
 
-use crate::layouts::{
-    ComplexDiagonals,
-    dft::{DFTOutputFormat, DFTPlan, DFTType, DftScalar},
+use crate::{
+    ReplicatedLayout, SlotLayout,
+    layouts::{
+        ComplexDiagonals,
+        dft::{DFTOutputFormat, DFTPlan, DFTType, DftScalar},
+        replicated::{gather_factor, period_factor, placement_compress, placement_spread, set_complex},
+    },
 };
 
 /// A minimal complex *scalar* for the butterfly math (roots, the per-layer
@@ -383,8 +387,19 @@ fn merge_factor_layers<F: DftScalar>(
 /// prepended to the first Decode matrix, and the right half of the last Encode
 /// matrix zeroed. Otherwise the dense path is used (and full-packing
 /// `RepackImagAsReal` ≡ `SplitRealAndImag`). Shape validity is guaranteed by
-/// [`DFTPlan::new`].
+/// [`DFTPlan::new`]. A plan on a replicated layout gives the factors
+/// [`DFTPlan::with_slot_layout`] orders, at any `log_n`.
+///
+/// # Panics
+///
+/// On a replicated plan with a setting the compilation refuses, as [`DFTPlan::with_slot_layout`] lists them.
 pub fn ckks_dft_matrices_gen<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<ComplexDiagonals<F>> {
+    if let SlotLayout::Replicated(layout) = literal.slot_layout() {
+        if let Err(err) = literal.check_slot_layout() {
+            panic!("ckks_dft_matrices_gen: {err}");
+        }
+        return replicated_factors(literal, layout);
+    }
     let log_slots = literal.log_slots();
     let slots = 1usize << log_slots;
     let max_depth = literal.num_factors();
@@ -540,6 +555,102 @@ pub fn ckks_dft_matrices_gen_blockwise<F: DftScalar>(
         factor.scale(&(per_factor_caller / F::from(norm).unwrap()));
     }
     factors
+}
+
+/// The factors [`DFTPlan::with_slot_layout`] orders. Merged, `Decode` gathers onto `V·BR`, the one-factor `Decode` of
+/// the subring of degree `2k`, which writes the data values as its coefficients bit-reversed, and `Encode` is
+/// `BR·V^H/(2k)` times the plan's scaling, halved when split: the two bit reversals cancel.
+fn replicated_factors<F: DftScalar>(plan: &DFTPlan, layout: ReplicatedLayout) -> Vec<ComplexDiagonals<F>> {
+    let (log_k, log_r) = (plan.log_slots(), layout.log_r());
+    let (k, m, r) = (1usize << log_k, 1usize << layout.log_k(), 1usize << log_r);
+    let scale = plan.coeffs_meta.log_delta();
+    let blockwise = |log_tile| {
+        let (depths, scaling) = (plan.schedule.depths(), blockwise_scaling(plan));
+        ckks_dft_matrices_gen_blockwise::<F>(plan.kind, log_k, log_tile, &depths, scaling, plan.bit_reversed)
+    };
+    let merged = "the compilation refuses a merged placement over a period above the points";
+    let mut factors = match (plan.kind, plan.placement_factors) {
+        (DFTType::Decode, 0) => {
+            let v = one_factor_matrix::<F>(plan);
+            vec![gather_factor(layout, scale, |c, j| v[c][j]).expect(merged).diagonals]
+        }
+        (DFTType::Encode, 0) => {
+            let a = one_factor_matrix::<F>(plan);
+            let factor = period_factor(layout, k, scale, |s, c| match (s % r, s / r) {
+                (0, t) if t < k => a[t][c],
+                (0, t) => {
+                    let (re, im) = a[t - k][c];
+                    (im, -re)
+                }
+                _ => (F::zero(), F::zero()),
+            });
+            vec![factor.expect(merged).diagonals]
+        }
+        (DFTType::Decode, placement) => {
+            let weight = F::from_usize(r).expect("the period is a small integer");
+            let compress = placement_compress::<F>(k, r, placement, weight).into_iter();
+            compress.chain(blockwise(log_k + log_r)).collect()
+        }
+        (DFTType::Encode, placement) => blockwise(log_k)
+            .into_iter()
+            .chain(placement_spread::<F>(m, r, placement))
+            .collect(),
+    };
+    if plan.kind == DFTType::Encode && plan.placement_factors > 0 && m > k {
+        let last = factors.last_mut().expect("a transform has factors");
+        times_minus_i_from(last, r * k);
+    }
+    factors
+}
+
+/// The `k x k` matrix of the one-factor DFT of `plan` on its `k` points from the generator: `M[c][j] = D_(j - c)[c]` for
+/// the diagonals `D` of the factor.
+pub(crate) fn one_factor_matrix<F: DftScalar>(plan: &DFTPlan) -> Vec<Vec<(F, F)>> {
+    let log_k = plan.log_slots();
+    let k = 1usize << log_k;
+    let (depths, scaling) = (plan.schedule.depths(), blockwise_scaling(plan));
+    let factor = ckks_dft_matrices_gen_blockwise::<F>(plan.kind, log_k, log_k, &depths, scaling, plan.bit_reversed)
+        .pop()
+        .expect("a DFT plan has a factor");
+    let entry = |diagonals: &Diagonals<F>, o: usize, c: usize| {
+        diagonals
+            .get(galois_of_rotation(o as i64))
+            .map_or(F::zero(), |values| values[c % values.len()])
+    };
+    (0..k)
+        .map(|c| {
+            (0..k)
+                .map(|j| {
+                    let o = (j + k - c) % k;
+                    (entry(&factor.re, o, c), entry(&factor.im, o, c))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// The scaling of `plan`, with the `1/2` [`apply_scaling`] gives the real and imaginary parts of a split `Encode`.
+fn blockwise_scaling(plan: &DFTPlan) -> f64 {
+    let scaling = plan.scaling.unwrap_or(1.0);
+    match (plan.kind, plan.format) {
+        (DFTType::Encode, DFTOutputFormat::Standard) | (DFTType::Decode, _) => scaling,
+        (DFTType::Encode, _) => scaling / 2.0,
+    }
+}
+
+/// Multiplies the outputs of slots `from..` of `diagonals` by `-i`: `(re, im) -> (im, -re)`.
+fn times_minus_i_from<F: DftScalar>(diagonals: &mut ComplexDiagonals<F>, from: usize) {
+    let n = diagonals.slots();
+    let full = |values: Option<&Vec<F>>| -> Vec<F> {
+        values.map_or_else(|| vec![F::zero(); n], |v| (0..n).map(|s| v[s % v.len()]).collect())
+    };
+    for o in diagonals.galois() {
+        let (mut re, mut im) = (full(diagonals.re.get(o)), full(diagonals.im.get(o)));
+        for s in from..n {
+            (re[s], im[s]) = (im[s], -re[s]);
+        }
+        set_complex(diagonals, o, (re, im));
+    }
 }
 
 /// `s^(1/depth)` computed natively in `F` (for positive finite `s`): an `f64`

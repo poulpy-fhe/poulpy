@@ -1595,60 +1595,110 @@ fn linear_transformation_parity_takes_the_batched_giant_steps() {
     }
 }
 
-/// The constant combination against its reference: one to four terms summed
-/// inside the launch that normalizes them, every other constant shifted by a
-/// sub-limb amount first, and a fifth term refused.
+/// The sum by constants against its reference, each on exactly its query, poisoned, into flag-clear destinations
+/// holding other bits: one to four terms summed inside the launch that normalizes them, every other constant shifted by
+/// a sub-limb amount first, a fifth term left to the reference; the override's result equals the reference's in data,
+/// flag and noise, and one byte below its query is refused with the destination unchanged.
 #[cfg(feature = "enable-core")]
 #[test]
-fn const_combination_matches_reference() {
-    use poulpy_core::{oep::ConstTerm, reference::operations::GLWEMulConstReference};
+fn const_mul_plain_sum_matches_reference() {
+    use poulpy_core::{
+        GLWEFill, GLWEMulPlain,
+        layouts::{GLWE, GLWEAlloc, GLWELayout, GLWEPlaintextAlloc, GLWEPlaintextLayout, LWEInfos, glwe_mul_plain_sum_layouts},
+        reference::operations::GLWEMulPlainReference,
+    };
     let module = &*MODULE;
-    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 22);
-    let (base2k, a_size, b_size, res_size) = (50, 6, 3, 5);
+    let poisoned = |bytes: usize| ScratchOwned::<Gpu> {
+        data: Gpu::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    };
+    let mut source = poulpy_hal::source::Source::new([7u8; 32]);
+    let base2k = 50;
+    let layout = |k: usize| GLWELayout {
+        n: N.into(),
+        base2k: base2k.into(),
+        k: k.into(),
+        rank: 1usize.into(),
+    };
+    let b_layout = GLWEPlaintextLayout {
+        n: 1usize.into(),
+        base2k: base2k.into(),
+        k: (3 * base2k).into(),
+    };
     for count in 1..=5usize {
-        for (res_k, acc_size) in [(res_size * base2k, a_size + b_size), (res_size * base2k - 7, res_size)] {
-            let mut seed = 0x0c0f_fee0_1234_5678u64 ^ ((count * 97 + res_k) as u64);
-            let operands: Vec<_> = (0..count).map(|_| vector::<Standard>(N, 2, a_size, &mut seed)).collect();
-            let constants = vector::<Standard>(1, count, b_size, &mut seed);
-            let terms: Vec<ConstTerm<'_, Gpu>> = operands
-                .iter()
-                .enumerate()
-                .map(|(index, a)| ConstTerm {
-                    a: vec_znx_backend_ref::<Gpu, Standard>(a),
-                    b: vec_znx_backend_ref::<Gpu, Standard>(&constants),
-                    b_col: index,
-                    b_coeff: 0,
-                    shift: (index % 2) * 13,
-                    cnv_offset: index % 3,
-                })
-                .collect();
-            let mut destination_seed = seed;
-            let mut want = vector::<Standard>(N, 2, res_size, &mut destination_seed);
-            let mut have = vector::<Standard>(N, 2, res_size, &mut seed);
-            module.glwe_const_combination_reference(
-                &mut vec_znx_backend_mut::<Gpu, Standard>(&mut want),
-                base2k,
-                res_k,
-                acc_size,
-                &terms,
-                &mut scratch.arena(),
-            );
-            let fused = crate::core_impl::shifted_const_combination(
+        let mut operands = Vec::new();
+        let mut constants = Vec::new();
+        for _ in 0..count {
+            let mut a = module.glwe_alloc_from_infos::<_, Standard>(&layout(6 * base2k));
+            module.glwe_fill_from_source(&mut a, &mut source);
+            operands.push(a);
+            let mut b = module.glwe_plaintext_alloc_from_infos::<_, Standard>(&b_layout);
+            module.glwe_fill_from_source(&mut b, &mut source);
+            constants.push(b);
+        }
+        let (a, b): (Vec<_>, Vec<_>) = (operands.iter().collect(), constants.iter().collect());
+        let offsets: Vec<usize> = (0..count).map(|t| (t % 3 + 1) * base2k - (t % 2) * 13).collect();
+        for res_k in [5 * base2k, 5 * base2k - 7] {
+            let fresh = |source: &mut poulpy_hal::source::Source| {
+                let mut res = module.glwe_alloc_from_infos::<_, Standard>(&layout(res_k));
+                module.glwe_fill_from_source(&mut res, source);
+                res.set_canonical(false);
+                res
+            };
+            let (mut want, mut have) = (fresh(&mut source), fresh(&mut source));
+            let reference_bytes = GLWEMulPlainReference::<Gpu, Standard>::glwe_mul_plain_sum_tmp_bytes_reference(
                 module,
-                &mut vec_znx_backend_mut::<Gpu, Standard>(&mut have),
-                base2k,
-                res_k,
+                &want,
+                &layout(6 * base2k),
+                &b_layout,
+            );
+            let mut scratch = poisoned(reference_bytes);
+            module.glwe_mul_plain_sum_reference(&mut want, &a, &b, &offsets, &mut scratch.arena().split_at(reference_bytes).0);
+            let bytes =
+                GLWEMulPlain::<Gpu, Standard>::glwe_mul_plain_sum_tmp_bytes(module, &have, &layout(6 * base2k), &b_layout);
+            let state = |res: &GLWE<_, i64, Standard>| {
+                (
+                    Gpu::to_host_bytes(DataView::data(res.data())),
+                    res.is_canonical(),
+                    res.noise(),
+                )
+            };
+            let before = state(&have);
+            let refusal = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut scratch = poisoned(bytes - 1);
+                module.glwe_mul_plain_sum(&mut have, &a, &b, &offsets, &mut scratch.arena().split_at(bytes - 1).0);
+            }))
+            .err()
+            .unwrap_or_else(|| panic!("one byte below the query was accepted: terms={count} res_k={res_k}"));
+            assert_eq!(
+                refusal.downcast_ref::<&str>().copied(),
+                Some("glwe_mul_plain_sum: scratch below its query"),
+                "terms={count} res_k={res_k}"
+            );
+            assert!(
+                state(&have) == before,
+                "a refused sum wrote its destination: terms={count} res_k={res_k}"
+            );
+            let mut scratch = poisoned(bytes);
+            module.glwe_mul_plain_sum(&mut have, &a, &b, &offsets, &mut scratch.arena().split_at(bytes).0);
+            assert!(
+                state(&want) == state(&have),
+                "sum by constants differs from its reference: terms={count} res_k={res_k}"
+            );
+            // The fused path itself takes up to four terms, on the scratch of its constants.
+            let (.., acc_size) = glwe_mul_plain_sum_layouts::<Gpu, _, _, _, Standard>(&have, &a, &b, &offsets);
+            let fused_bytes = crate::core_impl::const_mul_plain_sum_tmp_bytes(module, b_layout.size());
+            let mut scratch = poisoned(fused_bytes);
+            let fused = crate::core_impl::const_mul_plain_sum(
+                module,
+                &mut have,
+                &a,
+                &b,
+                &offsets,
                 acc_size,
-                &terms,
-                &mut scratch.arena(),
+                &mut scratch.arena().split_at(fused_bytes).0,
             );
             assert_eq!(fused, count <= 4, "the kernel takes up to four terms");
-            if fused {
-                assert!(
-                    want.data() == have.data(),
-                    "constant combination differs from its reference: terms={count} res_k={res_k} acc_size={acc_size}"
-                );
-            }
         }
     }
 }

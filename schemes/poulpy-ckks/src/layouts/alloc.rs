@@ -12,6 +12,7 @@ use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwn
 /// Allocates [`CKKSCiphertext`]s on a [`Module`].
 ///
 /// Every method is default-bodied over [`GLWEAlloc`]: a ciphertext with explicit rank plus thin conveniences over it.
+/// Each panics for rank 0, a plaintext's.
 pub trait CKKSCiphertextAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEAlloc {
     /// Allocates a ciphertext with `infos`' layout **and** its CKKS metadata
     /// (`log_delta`, `log_sparsity`), mirroring
@@ -88,8 +89,7 @@ pub trait CKKSPlaintextAlloc<BE: Backend>:
     /// A plaintext of `slots` slots, at the degree that holds them: `2 * slots` on the standard ring, `slots` on the
     /// invariant ring; [`CKKSModuleInfos::ckks_max_slots`] gives one at the ring degree.
     ///
-    /// Panics when `slots` is not a power of two, exceeds `ckks_max_slots`, or needs a degree below the backend's
-    /// minimum.
+    /// Panics when `slots` is not a power of two or exceeds `ckks_max_slots`.
     fn ckks_plaintext_alloc_from_slots<Rg: Ring>(
         &self,
         slots: usize,
@@ -104,12 +104,7 @@ pub trait CKKSPlaintextAlloc<BE: Backend>:
             slots.is_power_of_two() && slots <= max_slots,
             "ckks_plaintext_alloc_from_slots: the slot count must be a power of two up to the module's slots"
         );
-        let n = slots * (self.ring_degree().as_usize() / max_slots);
-        assert!(
-            n >= BE::MIN_DEGREE,
-            "ckks_plaintext_alloc_from_slots: the slot count needs a degree below the backend's minimum"
-        );
-        self.ckks_plaintext_alloc(n.into(), base2k, k)
+        self.ckks_plaintext_alloc((slots * (self.ring_degree().as_usize() / max_slots)).into(), base2k, k)
     }
 }
 

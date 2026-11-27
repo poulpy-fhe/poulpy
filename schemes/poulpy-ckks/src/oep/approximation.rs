@@ -1,6 +1,5 @@
 //! Polynomial approximations: a derived family over the interval map and the selected polynomial evaluation.
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta,
 };
@@ -35,7 +34,7 @@ pub unsafe trait CKKSApproximationImpl<Rg: Ring = Standard>:
     /// Default body: `ckks_polynomial_approximation_eval_tmp_bytes_derived`, the larger of the selected `ckks_all_ops_tmp_bytes` at
     /// `res` and at `input`, both against the first baby-step coefficient layout and `tsk`. An approximation with an
     /// affine map adds the aligned bytes of an `input`-shaped temporary and, unless it has a power-of-two scale, folds in the
-    /// larger of that bound and the selected `ckks_affine_pt_const_tmp_bytes`. Scratch bound of
+    /// larger of that bound and the selected `ckks_affine_pt_tmp_bytes`. Scratch bound of
     /// [`Self::ckks_polynomial_approximation_eval`]; may report less than the reference, never less than the body takes.
     fn ckks_polynomial_approximation_eval_tmp_bytes<R, I, T, P>(
         module: &Module<Self>,
@@ -59,8 +58,8 @@ pub unsafe trait CKKSApproximationImpl<Rg: Ring = Standard>:
     /// temporary plus its map step's selected queries a refusal. An approximation with an affine map first fills an
     /// `input`-shaped scratch
     /// temporary: with a positive power-of-two scale `ckks_mul_pow2_into`, with a non-positive one `ckks_copy` (slot
-    /// kind joined with real) then `ckks_div_pow2_assign`, either then `ckks_add_pt_const_assign` of the affine
-    /// constant at coefficient 0; without a power-of-two scale `ckks_affine_pt_const_into` with offset 0 and scale 1.
+    /// kind joined with real) then `ckks_div_pow2_assign`, either then `ckks_add_assign` of the affine offset;
+    /// without a power-of-two scale `ckks_affine_pt_into` of the affine scale and offset.
     /// Then `ckks_eval_poly_real_const_coeffs` of the temporary, or of `input` itself when there is no map.
     fn ckks_polynomial_approximation_eval<R, I, P, H>(
         module: &Module<Self>,
@@ -73,7 +72,7 @@ pub unsafe trait CKKSApproximationImpl<Rg: Ring = Standard>:
     where
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<Self, Rg>,
+        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<Self, Rg>,
     {
         ckks_polynomial_approximation_eval_derived(module, res, input, approximation, tsk, scratch)

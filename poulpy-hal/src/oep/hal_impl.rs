@@ -1142,7 +1142,6 @@ pub unsafe trait HalCnvImpl<Rg: Ring = Standard>: Backend + HalVecZnxDftImpl<Rg>
         a_col: usize,
         b: &crate::layouts::VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -1169,12 +1168,9 @@ pub unsafe trait HalCnvImpl<Rg: Ring = Standard>: Backend + HalVecZnxDftImpl<Rg>
         a_col: usize,
         b: &crate::layouts::VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::oep::cnv_by_const_apply_add_derived::<Self, Rg>(
-            module, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch,
-        )
+        crate::oep::cnv_by_const_apply_add_derived::<Self, Rg>(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     }
 
     #[allow(clippy::too_many_arguments)]

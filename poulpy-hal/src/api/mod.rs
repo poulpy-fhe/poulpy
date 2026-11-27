@@ -214,7 +214,10 @@
 //! result take the degree `N` of the call. The convolution applies reject an
 //! embedded degree below `MIN_DEGREE`; the right prepare and the
 //! coefficient-domain add and sub families accept any power-of-two divisor.
-//! `switch_ring` states both directions of the coefficient map explicitly.
+//! The by-constant convolution's `b` is no
+//! embedding slot: it is a constant, of degree 1 whatever `N`, a scalar on
+//! every coefficient of `a`. `switch_ring` states both directions of the
+//! coefficient map explicitly.
 //!
 //! Coefficient-wise reductions and products act on visible coefficient
 //! vectors rather than `R_N`; their contracts specify all degree relations.

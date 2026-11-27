@@ -1,16 +1,16 @@
 use crate::{
-    CKKSCtBounds, CKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout,
     api::{
         CKKSAddOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncryptOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformationOps, GLWEMulConst, GLWEMulPlain, GLWENormalize,
-    GLWEShift, GLWETensorKeyEncryptSk, GLWETensoring,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformationOps, GLWEMulPlain, GLWENormalize, GLWEShift,
+    GLWETensorKeyEncryptSk, GLWETensoring,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
-    layouts::{GGLWEInfos, LinearTransformationPlan},
-    oep::{GLWEMulConstImpl, GLWEMulPlainImpl},
+    layouts::{GGLWEInfos, GLWELayout, LWEInfos, LinearTransformationPlan, Rank},
+    oep::GLWEMulPlainImpl,
 };
 use poulpy_hal::{
     api::{
@@ -23,8 +23,11 @@ use poulpy_hal::{
 /// Helpers that return the maximum scratch size needed across broad CKKS
 /// operation sets, including the selected copy implementation.
 ///
-/// Pass layouts covering the widest live ciphertext and plaintext operands in
-/// the intended pipeline. These are shared bounds for polynomial evaluation.
+/// Pass a layout covering the widest live ciphertext operand of the intended
+/// pipeline and, as `pt_prec`, one of the largest degree and `k` among the
+/// plaintexts it multiplies by, its degree read at most the ciphertext's, which a
+/// plaintext operand embeds into: a smaller degree under-reports the plaintext
+/// products. These are shared bounds for polynomial evaluation.
 /// DFT preparation and evaluation require their selected matrix-specific queries,
 /// [`crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare_tmp_bytes`] and
 /// [`crate::api::CKKSDFTOps::ckks_dft_tmp_bytes`], including format wrappers.
@@ -74,7 +77,6 @@ pub trait CKKSAllOpsTmpBytesAt<BE: Backend, Rg: Ring>:
     + ModuleN
     + GLWEShift<BE, Rg>
     + GLWEMulPlain<BE, Rg>
-    + GLWEMulConst<BE, Rg>
     + GLWETensoring<BE, Rg>
     + GLWETensorKeyEncryptSk<BE, Rg>
     + GLWETensorKeyPreparedFactory<BE, Rg>
@@ -112,7 +114,6 @@ impl<BE: Backend, Rg: Ring, M> CKKSAllOpsTmpBytesAt<BE, Rg> for M where
         + ModuleN
         + GLWEShift<BE, Rg>
         + GLWEMulPlain<BE, Rg>
-        + GLWEMulConst<BE, Rg>
         + GLWETensoring<BE, Rg>
         + GLWETensorKeyEncryptSk<BE, Rg>
         + GLWETensorKeyPreparedFactory<BE, Rg>
@@ -132,12 +133,21 @@ impl<BE: Backend, Rg: Ring, M> CKKSAllOpsTmpBytesAt<BE, Rg> for M where
 
 fn all_ops_tmp_bytes_at<BE, C, T, P, Rg: Ring>(module: &Module<BE>, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize
 where
-    BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
+    BE: GLWEMulPlainImpl<Rg>,
     Module<BE>: CKKSAllOpsTmpBytesAt<BE, Rg>,
     C: CKKSCtBounds,
     T: GGLWEInfos,
     P: CKKSInfos,
 {
+    let pt = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: pt_prec.n().min(ct_infos.n()),
+            base2k: pt_prec.base2k(),
+            k: pt_prec.k(),
+            rank: Rank(0),
+        },
+        meta: pt_prec.meta(),
+    };
     // The prepared giant-step operand is heap-owned, so the per-pair product and sum bound the giant steps.
     let polynomial_giant_steps_tmp_bytes = module
         .ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos)
@@ -149,27 +159,25 @@ where
         .max(module.ckks_copy_tmp_bytes(ct_infos, ct_infos))
         .max(module.ckks_add_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_add_one_tmp_bytes(ct_infos.max_size()))
-        .max(module.ckks_add_pt_vec_tmp_bytes(ct_infos.max_size()))
-        .max(module.ckks_add_pt_const_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_sub_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_sub_one_tmp_bytes(ct_infos.max_size()))
-        .max(module.ckks_sub_pt_vec_tmp_bytes(ct_infos.max_size()))
-        .max(module.ckks_sub_pt_const_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_neg_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_mul_pow2_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_double_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_div_pow2_tmp_bytes(ct_infos.max_size()))
         .max(module.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
-        .max(module.ckks_mul_add_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
-        .max(module.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
+        .max(module.ckks_mul_add_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
+        .max(module.ckks_mul_sub_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
         .max(module.ckks_square_tmp_bytes(ct_infos, ct_infos, tsk_infos))
         .max(polynomial_giant_steps_tmp_bytes)
         .max(crate::power_basis::ckks_power_product_tmp_bytes(module, ct_infos, tsk_infos))
         .max(
-            crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes::<BE, Rg>(
+            // At the coefficients' degree, whose query covers constants of degree 1 in the same sum.
+            crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes::<BE, _, Rg>(
                 module,
-                ct_infos.max_size(),
-                pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
+                ct_infos,
+                pt.n().as_usize(),
+                pt.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
             ),
         )
         .max(if matches!(ct_infos.slot_layout(), crate::SlotLayout::Replicated(_)) {
@@ -181,9 +189,8 @@ where
         } else {
             0
         })
-        .max(module.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
-        .max(module.ckks_mul_add_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
-        .max(module.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
+        .max(module.ckks_mul_pt_tmp_bytes(ct_infos, ct_infos, &pt))
+        .max(module.ckks_mul_add_pt_tmp_bytes(ct_infos, ct_infos, &pt))
         .max(module.glwe_tensor_key_prepare_tmp_bytes(tsk_infos))
         .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(tsk_infos))
 }
@@ -199,6 +206,11 @@ where
     // The core linear transformations with a key per rotation, which every plan of that kind sizes alike.
     let plan = LinearTransformationPlan::default();
     let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct_infos);
+    // The query of a streamed diagonal of degree 1, whose plaintext product takes the by-constant route.
+    let narrowest = GLWELayout {
+        n: 1usize.into(),
+        ..diagonal
+    };
     module
         .ckks_rotate_tmp_bytes(ct_infos, atk_infos)
         .max(module.glwe_linear_transformation_eval_tmp_bytes(ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos))
@@ -207,16 +219,16 @@ where
                 ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos,
             ),
         )
+        .max(module.glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(
+            ct_infos, ct_infos, &narrowest, &plan, tsk_infos, atk_infos,
+        ))
         .max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))
         .max(module.glwe_automorphism_key_prepare_tmp_bytes(atk_infos))
 }
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
 where
-    BE: GLWEMulConstImpl<Standard>
-        + GLWEMulConstImpl<ConjugateInvariant>
-        + GLWEMulPlainImpl<Standard>
-        + GLWEMulPlainImpl<ConjugateInvariant>,
+    BE: GLWEMulPlainImpl<Standard> + GLWEMulPlainImpl<ConjugateInvariant>,
     Self: CKKSAllOpsTmpBytesAt<BE, Standard> + CKKSAllOpsTmpBytesAt<BE, ConjugateInvariant>,
 {
     fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize

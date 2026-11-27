@@ -139,44 +139,78 @@ where
     .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex);
 
-    // A constant is one quantized coefficient, always a real scalar, so the
-    // plaintext's own (default `Complex`) kind must not leak into the result.
-    // What decides an added constant is where it lands: coefficient 0 is the
-    // real constant term, `n/2` the imaginary one.
-    let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
-    assert_eq!(cst.slots(), SlotsKind::Complex, "the constant plaintext is unlabelled");
+    // A constant's plaintext carries its kind: a real one, of degree 1, keeps real slots, and a complex one
+    // `[re, im]`, of degree 2, leaves the reals.
+    let complex = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
+    let mut real = super::helpers::ckks_pt_cst::<BE, F, Standard>(
+        host_module,
+        module,
+        params.base2k.into(),
+        super::helpers::PT_PREC,
+        Some(super::helpers::ADD_SUB_CONST.0),
+        None,
+    );
+    real.set_slots(SlotsKind::Real);
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(acc.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut acc, 0, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_add_assign(&mut acc, &real, s)
     })
     .unwrap();
-    assert_eq!(acc.slots(), SlotsKind::Real, "a real constant term keeps real slots");
+    assert_eq!(acc.slots(), SlotsKind::Real, "a real constant keeps real slots");
 
-    let mut acc = a.clone();
-    acc.set_slots(SlotsKind::Real);
-    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(acc.max_size()), |s| {
-        module.ckks_add_pt_const_assign(&mut acc, m, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_add_assign(&mut acc, &complex, s)
     })
     .unwrap();
-    assert_eq!(acc.slots(), SlotsKind::Complex, "an imaginary constant term leaves the reals");
+    assert_eq!(acc.slots(), SlotsKind::Complex, "a complex constant leaves the reals");
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(acc.max_size()), |s| {
-        module.ckks_sub_pt_const_assign(&mut acc, m, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_sub_assign(&mut acc, &complex, s)
     })
     .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex, "subtracting one is no different");
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&acc, &acc, &cst), |s| {
-        module.ckks_mul_pt_const_assign(&mut acc, &cst, 0, s)
+    with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&acc, &acc, &real), |s| {
+        module.ckks_mul_pt_assign(&mut acc, &real, s)
     })
     .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Real, "a real scalar multiplier keeps real slots");
+
+    // An Integer ciphertext times a constant: Real by a real one, Complex by one at the default label.
+    let mut default_label = super::helpers::ckks_pt_cst::<BE, F, Standard>(
+        host_module,
+        module,
+        params.base2k.into(),
+        super::helpers::PT_PREC,
+        Some(super::helpers::ADD_SUB_CONST.0),
+        None,
+    );
+    default_label.set_slots(SlotsKind::default());
+    for (constant, want) in [(&real, SlotsKind::Real), (&default_label, SlotsKind::Complex)] {
+        let mut integer = a.clone();
+        integer.set_slots(SlotsKind::Integer);
+        with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&res, &integer, constant), |s| {
+            module.ckks_mul_pt_into(&mut res, &integer, constant, s)
+        })
+        .unwrap();
+        assert_eq!(res.slots(), want, "Integer times a {:?} constant, into", constant.slots());
+        with_scratch::<BE, _>(module.ckks_mul_pt_tmp_bytes(&integer, &integer, constant), |s| {
+            module.ckks_mul_pt_assign(&mut integer, constant, s)
+        })
+        .unwrap();
+        assert_eq!(
+            integer.slots(),
+            want,
+            "Integer times a {:?} constant, assign",
+            constant.slots()
+        );
+    }
 
     // Halving an integer need not give an integer, so division refuses
     // `Integer` slots rather than carry a false claim.

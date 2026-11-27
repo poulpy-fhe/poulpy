@@ -23,7 +23,7 @@
 //! transform, the products of several sources against one key share a launch
 //! that reads the key once, a square reads one prepared operand, the
 //! giant-step products of a linear transformation are written a batch per
-//! launch, and the terms of a constant combination are summed in one launch.
+//! launch, and the terms of a sum by constants are summed in one launch.
 //!
 //! # Tuning
 //!

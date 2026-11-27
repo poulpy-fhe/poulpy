@@ -13,8 +13,8 @@ use crate::GLWEToBackendRef;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, SetCKKSInfos, SlotLayout,
     api::CKKSRoundOps,
-    checked_log_budget_sub, ckks_ensure, ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_vec_operand,
-    error::ensure_encryption_degrees,
+    checked_log_budget_sub, ckks_ensure, ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_operand,
+    error::{SPARSE_DIVISOR, ensure_encryption_degrees},
     layouts::ScratchArenaTakeCKKSCiphertext,
     shaping::{MAX_PASS_BITS, ShapingProfile},
 };
@@ -85,15 +85,12 @@ pub trait CKKSEncryptionReference<BE: Backend, Rg: Ring = Standard> {
         )?;
         let log_budget = checked_log_budget_sub("ckks_encrypt_sk", ct.k().as_usize(), pt.log_delta())?;
         // The plaintext addition's checks at the budget the encryption stamps, before the first draw.
-        ensure_plaintext_vec_operand(
-            "ckks_encrypt_sk",
-            ct.base2k().as_usize(),
-            ct.n().as_usize(),
-            log_budget,
-            pt,
-            BE::MIN_DEGREE,
-        )?;
+        ensure_plaintext_operand("ckks_encrypt_sk", ct.base2k().as_usize(), ct.n().as_usize(), log_budget, pt)?;
         let SlotLayout::Replicated(layout) = pt.slot_layout() else {
+            ckks_ensure!(
+                scratch.available() >= self.ckks_encrypt_sk_tmp_bytes_reference(&*ct),
+                "ckks_encrypt_sk: scratch below its query"
+            );
             encrypt_aligned(self, ct, pt, log_budget, pt.log_delta(), sk, source_xe, source_xa, scratch)?;
             let noise =
                 ComponentNoise::from_secret_at(*sk.to_backend_ref().dist(), ct.k(), ct.to_backend_ref().rank().as_usize());
@@ -204,6 +201,7 @@ pub trait CKKSEncryptionReference<BE: Backend, Rg: Ring = Standard> {
                 op: "ckks_decrypt",
                 ct_n,
                 pt_n,
+                rule: SPARSE_DIVISOR,
             }
             .into());
         }
@@ -262,7 +260,7 @@ where
     ct.set_log_delta(log_delta);
     ct.set_slots(pt.slots());
     ct.set_slot_layout(pt.slot_layout());
-    crate::reference::plaintext::add_pt_vec_raw(module, "ckks_encrypt_sk", ct, pt, scratch)?;
+    crate::reference::plaintext::add_pt_raw(module, "ckks_encrypt_sk", ct, pt, scratch)?;
     // A plaintext is dense at its own degree.
     ct.set_log_sparsity(ct.log_n() - pt.log_n());
     // The raw limb-add above can leave digits one bit beyond the `base2k`

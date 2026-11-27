@@ -61,6 +61,7 @@ mod round;
 mod ship;
 mod sub;
 
+pub use crate::layouts::validation::check_unit_shift;
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference_full;
 pub use approximation::{CKKSApproximationImpl, impl_ckks_approximation_derived_full};

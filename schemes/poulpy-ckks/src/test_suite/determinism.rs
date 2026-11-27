@@ -31,12 +31,13 @@ use crate::{
     approximation::{Parity, minimax, sign_composite_coeffs},
     layouts::{
         CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
-        eval_mod::{EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile},
+        eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile},
         slot_coeff_count,
     },
     polynomial::SplitStrategy,
     reference::ckks_dft_matrices_gen,
-    test_suite::{helpers::TestScalar, parity::helpers::with_scratch},
+    shaping::ShapingUnit,
+    test_suite::{helpers::TestScalar, parity::helpers::with_scratch, presets::paper_eval_mod},
 };
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/test_suite/determinism.txt");
@@ -201,7 +202,7 @@ where
 
 /// Setup fixtures at precision `F`: the platform-independent math, the DFT
 /// matrices, the sign and minimax approximations, and the EvalMod polynomials
-/// with their encoded plaintexts.
+/// with their encoded plaintexts, on the full layout and on a replicated one, unpacked and packed.
 pub fn setup_fixtures<BE, F, Rg: Ring>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64>,
@@ -238,17 +239,20 @@ where
         .unwrap()
         .with_scaling(0.37)
         .unwrap();
-        let mut scalars = Vec::new();
-        for factor in ckks_dft_matrices_gen::<F>(&plan, 7) {
-            for galois in factor.galois() {
-                for part in [&factor.re, &factor.im] {
-                    if let Some(values) = part.get(galois) {
-                        scalars.extend_from_slice(values);
-                    }
-                }
-            }
+        check_scalars(&format!("setup-f{bits}-dft-{kind:?}"), &dft_factor_scalars::<F>(&plan));
+    }
+    // The maps of a replicated layout of 16 values of period 4, dense and in two DFT and two placement factors.
+    let layout = ShapingUnit::U8_40.layout(4).unwrap();
+    for (maps, schedule, placement_factors) in [("dense", vec![(4, 1)], 0), ("factored", vec![(2, 1), (2, 1)], 2)] {
+        for kind in [DFTType::Encode, DFTType::Decode] {
+            let meta = CoeffsMeta::from_delta_budget(100, 10);
+            let plan = DFTPlan::new(kind, schedule.clone(), DFTOutputFormat::SplitRealAndImag, meta)
+                .unwrap()
+                .with_slot_layout(SlotLayout::Replicated(layout))
+                .with_placement_factors(placement_factors);
+            let scalars = dft_factor_scalars::<F>(&plan);
+            check_scalars(&format!("setup-f{bits}-dft-replicated-{maps}-{kind:?}"), &scalars);
         }
-        check_scalars(&format!("setup-f{bits}-dft-{kind:?}"), &scalars);
     }
 
     let sign = sign_composite_coeffs(F::from_f64(0.1).unwrap(), 15.0, &[15], 8).unwrap();
@@ -282,6 +286,7 @@ where
             split_strategy: SplitStrategy::MinDepth,
             coeffs_meta: CoeffsMeta::from_delta_budget(100, 10),
             f_mod_log_delta: 110,
+            packed: false,
         };
         let compiled = with_scratch::<BE, _>(compile_bytes, |s| {
             ckks_eval_mod_compile::<BE, F, Rg>(Base2K(20), plan, module, s)
@@ -292,17 +297,52 @@ where
             EvalModPoly::Complex(p) => p.re.iter().chain(&p.im).copied().collect(),
         };
         check_scalars(&format!("setup-f{bits}-evalmod-{kind:?}-polynomial"), &scalars);
-        let mut bytes = Vec::new();
-        compiled.map_plaintexts(|pt| {
-            let host = pt.to_host_owned::<BE>();
-            for limb in 0..host.size() {
-                for value in host.data().at(0, limb) {
-                    bytes.extend(value.to_le_bytes());
+        check_fixture(
+            &format!("setup-f{bits}-evalmod-{kind:?}-plaintexts"),
+            constant_bytes::<BE, _, Rg>(&compiled),
+        );
+    }
+    // The masked constants of the replicated presets' EvalMod on that layout, unpacked and packed as the presets fit it.
+    let plan = paper_eval_mod(&layout).with_slot_layout(SlotLayout::Replicated(layout));
+    for (case, packed) in [("replicated", false), ("replicated-packed", true)] {
+        let compiled = with_scratch::<BE, _>(compile_bytes, |s| {
+            ckks_eval_mod_compile::<BE, F, Rg>(Base2K(20), plan.with_packed(packed), module, s)
+        })
+        .unwrap();
+        check_fixture(
+            &format!("setup-f{bits}-evalmod-{case}-plaintexts"),
+            constant_bytes::<BE, _, Rg>(&compiled),
+        );
+    }
+}
+
+/// The diagonals of every factor of `plan` at degree `2^7`, real then imaginary part, in Galois element order.
+fn dft_factor_scalars<F: TestScalar>(plan: &DFTPlan) -> Vec<F> {
+    let mut scalars = Vec::new();
+    for factor in ckks_dft_matrices_gen::<F>(plan, 7) {
+        for galois in factor.galois() {
+            for part in [&factor.re, &factor.im] {
+                if let Some(values) = part.get(galois) {
+                    scalars.extend_from_slice(values);
                 }
             }
-        });
-        check_fixture(&format!("setup-f{bits}-evalmod-{kind:?}-plaintexts"), bytes);
+        }
     }
+    scalars
+}
+
+/// The limbs of the constants of `compiled`, limb by limb across the plaintexts of each term, every coefficient of each.
+fn constant_bytes<BE: Backend<ZnxWord = i64>, F, Rg: Ring>(compiled: &EvalMod<F, CKKSPlaintextOwned<BE, Rg>>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for constants in compiled.constants() {
+        let hosts: Vec<_> = constants.iter().map(|pt| pt.to_host_owned::<BE>()).collect();
+        for limb in 0..hosts[0].size() {
+            for host in &hosts {
+                host.data().at(0, limb).iter().for_each(|c| bytes.extend(c.to_le_bytes()));
+            }
+        }
+    }
+    bytes
 }
 
 /// Suite entry point on the standard ring: encoding fixtures at degree
@@ -339,7 +379,7 @@ where
 /// A backend type with an `f32` encoding transform adds `, f32` after `backend = <type>`, which also
 /// registers `encoding_determinism_f32`.
 ///
-/// Every backend type implementing CKKS registers it. A CPU backend type with the
+/// Every backend type implementing CKKS registers it. A backend type with the
 /// conjugate-invariant ring also registers
 /// [`conjugate_invariant_determinism_test_suite!`](crate::conjugate_invariant_determinism_test_suite).
 #[macro_export]

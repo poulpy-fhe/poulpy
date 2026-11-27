@@ -24,19 +24,19 @@ The table gives the reference of each family.
 
 | OEP family | Canonical implementation |
 |---|---|
-| `CKKSAddImpl`, `CKKSSubImpl` | [`reference/add.rs`](../src/reference/add.rs), [`reference/sub.rs`](../src/reference/sub.rs); adding/subtracting one are derived plaintext compositions. |
+| `CKKSAddImpl`, `CKKSSubImpl` | [`reference/add.rs`](../src/reference/add.rs), [`reference/sub.rs`](../src/reference/sub.rs): one into and one assign form each, a rank-0 operand taking the plaintext route; adding/subtracting one are derived plaintext compositions. |
 | `CKKSCopyImpl`, `CKKSNegImpl`, `CKKSPow2Impl`, `CKKSImagImpl` | Corresponding [`reference`](../src/reference/) modules; multiplication and division by `i` use direct core monomial rotations by `N/2` and `-N/2`; the doubling's query defaults to the `mul_pow2` one. |
 | `CKKSMulImpl` | [`reference/mul.rs`](../src/reference/mul.rs), including the left and right preparations, ordinary/prepared and plaintext products. The prepared operands follow poulpy-core's lifecycle in `CKKSLeftOperandPreparedFactory` and `CKKSRightOperandPreparedFactory`: `ckks_{left,right}_operand_prepared_alloc_from_infos` allocate one for a ciphertext layout under a `PrepareHint` and `ckks_{left,right}_operand_prepared_bytes_of_from_infos` give its bytes, directly on `Module` with no OEP method, and `ckks_{left,right}_operand_prepare` fill it with no allocation, rejecting a source of another layout with `InvalidOperand` before any write, within `ckks_{left,right}_operand_prepare_tmp_bytes`; the allocating `ckks_{left,right}_operand_prepare_alloc` are derived defaults, an allocation then a preparation into it. |
-| `CKKSDotProductImpl` | [`reference/dot_product.rs`](../src/reference/dot_product.rs): the ciphertext and prepared dot products, relinearized once where the pairs share one product rule; the sum of prepared terms by prepared plaintexts over poulpy-core's `glwe_mul_prepared_plain_sum`, each plaintext read through an odd Galois element, summed in the transform domain and normalized once, every operand checked before `dst` is written; and their scratch. The plaintext dot products are derived defaults, a product then an addition per pair, and the prepared query defaults to the ciphertext one. |
-| `CKKSLinearTransformationImpl` | [`reference/linear_transformation.rs`](../src/reference/linear_transformation.rs): the preparations, the evaluation over a caller's baby cache and the summed evaluation; `_assign` and the self-caching evaluations are derived defaults. The preparation and every evaluation refuse diagonals of more than one scale, width or slot kind with `InvalidOperand` before any write, and the preparation a destination allocated for another layout or rank. Diagonals of the source's rank are multiplied as ciphertexts with the tensor key of `keys`; the evaluations refuse them, before any write, as `ckks_dot_product_prepared` refuses its pairs (`PreparedOperandLayoutMismatch`, `InvalidOperand` past `base2k` 62), with a baby cache of another width than the source (`InvalidOperand`) and without that key (`MissingRelinearizationKey`). |
+| `CKKSDotProductImpl` | [`reference/dot_product.rs`](../src/reference/dot_product.rs): the ciphertext and prepared dot products, relinearized once where the pairs share one product rule; the sum of prepared terms by prepared plaintexts over poulpy-core's `glwe_mul_prepared_plain_sum`, each plaintext read through an odd Galois element, summed in the transform domain and normalized once, every operand checked before `dst` is written; and their scratch. The plaintext dot product lands each pair at the rule of `ckks_mul_pt_into`, offset to the smallest budget, and sums them with poulpy-core's `glwe_mul_plain_sum`, rounded once into `dst` (with shaping on a replicated layout); the prepared query defaults to the ciphertext one. |
+| `CKKSLinearTransformationImpl` | [`reference/linear_transformation.rs`](../src/reference/linear_transformation.rs): the preparations, the evaluation over a caller's baby cache and the summed evaluation; `_assign` and the self-caching evaluations are derived defaults. The preparation and every evaluation refuse diagonals of more than one scale, width or slot kind with `InvalidOperand` before any write, and the preparation a destination allocated for another layout or rank. Diagonals of the source's rank are multiplied as ciphertexts with the tensor key of `keys`; the evaluations refuse them, before any write, as `ckks_dot_product_prepared` refuses its pairs (`PreparedOperandLayoutMismatch`, `InvalidOperand` past `base2k` 62), with a baby cache of another width than the source (`InvalidOperand`) and without that key (`MissingRelinearizationKey`) or with one too narrow (`RelinearizationKeyTooNarrow`). |
 | `CKKSRotateImpl`, `CKKSConjugateImpl` | [`reference/rotate.rs`](../src/reference/rotate.rs), [`reference/conjugate.rs`](../src/reference/conjugate.rs). |
 | `CKKSInnerSumImpl` | [`reference/inner_sum.rs`](../src/reference/inner_sum.rs) (`CKKSInnerSumReference`), registered by `impl_ckks_inner_sum_reference_full!`: `ckks_copy`, poulpy-core's summed trace over a window of levels, forward for the inner sum and reversed for the replicate, and, for a mean, `ckks_div_pow2_assign`; the Galois elements are poulpy-core's `glwe_trace_galois_elements` over those levels at the ciphertext's degree. |
 | `CKKSPlaintextVecImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |
 | `CKKSRoundImpl`, `CKKSShapedRoundingImpl` | [`reference/round.rs`](../src/reference/round.rs): `ckks_round_reference` and its query compose backend normalization with the internal `ckks_shaped_round_correction` hook. The hook operates on resident buffers and defines the two correction limbs; it needs no host-accessible storage in the generic reference. |
-| `CKKSReplicatedImpl` | Derived defaults ([`oep/derived/replicated.rs`](../src/oep/derived/replicated.rs)), registered by `impl_ckks_replicated_derived_full!`: the conversions between CKKS and a replicated slot layout over the selected linear transformation, rotations, additions, copies, power-of-two operations and rounding, and their query. |
+| `CKKSReplicatedImpl` | Derived defaults ([`oep/derived/replicated.rs`](../src/oep/derived/replicated.rs)), registered by `impl_ckks_replicated_derived_full!`: the conversions between CKKS and a replicated slot layout over the selected linear transformation, inner sum, copy and rounding, and their query. |
 | `CKKSEncryptionImpl` | [`reference/encryption.rs`](../src/reference/encryption.rs), for encryption and decryption. |
 | `CKKSEncodingImpl<F, Rg>` | [`reference/encoding.rs`](../src/reference/encoding.rs) (`CKKSEncodingReference<BE, F, Rg>` for the coefficient codecs): slot ordering, transform normalization, and quantization behind the four required kernels `ckks_{quantize,dequantize}_coeffs_into` and `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`; backend-owned plans and cache. The six API operations are derived defaults that check the buffer and plaintext shapes and read the plans from the cache. |
-| `CKKSDFTMatrixImpl<F>`, `CKKSDFTImpl` | [`reference/dft`](../src/reference/dft/) (`CKKSDFTMatrixReference<BE, F>`, `CKKSDFTReference`): matrix generation, preparation, and evaluation. The six standard/split/repack direction wrappers are derived defaults. A prepared matrix is allocated by `CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos` from the unprepared one and filled by `ckks_dft_matrix_prepare` with no allocation, which refuses a matrix of another layout with `InvalidOperand` before any write; the allocating `ckks_dft_matrix_prepare_alloc` is a derived default. The standard-format wrappers run a replicated bootstrap run through its route ([`reference/bootstrapping/replicated.rs`](../src/reference/bootstrapping/replicated.rs)): the traces, working bits and roundings around its factors, over the selected rounding and core's trace. |
+| `CKKSDFTMatrixImpl<F>`, `CKKSDFTImpl` | [`reference/dft`](../src/reference/dft/) (`CKKSDFTMatrixReference<BE, F>`, `CKKSDFTReference`): matrix generation, preparation, and evaluation. The six standard/split/repack direction wrappers are derived defaults. A prepared matrix is allocated by `CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos` from the unprepared one and filled by `ckks_dft_matrix_prepare` with no allocation, which refuses a matrix of another layout with `InvalidOperand` before any write; the allocating `ckks_dft_matrix_prepare_alloc` is a derived default. The evaluation reference starts the chain of a plan on a replicated layout with its normalized trace. |
 | `CKKSPolynomialEvaluationImpl`, `CKKSComplexPolynomialEvaluationImpl` | [`reference/polynomial_evaluation.rs`](../src/reference/polynomial_evaluation.rs) for evaluation from a power basis; one-shot real/complex evaluation derives from CKKS input mapping and power-basis construction. The complex family is standard-only. |
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. Serves both rings; the conjugate-invariant ring refuses `ExpCmplx`. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping/mod_raise.rs`](../src/reference/bootstrapping/mod_raise.rs) (`CKKSEncapsulatedModUpReference`). |
@@ -66,11 +66,12 @@ module's degree. Every fallible operation refuses a ciphertext or
 linear-transformation diagonal above the module's degree before any write or
 scratch carve, with `EncryptionDegreeMismatch` for encryption and decryption and
 `InvalidOperand` otherwise, so poulpy-core's degree assertion is never reached;
-a plaintext polynomial embeds into its ciphertext's degree, and a constant
-plaintext, which only supplies coefficients, may be of any degree. Queries size a
+a plaintext, a constant included, embeds into its ciphertext's degree, which its
+own divides. Queries size a
 temporary at its operand's degree or the module's, never below. PaCo and SHIP run at the degree of their plan, at most
 the module's. A bootstrapping context bootstraps ciphertexts of degree `2·g`
-times the slots of its transforms, `g` the gap of its plaintexts, on a module of
+times the slots of its transforms, `g` the gap of its plaintexts, or of degree
+`2^log_n` on a replicated layout, the degree its plan names, on a module of
 that degree or wider, or of twice that degree when the plan runs EvalMod on the
 conjugate-invariant ring, and the bootstraps take ciphertexts of that degree,
 labelled in the subring of the gap.
@@ -99,10 +100,11 @@ parameters passed to execution. In particular, `ckks_copy_tmp_bytes(dst, src)`
 receives both layouts because narrowing, radix conversion, and intermediate
 storage depend on their relationship. Likewise, `ckks_decrypt_tmp_bytes(pt, ct)`
 includes the plaintext allocation width even when its effective precision is
-lower. Add/subtract-one calls use `ckks_add_one_tmp_bytes` and
+lower. A plaintext-product query takes the plaintext of the call, or a layout of
+its degree and `k`, since its scratch follows that degree: a constant of degree 1
+reserves less than a plaintext of the ciphertext's degree. Add/subtract-one calls use `ckks_add_one_tmp_bytes` and
 `ckks_sub_one_tmp_bytes`; their derived queries follow the selected
-plaintext-constant and plaintext-vector add/subtract implementations and reserve
-the unit plaintext in the arena. An override may report a
+add/subtract implementations and reserve the unit plaintext in the arena. An override may report a
 different size from the reference. EvalMod's query dispatches through
 `CKKSEvalModImpl::ckks_eval_mod_tmp_bytes`, so replacing its evaluation and
 workspace policy does not pin execution to the reference budget.
@@ -143,8 +145,8 @@ mandatory oracle.
 The paired helpers upload identical logical fixtures and prepare keys, plans,
 and transformed objects independently. They compare canonical coefficients and
 metadata, using numerical tolerances for encoding/transform rounding where
-appropriate. Diagonals are embedded into the common ring for comparison,
-so different minimum allocation degrees do not require identical storage. The tested buffers remain opaque; the harness uses explicit
+appropriate. Diagonals sit at the degree of their period on every backend, below
+a backend's minimum degree too, so their storage compares as is. The tested buffers remain opaque; the harness uses explicit
 transfers instead of `HostDataRef`/`HostDataMut` bounds.
 
 Encryption parity needs identical realized random draws. Matching seeds alone

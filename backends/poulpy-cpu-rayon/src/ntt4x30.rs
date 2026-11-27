@@ -1100,7 +1100,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
@@ -1112,7 +1111,6 @@ where
                 a_col,
                 b,
                 b_col,
-                b_coeff,
                 &mut [],
             );
         } else {
@@ -1124,7 +1122,6 @@ where
                 a_col,
                 b,
                 b_col,
-                b_coeff,
                 &mut [],
             );
         }
@@ -1150,7 +1147,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
@@ -1162,7 +1158,6 @@ where
                 a_col,
                 b,
                 b_col,
-                b_coeff,
                 &mut [],
             );
         } else {
@@ -1174,7 +1169,6 @@ where
                 a_col,
                 b,
                 b_col,
-                b_coeff,
                 &mut [],
             );
         }

@@ -50,7 +50,7 @@
 - **Stamp before the rounding write.** Offsets are computed against the pre-stamp `res`, and the final metadata is stamped before any step rounds into `res`, an in-place product reading `res` stamping once it has read it.
 - **One formula per accounting rule.** Offsets, budgets and `cnv_offset` each come from one shared helper, fused paths included, never re-derived at a call site.
 - **A lift spends budget.** A lift at a fixed modulus changes the scale in the metadata, never through a setter that preserves the budget, which grows `k` and cancels the shift.
-- **Slot kinds.** Sums, products and linear transformations stamp the operands' `join`, multiplying by `i` or adding a constant at a nonzero coefficient stamps `Complex`, `Real` or a `meet` needs an identity proving it, and an operation that can break integrality refuses `Integer` input.
+- **Slot kinds.** Sums, products and linear transformations stamp the operands' `join`, a constant's label included, multiplying by `i` stamps `Complex`, `Real` or a `meet` needs an identity proving it, and an operation that can break integrality refuses `Integer` input.
 - **Sparsity composition.** `log_sparsity` is the operands' minimum, an operation moving coefficient positions sets it explicitly, and merging distinct inputs clears it.
 - **Encryption stamps, decryption does not.** Encryption stamps the plaintext's scale, slot kind and sparsity, and decryption writes coefficients only, into a smaller degree only when the ciphertext's sparsity allows it.
 - **Copy CKKS values with `ckks_copy`.** A core copy into a CKKS destination serves only one already carrying the intended label or relabelled right after.
@@ -70,7 +70,7 @@
 
 - **Plaintext operand checks.** A plaintext operand is checked for radix, degree embedding or coefficient range, and alignment before any write.
 - **One value per coefficient.** Encoders and decoders take exactly one value per coefficient or slot, refuse any other count, and never spread values at a gap, except on a replicated layout, whose host encoder spreads a batch over its replicas, whose decoder averages them and whose masked constants repeat at the stride of the shaping variable.
-- **Quantization rejects before writing.** Every encoding path, overrides included, quantizes through the shared codec, never a cast, rejects a non-finite or out-of-range value before any write, and keeps the preset metadata, narrowing only the slot kind.
+- **Quantization rejects before writing.** Every encoding path, overrides included, quantizes through the shared codec, never a cast, rejects a non-finite or out-of-range value before any write, and keeps the preset metadata, narrowing only the slot kind, except a replicated map's diagonal, quantized with its giant step's twisted shaping and labelled full, as the map's input is.
 - **Resident encoding signatures.** Encoding API and OEP signatures take only backend-resident buffers, host slices entering only through host-named adapters.
 
 ## 10. Numerics and determinism
@@ -85,8 +85,9 @@
 
 - **Scale-agnostic engines live in core.** CKKS linear-transformation and polynomial-evaluation code holds only scale, budget and `cnv_offset` accounting, encoding and the Galois-to-key map.
 - **A diagonal stores one period.** A diagonal stores its shortest predictable period (`docs/review/core.md` section 8.4), and encoders are sized from that period, never a ciphertext layout.
-- **Uniform diagonals.** A transformation's diagonals share one scale, width, slot kind and degree, and every consumer of a caller-built transformation checks this in release.
+- **Uniform diagonals.** A transformation's diagonals share one scale, width, slot kind and prepared degree, their degree raised to the backend's `MIN_DEGREE` (diagonals below it may mix degrees), and every consumer of a caller-built transformation checks this in release.
 - **Summed transforms check every term.** Every term is checked against the first, baby-step caches and keys included.
+- **Evaluation queries are bounds.** The evaluation queries (`ckks_linear_transformation_eval[_streamed|_sum[_streamed]|_self]_tmp_bytes`) are the crate's named bounds for `docs/review/workspace.md` section 15 (Exact per-implementation budgets): they take the largest route and one representative key and tensor-key layout, and `_self_into` shares the `_self_assign` query, its working copy included. Tests run on exactly the query; the self forms refuse one byte below their baby-step cache or working copy, and the nested calls check against the keys they look up.
 - **One DFT generator.** Every homomorphic DFT factor comes from one generator under the crate's conventions, scheme conventions being post-transforms of its factors, never a private factor stack or FFT.
 - **Replays share the generator's geometry.** A value-free replay shares the generator's geometry code.
 - **Schedules in evaluation order.** A DFT schedule lists factors in evaluation order in both directions, never reordered by kind.

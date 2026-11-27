@@ -172,7 +172,7 @@ pub unsafe trait BlasMatVecImpl<Rg: Ring = Standard>: Backend {
     /// bit for bit, within [`Self::blas_append_row_diagonal_tmp_bytes`]; validator: [`crate::layouts::validate_blas_append_row_diagonal`].
     /// It writes `m` through [`BlasDiagonalCiphertext::diagonals_mut`].
     ///
-    /// **Fixed:** the masked accumulates of the reference, each poulpy-ckks's `ckks_dot_product_prepared_pt_vec_add` of the
+    /// **Fixed:** the masked accumulates of the reference, each poulpy-ckks's `ckks_dot_product_prepared_pt_add` of the
     /// mask read through its shift's Galois element and a baby rotation of `v`; the key widths and the errors and their order: the validator's, then poulpy-ckks's, before any write to `m`.
     ///
     /// **Free:** kernels, scratch use, how the rotations of `v` are made and prepared, and the order of the entries.

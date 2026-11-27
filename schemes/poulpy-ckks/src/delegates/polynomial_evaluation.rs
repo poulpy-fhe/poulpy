@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta};
@@ -28,7 +27,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
+        B::Coeffs: CKKSCtBounds + GLWEToBackendRef<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>,
@@ -48,7 +47,7 @@ where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
+        B::Coeffs: CKKSCtBounds + GLWEToBackendRef<BE, Rg>,
         H: GetTensorKey<BE, Rg>,
         CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -70,7 +69,7 @@ where
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
+        C: GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
@@ -89,7 +88,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
+        C: GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + GLWEToBackendRef<BE>,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {

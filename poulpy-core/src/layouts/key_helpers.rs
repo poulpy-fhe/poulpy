@@ -41,7 +41,7 @@ pub trait GetAutomorphismKey<BE: Backend, Rg: Ring = Standard> {
                 detail: format!("asked for p={p}, source answered with a key for p={}", key.p),
             });
         }
-        check_covers("get_automorphism_key", &key, k)?;
+        ensure_key_covers("get_automorphism_key", &key, k)?;
         Ok(key)
     }
 }
@@ -55,19 +55,20 @@ pub trait GetTensorKey<BE: Backend, Rg: Ring = Standard> {
     /// The answer to [`Self::lookup_tensor_key`], checked to cover an input of `k` bits.
     fn get_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         let key = self.lookup_tensor_key(k)?;
-        check_covers("get_tensor_key", &key, k)?;
+        ensure_key_covers("get_tensor_key", &key, k)?;
         Ok(key)
     }
 }
 
-/// Refuses a key that does not decompose an input of `k` bits exactly: one past
+/// [`CoreError::GGLWEKeyTooNarrow`] under `op` for a key that does not decompose an input of `k` bits exactly: one past
 /// its [`max_input_k`](crate::layouts::GGLWELayout::max_input_k).
-fn check_covers<K: GGLWEInfos>(op: &'static str, key: &K, k: TorusPrecision) -> Result<()> {
+pub fn ensure_key_covers<K: GGLWEInfos>(op: &'static str, key: &K, k: TorusPrecision) -> Result<()> {
     let covered = key.gglwe_layout().max_input_k();
     if k > covered {
-        return Err(CoreError::GGLWEKeyUse {
+        return Err(CoreError::GGLWEKeyTooNarrow {
             op,
-            detail: format!("the input is wider than the key's max_input_k ({k} > {covered} bits)"),
+            k: k.into(),
+            max_input_k: covered.into(),
         });
     }
     Ok(())

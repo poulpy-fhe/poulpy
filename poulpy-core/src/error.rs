@@ -18,6 +18,9 @@ pub enum CoreError {
     },
     /// A GGLWE key-use policy, resolver, or registry rejected a request.
     GGLWEKeyUse { op: &'static str, detail: String },
+    /// A key source answered with a key whose layout does not decompose an input of `k` bits: its
+    /// [`max_input_k`](crate::layouts::GGLWELayout::max_input_k) is below `k`.
+    GGLWEKeyTooNarrow { op: &'static str, k: u32, max_input_k: u32 },
     /// A [`ReplicatedLayout`](crate::layouts::ReplicatedLayout) violates its invariants.
     InvalidReplicatedLayout { detail: &'static str },
     /// A [`SecurityTable`](crate::security::SecurityTable) has no bound for a
@@ -61,6 +64,10 @@ impl fmt::Display for CoreError {
                 "{op}: ciphertext is not normalized (base2k={base2k}, pending_linear_terms={pending_linear_terms})"
             ),
             CoreError::GGLWEKeyUse { op, detail } => write!(f, "{op}: {detail}"),
+            CoreError::GGLWEKeyTooNarrow { op, k, max_input_k } => write!(
+                f,
+                "{op}: the input is wider than the key's max_input_k ({k} > {max_input_k} bits)"
+            ),
             CoreError::InvalidReplicatedLayout { detail } => write!(f, "invalid replicated layout: {detail}"),
             CoreError::SecurityUnsupported {
                 target_bits,

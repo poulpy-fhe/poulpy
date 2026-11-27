@@ -1369,7 +1369,8 @@ fn limbs_layout<BE: Backend>(params: &TestParams, module: &Module<BE>, limbs: us
 }
 
 /// A transformation whose diagonals are ciphertexts, prepared by `glwe_linear_transformation_rhs_prepare`, decrypts to
-/// the dot product of each giant step rotated and summed, alone or in a sum, on both schedules and key radixes. Keys
+/// the dot product of each giant step rotated and summed, alone or in a sum, on both schedules and key radixes, also
+/// into a result wider than the operands. Keys
 /// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals or at half
 /// their degree and summed
 /// caches of other widths are refused before anything is written.
@@ -1645,6 +1646,29 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             noise_have <= noise_max,
             "schedule {s}: noise_have: {noise_have} > noise_max: {noise_max}"
         );
+        // A result as wide as the keys switch resolves a wider tensor and keeps the operands' precision.
+        let wide_infos = GLWELayout {
+            k: atk_infos.gglwe_layout().max_input_k(),
+            ..ct_infos
+        };
+        let mut wide: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&wide_infos);
+        let wide_bytes =
+            module.glwe_linear_transformation_eval_tmp_bytes(&wide_infos, &ct_infos, &ct_infos, &plan, &tsk_infos, &atk_infos);
+        module.glwe_linear_transformation_eval_into(
+            scale,
+            &mut wide,
+            &cache,
+            &lt,
+            &keys,
+            &mut poisoned_scratch::<BE>(wide_bytes).borrow(),
+        );
+        let noise_wide = glwe_noise_checked(module, &wide, &pt_want, &sk_prepared, &mut scratch.borrow())
+            .std()
+            .log2();
+        assert!(
+            noise_wide <= noise_max,
+            "schedule {s}: a wider result: noise {noise_wide} > noise_max: {noise_max}"
+        );
 
         // Keys at another radix take the tensor products, whose tensor rounding and relinearization no longer cancel.
         let var_relinearize = |tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>| {
@@ -1657,6 +1681,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 0.0,
                 0,
                 k,
+                false,
                 size * base2k,
                 k,
             )

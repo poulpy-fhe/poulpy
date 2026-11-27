@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
@@ -33,8 +32,7 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     /// are unspecified on a successful return, and a caller that needs it again passes a copy. An allocation narrower
     /// than the `log_budget + f_mod_log_delta` bits EvalMod works at costs a copy in `scratch`, which the query counts.
     /// A [replicated](crate::SlotLayout::Replicated) `ct` at a scale above `f_mod_log_delta` is rounded with shaping
-    /// to the plan scale into such a copy, and takes the constants of an EvalMod encoded for its layout, each with its
-    /// masked plaintext.
+    /// to the plan scale into such a copy, and takes the constants of an EvalMod encoded for its layout.
     ///
     /// Consumes `params.consumed_bits()` bits of `log_budget`. `tsk` is the tensor (relinearization) key of the
     /// products, and `scratch` must hold at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.
@@ -43,12 +41,14 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Before any write, so that a refusal leaves `ct` and `res` unchanged:
     ///
-    /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a rank other than 1, or a replicated `ct`
-    ///   with constants lacking their masked plaintexts, and [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan):
-    ///   an `ExpCmplx` EvalMod on a ring of real slots.
+    /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a rank other than 1, an empty list of
+    ///   constants, constants of another slot layout than `ct`, or, on the real path, other than one range-extension
+    ///   constant per `f_mod_log_interval_reduction` step, `PlaintextDegreeMismatch`: a constant whose degree does not
+    ///   embed into `ct`'s, and
+    ///   [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan): an `ExpCmplx` EvalMod on a ring of real slots.
     /// - [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity): `ct` holds
     ///   fewer than `params.consumed_bits()` bits of budget.
-    /// - [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): an evaluation with a
+    /// - [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) or [`RelinearizationKeyTooNarrow`](crate::CKKSCompositionError::RelinearizationKeyTooNarrow): an evaluation with a
     ///   ciphertext product whose `tsk` does not cover the width its widest product decomposes: the
     ///   `log_budget + f_mod_log_delta` bits of its operands, and for a replicated `ct` whose products take the tensor
     ///   path, the tensor intermediate computed `λ` bits under its result
@@ -67,6 +67,6 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: IntPolyInfos + CKKSCtBounds + BSGSMeta + GLWEToBackendRef<BE, Rg>,
         H: GetTensorKey<BE, Rg>;
 }

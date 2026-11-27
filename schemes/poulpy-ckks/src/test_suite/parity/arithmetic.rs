@@ -59,6 +59,7 @@ pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, spars
 
 fn arithmetic<BE: ArithmeticParityBackend<Rg>, Rg: Ring>(
     params: CKKSTestParams,
+    floor: usize,
     module: &Module<BE>,
 ) -> Vec<(&'static str, Snapshot)>
 where
@@ -104,12 +105,15 @@ where
                         "double_into k={width} differs from mul_pow2 by one bit"
                     );
                 }
-                for (width, below_ring) in [(2 * b + 3, false), (4 * b + 1, false), (2 * b + 3, true)] {
+                // Plaintexts at the ring's degree, a quarter of it, and below the floor of either backend down to 1.
+                let below_floor = (0..floor.ilog2().max(1)).map(|log| (2 * b + 3, 1usize << log));
+                for (width, pt_n) in [(2 * b + 3, params.n), (4 * b + 1, params.n), (2 * b + 3, params.n / 4)]
+                    .into_iter()
+                    .chain(below_floor)
+                {
                     let out_layout = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                     let mut pt_layout = layout(params, 0, b + 3, b - 1, sparse, slots);
-                    if below_ring {
-                        pt_layout.glwe_layout.n = (params.n / 4).into();
-                    }
+                    pt_layout.glwe_layout.n = pt_n.into();
                     let pt = fixture_plaintext(module, &pt_layout, 33);
                     let before_pt = snapshot::<BE, _, Rg>(&pt);
                     macro_rules! run {
@@ -126,27 +130,13 @@ where
                     run!(ckks_add_into, ckks_add_tmp_bytes, out_layout, [&a, &rhs]);
                     run!(ckks_add_assign, ckks_add_tmp_bytes, la, [&rhs]);
                     run!(ckks_add_one_assign, ckks_add_one_tmp_bytes, la, []);
-                    run!(ckks_add_pt_vec_into, ckks_add_pt_vec_tmp_bytes, out_layout, [&a, &pt]);
-                    run!(ckks_add_pt_vec_assign, ckks_add_pt_vec_tmp_bytes, la, [&pt]);
-                    run!(
-                        ckks_add_pt_const_into,
-                        ckks_add_pt_const_tmp_bytes,
-                        out_layout,
-                        [7, &a, &pt, 3]
-                    );
-                    run!(ckks_add_pt_const_assign, ckks_add_pt_const_tmp_bytes, la, [7, &pt, 3]);
+                    run!(ckks_add_into, ckks_add_tmp_bytes, out_layout, [&a, &pt]);
+                    run!(ckks_add_assign, ckks_add_tmp_bytes, la, [&pt]);
                     run!(ckks_sub_into, ckks_sub_tmp_bytes, out_layout, [&a, &rhs]);
                     run!(ckks_sub_assign, ckks_sub_tmp_bytes, la, [&rhs]);
                     run!(ckks_sub_one_assign, ckks_sub_one_tmp_bytes, la, []);
-                    run!(ckks_sub_pt_vec_into, ckks_sub_pt_vec_tmp_bytes, out_layout, [&a, &pt]);
-                    run!(ckks_sub_pt_vec_assign, ckks_sub_pt_vec_tmp_bytes, la, [&pt]);
-                    run!(
-                        ckks_sub_pt_const_into,
-                        ckks_sub_pt_const_tmp_bytes,
-                        out_layout,
-                        [7, &a, &pt, 3]
-                    );
-                    run!(ckks_sub_pt_const_assign, ckks_sub_pt_const_tmp_bytes, la, [7, &pt, 3]);
+                    run!(ckks_sub_into, ckks_sub_tmp_bytes, out_layout, [&a, &pt]);
+                    run!(ckks_sub_assign, ckks_sub_tmp_bytes, la, [&pt]);
                     {
                         let mut out = fixture_ciphertext(module, &out_layout, 31);
                         let bytes = BE::ckks_copy_tmp_bytes(module, &out, &a);
@@ -220,14 +210,15 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend<Rg>, BT: ArithmeticPar
     Module<BT>: GLWEFill<BT, Rg>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = arithmetic(params, module_ref);
+    let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE);
+    let want = arithmetic(params, floor, module_ref);
     assert_untagged(
         "arithmetic",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, arithmetic(params, module_test));
+    assert_eq!(want, arithmetic(params, floor, module_test));
 }
 
 fn imaginary<BE: Backend<ZnxWord = i64> + CKKSImagImpl>(
@@ -308,7 +299,7 @@ where
     assert_eq!(want, imaginary(params, module_test));
 }
 
-fn products<BE, Rg: Ring>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
+fn products<BE, Rg: Ring>(params: CKKSTestParams, floor: usize, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSMulImpl<Rg>,
     Module<BE>: GLWETensorKeyPreparedFactory<BE, Rg>
@@ -352,9 +343,9 @@ where
                 // Sides of other widths and scales than each other, prepared from the operands, lazy or not.
                 for pairs in [1, 2] {
                     let mut want = fixture_ciphertext(module, &lr, 99);
-                    let bytes = module.ckks_dot_product_ct_tmp_bytes(pairs, &want, &a, &rhs, &key);
+                    let bytes = module.ckks_dot_product_tmp_bytes(pairs, &want, &a, &rhs, &key);
                     with_scratch::<BE, _>(bytes, |scratch| {
-                        module.ckks_dot_product_ct(&mut want, &vec![&a; pairs], &vec![&rhs; pairs], &key, scratch)
+                        module.ckks_dot_product(&mut want, &vec![&a; pairs], &vec![&rhs; pairs], &key, scratch)
                     })
                     .unwrap();
                     let mut have = fixture_ciphertext(module, &lr, 99);
@@ -395,65 +386,66 @@ where
             let bytes = BE::ckks_square_tmp_bytes(module, &assigned, &assigned, &key);
             with_scratch::<BE, _>(bytes, |scratch| BE::ckks_square_assign(module, &mut assigned, &key, scratch)).unwrap();
             results.push(("square_assign", snapshot::<BE, _, Rg>(&assigned)));
-            for below_ring in [false, true] {
+            // The floor of either backend, so that both sides run the same rows, and a constant of degree 1.
+            for pt_n in [params.n, params.n / 4]
+                .into_iter()
+                .chain((0..floor.ilog2().max(1)).map(|log| 1 << log))
+            {
                 let mut lp = layout(params, 0, b + 3, b - 1, 2, SlotsKind::Real);
-                if below_ring {
-                    lp.glwe_layout.n = (params.n / 4).into();
-                }
+                lp.glwe_layout.n = pt_n.into();
                 let pt = fixture_plaintext(module, &lp, 54);
                 let before_pt = snapshot::<BE, _, Rg>(&pt);
                 let lr = layout(params, rank, 2 * b + 3, b - 1, 0, SlotsKind::Complex);
-                let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = BE::ckks_mul_pt_vec_tmp_bytes(module, &out, &a, &pt);
-                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pt_vec_into(module, &mut out, &a, &pt, scratch)).unwrap();
-                results.push(("mul_pt_vec_into", snapshot::<BE, _, Rg>(&out)));
+                let mut product = fixture_ciphertext(module, &lr, 99);
+                let bytes = BE::ckks_mul_pt_tmp_bytes(module, &product, &a, &pt);
+                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pt_into(module, &mut product, &a, &pt, scratch)).unwrap();
+                results.push(("mul_pt_into", snapshot::<BE, _, Rg>(&product)));
                 let mut out = fixture_operand(module, &la, 51, lazy);
-                let bytes = BE::ckks_mul_pt_vec_tmp_bytes(module, &out, &out, &pt);
-                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pt_vec_assign(module, &mut out, &pt, scratch)).unwrap();
-                results.push(("mul_pt_vec_assign", snapshot::<BE, _, Rg>(&out)));
-                for coeff in [0, 3] {
-                    let mut out = fixture_ciphertext(module, &lr, 99);
-                    let bytes = BE::ckks_mul_pt_const_tmp_bytes(module, &out, &a, &pt);
-                    with_scratch::<BE, _>(bytes, |scratch| {
-                        BE::ckks_mul_pt_const_into(module, &mut out, &a, &pt, coeff, scratch)
-                    })
-                    .unwrap();
-                    results.push(("mul_pt_const_into", snapshot::<BE, _, Rg>(&out)));
-                    let mut out = fixture_operand(module, &la, 51, lazy);
-                    let bytes = BE::ckks_mul_pt_const_tmp_bytes(module, &out, &out, &pt);
-                    with_scratch::<BE, _>(bytes, |scratch| {
-                        BE::ckks_mul_pt_const_assign(module, &mut out, &pt, coeff, scratch)
-                    })
-                    .unwrap();
-                    results.push(("mul_pt_const_assign", snapshot::<BE, _, Rg>(&out)));
-                }
+                let bytes = BE::ckks_mul_pt_tmp_bytes(module, &out, &out, &pt);
+                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pt_assign(module, &mut out, &pt, scratch)).unwrap();
+                results.push(("mul_pt_assign", snapshot::<BE, _, Rg>(&out)));
+                // The plaintext dot product over sources a limb of budget apart, lazy or canonical as `a`.
+                let la_short = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Real);
+                let a_short = fixture_operand(module, &la_short, 56, lazy);
+                let mut dot = fixture_ciphertext(module, &lr, 99);
+                let bytes = module.ckks_dot_product_pt_tmp_bytes(&dot, &a, &pt);
+                with_scratch::<BE, _>(bytes, |scratch| {
+                    module.ckks_dot_product_pt(&mut dot, &[&a, &a_short], &[&pt, &pt], scratch)
+                })
+                .unwrap();
+                results.push(("dot_product_pt", snapshot::<BE, _, Rg>(&dot)));
                 // The DFT forms of the summed product by prepared plaintexts, one term then one added, finished, are
                 // the summed product of both terms.
                 let right_pt = with_scratch::<BE, _>(BE::ckks_right_operand_prepare_tmp_bytes(module, &pt), |scratch| {
                     BE::ckks_right_operand_prepare_alloc(module, &pt, PrepareHint::OneShot, scratch)
                 })
                 .unwrap();
+                let mut one = fixture_ciphertext(module, &lr, 99);
+                with_scratch::<BE, _>(
+                    module.ckks_dot_product_prepared_pt_tmp_bytes(&one, &left, &right_pt),
+                    |scratch| module.ckks_dot_product_prepared_pt(&mut one, &[&left], &[&right_pt], &[1], scratch),
+                )
+                .unwrap();
+                assert_eq!(
+                    snapshot::<BE, _, Rg>(&one),
+                    snapshot::<BE, _, Rg>(&product),
+                    "one prepared term through 1 is the plaintext product, plaintext degree {pt_n}"
+                );
                 let galois = [1, module.ckks_galois_element::<Rg>(1)];
                 let mut want = fixture_ciphertext(module, &lr, 99);
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_vec_tmp_bytes(&want, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_tmp_bytes(&want, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_vec(
-                            &mut want,
-                            &[&left, &left],
-                            &[&right_pt, &right_pt],
-                            &galois,
-                            scratch,
-                        )
+                        module.ckks_dot_product_prepared_pt(&mut want, &[&left, &left], &[&right_pt, &right_pt], &galois, scratch)
                     },
                 )
                 .unwrap();
                 let mut have = fixture_ciphertext(module, &lr, 99);
                 let mut acc = module.vec_znx_dft_alloc(params.n, rank + 1, left.size() + right_pt.size());
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_vec_dft_tmp_bytes(&have, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_dft_tmp_bytes(&have, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_vec_dft(
+                        module.ckks_dot_product_prepared_pt_dft(
                             &mut acc.to_backend_mut(),
                             &have,
                             &[&left],
@@ -465,9 +457,9 @@ where
                 )
                 .unwrap();
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes(&have, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_dft_add_tmp_bytes(&have, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_vec_dft_add(
+                        module.ckks_dot_product_prepared_pt_dft_add(
                             &mut acc.to_backend_mut(),
                             &have,
                             &[&left],
@@ -479,9 +471,9 @@ where
                 )
                 .unwrap();
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes(&have, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_from_dft_tmp_bytes(&have, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_vec_from_dft(
+                        module.ckks_dot_product_prepared_pt_from_dft(
                             &mut have,
                             &mut acc.to_backend_mut(),
                             &left,
@@ -497,7 +489,7 @@ where
                     want,
                     "DFT forms of the prepared dot product by plaintexts"
                 );
-                results.push(("dot_product_prepared_pt_vec", want));
+                results.push(("dot_product_prepared_pt", want));
                 // The summed product added into a ciphertext at its frame, `lazy` or not, by these plaintexts and by
                 // plaintexts narrower than a limb, whose product's offset falls below one.
                 let mut ln = lp;
@@ -511,34 +503,22 @@ where
                 for (seed, right) in [(97, &right_pt), (96, &narrow)] {
                     let mut frame = fixture_ciphertext(module, &lr, 99);
                     with_scratch::<BE, _>(
-                        module.ckks_dot_product_prepared_pt_vec_tmp_bytes(&frame, &left, right),
+                        module.ckks_dot_product_prepared_pt_tmp_bytes(&frame, &left, right),
                         |scratch| {
-                            module.ckks_dot_product_prepared_pt_vec(
-                                &mut frame,
-                                &[&left, &left],
-                                &[right, right],
-                                &galois,
-                                scratch,
-                            )
+                            module.ckks_dot_product_prepared_pt(&mut frame, &[&left, &left], &[right, right], &galois, scratch)
                         },
                     )
                     .unwrap();
                     let mut sum = fixture_operand(module, &lr, seed, lazy);
                     sum.set_meta(frame.meta());
                     with_scratch::<BE, _>(
-                        module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&sum, &left, right),
+                        module.ckks_dot_product_prepared_pt_add_tmp_bytes(&sum, &left, right),
                         |scratch| {
-                            module.ckks_dot_product_prepared_pt_vec_add(
-                                &mut sum,
-                                &[&left, &left],
-                                &[right, right],
-                                &galois,
-                                scratch,
-                            )
+                            module.ckks_dot_product_prepared_pt_add(&mut sum, &[&left, &left], &[right, right], &galois, scratch)
                         },
                     )
                     .unwrap();
-                    results.push(("dot_product_prepared_pt_vec_add", snapshot::<BE, _, Rg>(&sum)));
+                    results.push(("dot_product_prepared_pt_add", snapshot::<BE, _, Rg>(&sum)));
                 }
                 assert_eq!(before_pt, snapshot::<BE, _, Rg>(&pt));
             }
@@ -561,8 +541,9 @@ where
     results
 }
 
-/// Ciphertext, square, prepared, vector and scalar multiplication, the prepared dot product, which equals
-/// `ckks_dot_product_ct` of its operands' sources, the prepared dot product by plaintexts, which equals its DFT forms,
+/// Ciphertext, square, prepared, vector and scalar multiplication, `ckks_dot_product_pt` over sources a limb of budget
+/// apart, the prepared dot product, which equals `ckks_dot_product` of its operands' sources, the prepared dot product
+/// by plaintexts, which equals its DFT forms and, one term through 1, the vector product, at plaintext degrees down to 1,
 /// and its sum added into a ciphertext, by plaintexts of a limb and more and of less.
 pub fn test_multiplication_parity<BR, BT, F, Rg: Ring>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
@@ -580,14 +561,15 @@ where
         + VecZnxDftAlloc<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = products(params, module_ref);
+    let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE);
+    let want = products(params, floor, module_ref);
     assert_untagged(
         "products",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, products(params, module_test));
+    assert_eq!(want, products(params, floor, module_test));
 }
 
 /// Prepared, ordinary and square products at caller-selected large-ring layouts.

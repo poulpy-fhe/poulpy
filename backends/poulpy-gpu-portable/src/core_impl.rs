@@ -10,19 +10,23 @@ use std::{
 };
 
 use poulpy_core::{
-    Distribution, Noise,
-    gadget::{gglwe_gadget_dft_apply_from_dft, gglwe_gadget_dft_operand_size},
+    Distribution, GLWELeftOperand, GLWELeftOperandRef, Noise,
+    gadget::{cnv_offset_to_plaintext_shift, gglwe_gadget_dft_apply_from_dft, gglwe_gadget_dft_operand_size},
     layouts::{
-        GGLWEInfos, LWEInfos, assert_gglwe_product, assert_gglwe_product_from_dft, assert_gglwe_product_idft_normalize,
-        prepared::GGLWEPreparedBackendRef,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, assert_gglwe_product,
+        assert_gglwe_product_from_dft, assert_gglwe_product_idft_normalize, prepared::GGLWEPreparedBackendRef,
     },
-    oep::{ConstTerm, GGLWEProductDigitsStridedImpl, SamplingImpl},
+    oep::{GGLWEProductDigitsStridedImpl, SamplingImpl},
     reference::keyswitching::{GGLWEProductDigitsStridedReference, glwe::gglwe_product_limbs},
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
-use poulpy_hal::layouts::{
-    Backend, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-    VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
+use poulpy_hal::{
+    api::{ScratchArenaTakeVecZnx, VecZnxRsh},
+    layouts::{
+        Backend, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
+        vec_znx_backend_ref_from_ref, vec_znx_dft_backend_ref_from_mut,
+    },
 };
 
 use crate::{
@@ -475,210 +479,199 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl<R> for NTT4x3
     }
 }
 
-/// Scratch of [`shifted_const_combination`]: every constant of a combination
-/// shifted at once.
-pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>, b_size: usize) -> usize {
+/// Scratch of the constants [`const_mul_plain_sum`] shifts, all at once.
+pub(crate) fn const_mul_plain_sum_tmp_bytes<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>, b_size: usize) -> usize {
     use poulpy_hal::{api::VecZnxRshTmpBytes, layouts::Backend};
     NTT4x30Gpu::<RT>::scratch_aligned(NTT4x30Gpu::<RT>::vec_znx_bytes_of(1, CONST_TERMS, b_size + 1))
         + module.vec_znx_rsh_tmp_bytes(b_size + 1)
 }
 
-/// [`const_combination`] of terms whose constants may need a sub-limb shift: the
-/// shifted constants, laid out by `vec_znx_rsh` as the reference lays each out, are
-/// carved from `scratch` side by side, one column per term. `false` when the sum
-/// takes no fused launch or `scratch` cannot hold the shifted constants.
-pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
+/// `GLWEMulPlainImpl::glwe_mul_plain_sum` by constants of degree 1, checked by the caller, with the terms of a
+/// column summed inside the launch that normalizes them into an accumulator of `acc_size` limbs, each constant with a
+/// sub-limb shift read from its column of the constants `vec_znx_rsh` lays out side by side in `scratch`, each operand
+/// at the limbs the reference reads. Returns `false`, having written nothing but `scratch`, for more terms than one
+/// launch takes, a radix the kernel does not handle, a ciphertext whose flag is clear, operands without storage or a
+/// destination that is one of them.
+pub(crate) fn const_mul_plain_sum<RT: GpuRuntime, R, A, B, Rg: Ring>(
     module: &Module<NTT4x30Gpu<RT>>,
-    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT>, R>,
-    base2k: usize,
-    res_k: usize,
+    res: &mut R,
+    a: &[&A],
+    b: &[&B],
+    offsets: &[usize],
     acc_size: usize,
-    terms: &[ConstTerm<'_, NTT4x30Gpu<RT>, R>],
     scratch: &mut ScratchArena<'_, NTT4x30Gpu<RT>>,
-) -> bool {
-    use poulpy_hal::{
-        api::{ScratchArenaTakeVecZnx, VecZnxRsh},
-        layouts::{VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
-    };
-    if terms.iter().all(|term| term.shift == 0) {
-        return const_combination(res, base2k, res_k, acc_size, terms);
-    }
-    if terms.len() > CONST_TERMS || base2k > KERNEL_RADIX || terms.iter().any(|term| term.shift >= base2k) {
+) -> bool
+where
+    R: GLWEToBackendMut<NTT4x30Gpu<RT>, Rg> + GLWEInfos,
+    A: GLWELeftOperandRef<NTT4x30Gpu<RT>, Rg>,
+    B: GLWEToBackendRef<NTT4x30Gpu<RT>, Rg> + IntPolyInfos + GLWEInfos,
+{
+    let (base2k, res_k) = (res.base2k().as_usize(), res.k().as_usize());
+    let canonical = a.iter().all(|a| match a.to_left_operand() {
+        GLWELeftOperand::Ciphertext(a) => a.is_canonical(),
+        GLWELeftOperand::Prepared(_) => true,
+    });
+    if a.len() > CONST_TERMS || base2k > KERNEL_RADIX || !canonical {
         return false;
     }
-    let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
-    if scratch.available() < const_combination_shift_tmp_bytes(module, b_size) {
-        return false;
-    }
-    let (mut shifted, mut scratch) = scratch.borrow().take_vec_znx_scratch(1, terms.len(), b_size + 1);
-    for (index, term) in terms.iter().enumerate() {
-        if term.shift != 0 {
+    let split = |t: usize| cnv_offset_to_plaintext_shift(offsets[t], base2k);
+    // The limbs the reference reads: a plaintext's encoded ones and a ciphertext's live ones.
+    let encoded = |t: usize| b[t].encoded_k().as_usize().div_ceil(base2k);
+    let b_size = (0..b.len()).map(encoded).max().unwrap_or(0);
+    let (mut shifted, mut scratch) = scratch.borrow().take_vec_znx_scratch(1, a.len(), b_size + 1);
+    for (t, b) in b.iter().enumerate() {
+        if split(t).0 != 0 {
+            let b = b.to_backend_ref();
             module.vec_znx_rsh(
                 base2k,
-                term.shift,
+                split(t).0,
                 &mut shifted.to_backend_mut(),
-                index,
-                &vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&term.b).window_coeffs(term.b_coeff, 1),
-                term.b_col,
+                t,
+                &vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, Rg>(b.data()).window_limbs(0, 1, encoded(t)),
+                0,
                 &mut scratch.borrow(),
             );
         }
     }
     let shifted = shifted.to_backend_ref();
-    let terms: Vec<ConstTerm<'_, NTT4x30Gpu<RT>, R>> = terms
-        .iter()
-        .enumerate()
-        .map(|(index, term)| {
-            let (b, b_col, b_coeff) = if term.shift == 0 {
-                (
-                    vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&term.b),
-                    term.b_col,
-                    term.b_coeff,
-                )
-            } else {
-                (vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&shifted), index, 0)
-            };
-            ConstTerm {
-                a: vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&term.a),
-                b,
-                b_col,
-                b_coeff,
-                shift: 0,
-                cnv_offset: term.cnv_offset,
-            }
-        })
-        .collect();
-    const_combination(res, base2k, res_k, acc_size, &terms)
-}
-
-/// `GLWEMulConstImpl::glwe_const_combination` with the terms of a column
-/// summed inside the launch that normalizes them. Returns `false`, having done
-/// nothing, for more terms than one launch takes, a radix the kernel does not
-/// handle, operands without storage or a destination that is one of them.
-pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
-    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT>, R>,
-    base2k: usize,
-    res_k: usize,
-    acc_size: usize,
-    terms: &[ConstTerm<'_, NTT4x30Gpu<RT>, R>],
-) -> bool {
-    if terms.is_empty() || terms.len() > CONST_TERMS || acc_size == 0 || base2k > KERNEL_RADIX {
-        return false;
-    }
-    let n = res.n();
-    let complete = terms.iter().all(|term| {
-        term.a.n() == n
-            && term.a.cols() >= res.cols()
-            && column_ref(&term.a, 0).is_some()
-            && column_ref(&term.b, term.b_col).is_some()
-    });
-    let Some(res0) = column_mut(res, 0).filter(|_| complete) else {
+    let constant = |t: usize| match split(t).0 {
+        0 => column_ref(b[t].to_backend_ref().data(), 0).map(|c| Column { size: encoded(t), ..c }),
+        _ => column_ref(&shifted, t).map(|c| Column {
+            size: encoded(t) + 1,
+            ..c
+        }),
+    };
+    let left = |t: usize, col: usize| match a[t].to_left_operand() {
+        GLWELeftOperand::Ciphertext(a) => column_ref(a.data(), col).map(|c| Column { size: a.size(), ..c }),
+        GLWELeftOperand::Prepared(_) => None,
+    };
+    let complete = (0..a.len()).all(|t| left(t, 0).is_some() && constant(t).is_some());
+    let res_bk = res.to_backend_mut();
+    let Some(res0) = column_mut(res_bk.data(), 0).filter(|_| complete) else {
         return false;
     };
     // The normalization reads the sum as it forms it: the destination is apart from the operands.
-    let apart = terms.iter().all(|term| {
-        let (a, b) = (
-            column_ref(&term.a, 0).expect("checked above"),
-            column_ref(&term.b, term.b_col).expect("checked above"),
-        );
+    let apart = (0..a.len()).all(|t| {
+        let (a, b) = (left(t, 0).expect("checked above"), constant(t).expect("checked above"));
         a.binding.id != res0.binding.id && b.binding.id != res0.binding.id
     });
     if !apart {
         return false;
     }
-    for term in terms {
-        poulpy_hal::layouts::assert_dense(&term.a, "cnv_by_const_apply");
-        poulpy_hal::layouts::assert_dense(&term.b, "cnv_by_const_apply");
+    // A shifted term's constant is read through `vec_znx_rsh`, which takes windows, as the reference does.
+    for (t, (a, b)) in a.iter().zip(b).enumerate() {
+        if let GLWELeftOperand::Ciphertext(a) = a.to_left_operand() {
+            poulpy_hal::layouts::assert_dense(a.data(), "cnv_by_const_apply");
+        }
+        if split(t).0 == 0 {
+            poulpy_hal::layouts::assert_dense(b.to_backend_ref().data(), "cnv_by_const_apply");
+        }
     }
     // The products of a column, refilled for each.
-    let mut products: Vec<(Column, Column, usize, usize)> = Vec::with_capacity(terms.len());
-    for col in 0..res.cols() {
+    let mut products: Vec<(Column, Column, usize)> = Vec::with_capacity(a.len());
+    for col in 0..res_bk.rank().as_usize() + 1 {
         products.clear();
-        products.extend(terms.iter().map(|term| {
+        products.extend((0..a.len()).map(|t| {
             (
-                column_ref(&term.a, col).expect("checked above"),
-                column_ref(&term.b, term.b_col).expect("checked above"),
-                term.b_coeff,
-                term.cnv_offset,
+                left(t, col).expect("checked above"),
+                constant(t).expect("checked above"),
+                split(t).1,
             )
         }));
-        let res = column_mut(res, col).expect("checked above");
+        let res = column_mut(res_bk.data(), col).expect("checked above");
         normalize_products::<RT>(&res, base2k, res_k, &products, acc_size, base2k);
     }
+    res.set_canonical(true);
     true
 }
 
-/// `GLWEMulConstImpl` as `poulpy_core::impl_glwe_mul_const_reference_full!`
-/// registers it, with the constant combination summed in one launch per column.
-macro_rules! impl_mul_const {
+/// `GLWEMulPlainImpl` as `poulpy_core::impl_glwe_mul_plain_reference_full!`
+/// registers it, with a sum by constants summed in one launch per column.
+macro_rules! impl_mul_plain {
     ($be:ty) => {
-        impl_mul_const!($be, ::poulpy_hal::layouts::Standard);
-        impl_mul_const!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+        impl_mul_plain!($be, ::poulpy_hal::layouts::Standard);
+        impl_mul_plain!($be, ::poulpy_hal::layouts::ConjugateInvariant);
     };
     ($be:ty, $ring:ty) => {
-        unsafe impl ::poulpy_core::oep::GLWEMulConstImpl<$ring> for $be {
-            fn glwe_mul_const_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
+        unsafe impl ::poulpy_core::oep::GLWEMulPlainImpl<$ring> for $be {
+            fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_tmp_bytes_reference::<R, A, B>(module, res, a, b)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_mul_plain_tmp_bytes_reference::<R, A, B>(module, res, a, b)
             }
 
-            fn glwe_mul_const<R, A, B>(
+            fn glwe_mul_plain<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
                 a: &A,
                 b: &B,
-                b_coeff: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_reference::<R, A, B>(module, cnv_offset, res, a, b, b_coeff, scratch)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_mul_plain_reference::<R, A, B>(module, cnv_offset, res, a, b, scratch)
             }
 
-            fn glwe_mul_const_assign<R, B>(
+            fn glwe_mul_plain_assign<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
-                b: &B,
-                b_coeff: usize,
+                a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_assign_reference::<R, B>(module, cnv_offset, res, b, b_coeff, scratch)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_mul_plain_assign_reference::<R, A>(module, cnv_offset, res, a, scratch)
             }
 
-            fn glwe_const_combination_tmp_bytes(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                acc_size: usize,
-                a_size: usize,
-                b_size: usize,
-            ) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
-                    .max($crate::core_impl::const_combination_shift_tmp_bytes(module, b_size))
+            fn glwe_mul_plain_sum_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
+            where
+                R: ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::IntPolyInfos + ::poulpy_core::layouts::GLWEInfos,
+            {
+                let reference = <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_mul_plain_sum_tmp_bytes_reference::<R, A, B>(module, res, a, b);
+                if b.n().as_usize() == 1 {
+                    let encoded = ::poulpy_core::layouts::IntPolyInfos::encoded_k(b).as_usize().div_ceil(b.base2k().as_usize());
+                    reference.max($crate::core_impl::const_mul_plain_sum_tmp_bytes(module, encoded))
+                } else {
+                    reference
+                }
             }
 
-            fn glwe_const_combination(
+            fn glwe_mul_plain_sum<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be, $ring>,
-                base2k: usize,
-                res_k: usize,
-                acc_size: usize,
-                terms: &[::poulpy_core::oep::ConstTerm<'_, $be, $ring>],
+                res: &mut R,
+                a: &[&A],
+                b: &[&B],
+                offsets: &[usize],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) {
-                if !$crate::core_impl::shifted_const_combination(module, res, base2k, res_k, acc_size, terms, scratch) {
-                    <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_const_combination_reference(
-                        module, res, base2k, res_k, acc_size, terms, scratch,
-                    )
+            ) where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::GLWELeftOperandRef<$be, $ring>,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + ::poulpy_core::layouts::GLWEInfos,
+            {
+                ::poulpy_core::layouts::assert_glwe_mul_plain_sum(module, res, a, b, offsets);
+                let (a_layout, b_layout, acc_size) = ::poulpy_core::layouts::glwe_mul_plain_sum_layouts(res, a, b, offsets);
+                assert!(
+                    scratch.available() >= <Self as ::poulpy_core::oep::GLWEMulPlainImpl<$ring>>::glwe_mul_plain_sum_tmp_bytes(module, res, &a_layout, &b_layout),
+                    "glwe_mul_plain_sum: scratch below its query"
+                );
+                if b_layout.n.as_usize() != 1 || !$crate::core_impl::const_mul_plain_sum(module, res, a, b, offsets, acc_size, scratch) {
+                    <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_mul_plain_sum_reference::<R, A, B>(module, res, a, b, offsets, scratch)
                 }
             }
         }
@@ -909,8 +902,7 @@ macro_rules! impl_core {
         ::poulpy_core::impl_gglwe_external_product_derived_full!($be);
         ::poulpy_core::impl_ggsw_external_product_derived_full!($be);
         $crate::core_linear_transformation::impl_linear_transformation!($be);
-        impl_mul_const!($be);
-        ::poulpy_core::impl_glwe_mul_plain_reference_full!($be);
+        impl_mul_plain!($be);
         ::poulpy_core::impl_glwe_mul_prepared_plain_sum_reference_full!($be);
         ::poulpy_core::impl_glwe_add_reference_full!($be);
         ::poulpy_core::impl_glwe_sub_reference_full!($be);

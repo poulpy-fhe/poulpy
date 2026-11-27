@@ -752,12 +752,17 @@ where
         }
     }
 
-    /// Decomposes this polynomial into a [`BSGSPolynomial`], encoding each
-    /// baby-step coefficient slice with the scheme-supplied `encode` closure.
+    /// Decomposes this polynomial into a [`BSGSPolynomial`], encoding each baby-step coefficient slice with the
+    /// scheme-supplied `encode` closure into one value per coefficient.
+    ///
+    /// # Errors
+    ///
+    /// For a polynomial of degree 0, the errors of `encode`, and when `encode` returns another count than the
+    /// coefficients of its slice.
     pub fn decompose_bsgs_with<C>(
         &self,
         split_strategy: SplitStrategy,
-        mut encode: impl FnMut(&[F]) -> Result<C>,
+        mut encode: impl FnMut(&[F]) -> Result<Vec<C>>,
     ) -> Result<BSGSPolynomial<C>> {
         ensure!(self.degree() >= 1, "polynomial must have degree ≥ 1");
 
@@ -775,7 +780,12 @@ where
             true,
             split_leading,
             &mut |baby_coeffs| {
-                baby_steps.push(encode(baby_coeffs)?);
+                let encoded = encode(baby_coeffs)?;
+                ensure!(
+                    encoded.len() == baby_coeffs.len(),
+                    "the encoder returned another count than its baby step's coefficients"
+                );
+                baby_steps.push(encoded);
                 Ok(())
             },
         )?;
@@ -803,7 +813,7 @@ where
     pub fn decompose_bsgs_folded_with<C>(
         &self,
         split_strategy: SplitStrategy,
-        encode: impl FnMut(&[F]) -> Result<C>,
+        encode: impl FnMut(&[F]) -> Result<Vec<C>>,
     ) -> Result<BSGSPolynomial<C>> {
         let (folded, input_transform) = self.fold_parity()?;
         let mut bsgs = folded.decompose_bsgs_with(split_strategy, encode)?;
@@ -906,15 +916,15 @@ where
 
 /// A polynomial decomposed for Baby-Step-Giant-Step (BSGS) evaluation.
 ///
-/// `baby_steps[0]` is the lowest-degree encoded baby polynomial containing the constant and
-/// low-degree terms; `baby_steps[n−1]` is the highest-degree encoded baby polynomial.
+/// Each baby step holds one encoded value per coefficient, in degree order: `baby_steps[0]` is the lowest-degree baby
+/// polynomial containing the constant and low-degree terms; `baby_steps[n−1]` is the highest-degree baby polynomial.
 ///
 /// Construct via [`Polynomial::decompose_bsgs_with`].
 pub struct BSGSPolynomial<C> {
     basis: Basis,
     degree: usize,
     base: usize,
-    baby_steps: Vec<C>,
+    baby_steps: Vec<Vec<C>>,
     parity: Parity,
     split_strategy: SplitStrategy,
     input_transform: PolynomialInputTransform,
@@ -927,7 +937,7 @@ pub struct BSGSPolynomial<C> {
 
 impl<BE: Backend, C, Rg: Ring> BSGSPolynomialInfos<BE, Rg> for BSGSPolynomial<C>
 where
-    C: GLWEToBackendRef<BE, Rg> + GLWEInfos + BSGSMeta + IntPolyInfos,
+    C: GLWEInfos + BSGSMeta + IntPolyInfos,
 {
     type Coeffs = C;
 
@@ -939,7 +949,7 @@ where
         BSGSPolynomial::baby_steps(self).len()
     }
 
-    fn baby_step(&self, i: usize) -> &Self::Coeffs {
+    fn baby_step(&self, i: usize) -> &[Self::Coeffs] {
         BSGSPolynomial::baby_step(self, i)
     }
 
@@ -1024,17 +1034,17 @@ impl<C> BSGSPolynomial<C> {
         ) + self.input_transform.extra_depth() * input_log_delta
     }
 
-    /// Returns all encoded baby-step coefficient polynomials.
-    pub fn baby_steps(&self) -> &[C] {
+    /// Returns the encoded coefficients of every baby step.
+    pub fn baby_steps(&self) -> &[Vec<C>] {
         &self.baby_steps
     }
 
-    /// Returns one encoded baby-step coefficient polynomial.
+    /// Returns the encoded coefficients of one baby step.
     ///
     /// # Panics
     ///
     /// If `i >= self.baby_steps().len()`.
-    pub fn baby_step(&self, i: usize) -> &C {
+    pub fn baby_step(&self, i: usize) -> &[C] {
         &self.baby_steps[i]
     }
 
@@ -1059,13 +1069,13 @@ impl<C> BSGSPolynomial<C> {
         change_of_basis(self.basis, self.a, self.b)
     }
 
-    /// Rebuilds this BSGS polynomial by mapping borrowed baby-step coefficients.
+    /// Rebuilds this BSGS polynomial by mapping every borrowed baby-step coefficient.
     pub fn map_baby_steps_ref<D>(&self, mut f: impl FnMut(&C) -> D) -> BSGSPolynomial<D> {
         BSGSPolynomial {
             basis: self.basis,
             degree: self.degree,
             base: self.base,
-            baby_steps: self.baby_steps.iter().map(&mut f).collect(),
+            baby_steps: self.baby_steps.iter().map(|step| step.iter().map(&mut f).collect()).collect(),
             parity: self.parity,
             split_strategy: self.split_strategy,
             input_transform: self.input_transform,
@@ -1094,10 +1104,10 @@ pub trait SetBSGSMeta: BSGSMeta {
 
 /// Read access to a decomposed BSGS polynomial during evaluation.
 pub trait BSGSPolynomialInfos<BE: Backend, Rg: Ring = Standard> {
-    type Coeffs: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos + BSGSMeta;
+    type Coeffs: IntPolyInfos + GLWEInfos + BSGSMeta;
     fn degree(&self) -> usize;
     fn baby_steps(&self) -> usize;
-    fn baby_step(&self, i: usize) -> &Self::Coeffs;
+    fn baby_step(&self, i: usize) -> &[Self::Coeffs];
     fn basis(&self) -> Basis;
     fn parity(&self) -> Parity;
     fn log_split(&self) -> usize;
@@ -1404,6 +1414,23 @@ mod tests {
             .unwrap();
         assert_eq!(bsgs.interval(), (0.0, 4.0));
         assert_eq!(bsgs.change_of_basis(), (u, w));
+    }
+
+    #[test]
+    fn decompose_refuses_an_encoder_of_another_count() {
+        let poly = Polynomial::new(Basis::Monomial, vec![1.0_f64, 0.5, 0.25, 0.125]);
+        for (label, drop) in [("one fewer", 1usize), ("none", usize::MAX)] {
+            let Err(err) = poly.decompose_bsgs_with(SplitStrategy::MinDepth, |c| {
+                Ok::<_, anyhow::Error>(c[..c.len().saturating_sub(drop)].to_vec())
+            }) else {
+                panic!("{label}: an encoder of another count was accepted");
+            };
+            assert_eq!(
+                err.to_string(),
+                "the encoder returned another count than its baby step's coefficients",
+                "{label}"
+            );
+        }
     }
 
     #[test]

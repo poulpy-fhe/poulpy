@@ -274,7 +274,7 @@ impl<BE: Backend, Rg: Ring> BlasEncodingReference<BE, Rg> for Module<BE> {
         let (shapes, terms) = prepared_shapes::<_, Rg>(self, &layout);
         let terms = terms
             .first()
-            .map(|term| self.ckks_right_operand_prepare_tmp_bytes(&term.plaintext::<BE, Self, Rg>(self, layout.base2k)));
+            .map(|term| self.ckks_right_operand_prepare_tmp_bytes(&term.plaintext::<Self, Rg>(self, layout.base2k)));
         shapes
             .iter()
             .map(|map| map.prepare_tmp_bytes::<BE, Self, Rg>(self, layout.base2k))

@@ -15,27 +15,6 @@ use poulpy_core::{GLWEFill, api::GLWEAutomorphismKeyPreparedFactory, layouts::GL
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module};
 use std::collections::HashMap;
 
-// A diagonal stored at its period's degree may stop at a backend-specific minimum degree.
-// Compare the public polynomial after the common ring embedding, not its
-// allocation degree or unused coefficient slots.
-fn diagonal_snapshot<BE, A>(value: &A, ring_degree: usize) -> Snapshot
-where
-    BE: Backend<ZnxWord = i64>,
-    A: crate::CKKSInfos + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::GLWEToBackendRef<BE>,
-{
-    let mut out = snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(value);
-    let degree = out.layout.glwe_layout.n.as_usize();
-    assert!(ring_degree.is_multiple_of(degree));
-    let gap = ring_degree / degree;
-    let mut embedded = vec![0; out.digits.len() * gap];
-    for (index, coefficient) in out.digits.iter().enumerate() {
-        embedded[index * gap] = *coefficient;
-    }
-    out.digits = embedded;
-    out.layout.glwe_layout.n = ring_degree.into();
-    out
-}
-
 fn run<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
 where
     BE: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
@@ -81,7 +60,7 @@ where
                 for factor in dft.factor_operands() {
                     for giant in &factor.giant_steps {
                         for diagonal in &giant.diagonals {
-                            results.push(diagonal_snapshot::<BE, _>(&diagonal.plaintext, module.n()));
+                            results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&diagonal.plaintext));
                         }
                     }
                 }

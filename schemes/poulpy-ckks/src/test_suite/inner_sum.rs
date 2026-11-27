@@ -532,8 +532,8 @@ pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
         assert_refused::<BE, Standard>(&label, result, &res, &before, |err| {
             matches!(
                 err.composition(),
-                Some(CKKSCompositionError::MissingAutomorphismKey { op, k, .. })
-                    if *op == kind.op() && *k as usize == max_input_k + 1
+                Some(CKKSCompositionError::AutomorphismKeyTooNarrow { op, k, max_input_k: key_max, .. })
+                    if *op == kind.op() && *k as usize == max_input_k + 1 && *key_max as usize == max_input_k
             )
         });
         let mut res = dirty_ct(module, &f.ct, max_input_k);

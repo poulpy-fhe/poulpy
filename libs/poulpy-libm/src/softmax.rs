@@ -1,7 +1,6 @@
 //! Softmax over packed real slots.
 
 use poulpy_ckks::GLWEPlaintextInfos;
-use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
@@ -18,10 +17,11 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena}
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSModuleInfos, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
+use crate::plan::encode_constant;
 use crate::{
     exp::{CKKSExpOps, ExpOptions, ExpPlan},
     reduce::CKKSReductionOps,
@@ -58,7 +58,7 @@ impl Default for SoftmaxOptions {
 /// Prepared full-slot softmax.
 pub struct SoftmaxPlan<P> {
     pub(crate) exp: ExpPlan<P>,
-    pub(crate) constants: P,
+    pub(crate) constants: [P; 2],
     pub(crate) reciprocal_iters: usize,
     pub(crate) slots: usize,
     pub(crate) input_interval: (f64, f64),
@@ -115,11 +115,8 @@ impl<Rg: Ring> SoftmaxPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
             }
             None => reciprocal_iters(a64 - b64, options.target_bits + 3.0)?,
         };
-        let mut constants = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k());
-        constants.set_meta(coeff_meta.meta());
-        constants
-            .encode_host_floats(&[-b, F::one() / F::from_usize(slots).unwrap()])
-            .context("softmax: constant encoding failed")?;
+        let encode = |value| encode_constant(module, base2k, coeff_meta, value).context("softmax: constant encoding failed");
+        let constants = [encode(-b)?, encode(F::one() / F::from_usize(slots).unwrap())?];
         Ok(Self {
             exp,
             constants,
@@ -136,8 +133,8 @@ impl<P> SoftmaxPlan<P> {
         &self.exp
     }
 
-    /// Packed `[-upper_bound, 1/slots]`.
-    pub fn constants(&self) -> &P {
+    /// The constants `[-upper_bound, 1/slots]`.
+    pub fn constants(&self) -> &[P; 2] {
         &self.constants
     }
 
@@ -170,7 +167,7 @@ impl<P> SoftmaxPlan<P> {
     pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> SoftmaxPlan<Q> {
         SoftmaxPlan {
             exp: self.exp.map_plaintexts(&mut f),
-            constants: f(&self.constants),
+            constants: self.constants.each_ref().map(f),
             reciprocal_iters: self.reciprocal_iters,
             slots: self.slots,
             input_interval: self.input_interval,
@@ -232,7 +229,7 @@ pub trait CKKSSoftmaxOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
         A: GetAutomorphismKey<BE, Rg>;
 }
@@ -259,12 +256,12 @@ where
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(input));
         let shifted = ct
             + self
-                .ckks_add_pt_const_tmp_bytes(input.size())
+                .ckks_add_tmp_bytes(input.size())
                 .max(self.ckks_exp_tmp_bytes(input, input, &plan.exp, tsk));
         let normalize = ct
             + self
                 .ckks_sum_slots_tmp_bytes(input, input, keys)
-                .max(self.ckks_mul_pt_const_tmp_bytes(input, input, &plan.constants))
+                .max(self.ckks_mul_pt_tmp_bytes(input, input, &plan.constants[1]))
                 .max(self.ckks_goldschmidt_division_assign_tmp_bytes(input, tsk))
                 .max(self.ckks_mul_tmp_bytes(input, input, input, tsk));
         ct + shifted.max(normalize).max(self.ckks_copy_tmp_bytes(res, input))
@@ -282,7 +279,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
         A: GetAutomorphismKey<BE, Rg>,
     {
@@ -297,16 +294,16 @@ where
             let (mut numerator, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
             scratch_local.scope(|stage| {
                 let (mut shifted, mut stage) = stage.take_ckks_ciphertext_like_scratch(input);
-                self.ckks_add_pt_const_into(&mut shifted, 0, input, &plan.constants, 0, &mut stage)?;
+                self.ckks_add_into(&mut shifted, input, &plan.constants[0], &mut stage)?;
                 self.ckks_exp(&mut numerator, &shifted, &plan.exp, tsk, &mut stage)
             })?;
             scratch_local.scope(|stage| {
                 let (mut denominator, mut stage) = stage.take_ckks_ciphertext_like_scratch(&numerator);
                 self.ckks_sum_slots(&mut denominator, &numerator, keys, &mut stage)?;
-                self.ckks_mul_pt_const_assign(&mut denominator, &plan.constants, 1, &mut stage)?;
+                self.ckks_mul_pt_assign(&mut denominator, &plan.constants[1], &mut stage)?;
                 self.ckks_goldschmidt_division_assign(plan.reciprocal_iters, &mut denominator, tsk, &mut stage)?;
                 self.ckks_mul_assign(&mut numerator, &denominator, tsk, &mut stage)?;
-                self.ckks_mul_pt_const_assign(&mut numerator, &plan.constants, 1, &mut stage)?;
+                self.ckks_mul_pt_assign(&mut numerator, &plan.constants[1], &mut stage)?;
                 anyhow::Ok(())
             })?;
             self.ckks_copy(res, &numerator, &mut scratch_local)?;

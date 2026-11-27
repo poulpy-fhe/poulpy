@@ -53,12 +53,7 @@ where
     let switch_k = crate::shaping::automorphism_input_k(dst, src);
     let key = keys
         .get_automorphism_key(p, switch_k)
-        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "ckks_conjugate_into",
-            rotation: k,
-            k: switch_k.into(),
-            source,
-        })?;
+        .map_err(|source| CKKSCompositionError::automorphism_key_lookup("ckks_conjugate_into", k, switch_k.into(), source))?;
     BE::ckks_conjugate_with_key_into(module, dst, src, &key, scratch)
 }
 
@@ -76,11 +71,6 @@ where
     operand_cyclotomic_order::<_, Standard>("ckks_conjugate_assign", module, dst.n().as_usize())?;
     let key = keys
         .get_automorphism_key(-1, dst.k())
-        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "ckks_conjugate_assign",
-            rotation: 0,
-            k: dst.k().into(),
-            source,
-        })?;
+        .map_err(|source| CKKSCompositionError::automorphism_key_lookup("ckks_conjugate_assign", 0, dst.k().into(), source))?;
     BE::ckks_conjugate_with_key_assign(module, dst, &key, scratch)
 }

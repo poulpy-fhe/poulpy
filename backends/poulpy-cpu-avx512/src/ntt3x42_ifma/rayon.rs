@@ -1091,7 +1091,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
@@ -1101,33 +1100,13 @@ where
                 NTT3x42Ifma,
                 SerialTaskExecutor,
                 Rg,
-            >(
-                cnv_offset,
-                &mut base_big_mut::<Rg>(res),
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                b_coeff,
-                tmp,
-            )
+            >(cnv_offset, &mut base_big_mut::<Rg>(res), res_col, a, a_col, b, b_col, tmp)
         } else {
             poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
                 NTT3x42Ifma,
                 NTT3x42IfmaRayonExecutor,
                 Rg,
-            >(
-                cnv_offset,
-                &mut base_big_mut::<Rg>(res),
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                b_coeff,
-                tmp,
-            )
+            >(cnv_offset, &mut base_big_mut::<Rg>(res), res_col, a, a_col, b, b_col, tmp)
         }
     }
 
@@ -1151,7 +1130,6 @@ where
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
-        b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
@@ -1161,33 +1139,13 @@ where
                 NTT3x42Ifma,
                 SerialTaskExecutor,
                 Rg,
-            >(
-                cnv_offset,
-                &mut base_big_mut::<Rg>(res),
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                b_coeff,
-                tmp,
-            )
+            >(cnv_offset, &mut base_big_mut::<Rg>(res), res_col, a, a_col, b, b_col, tmp)
         } else {
             poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
                 NTT3x42Ifma,
                 NTT3x42IfmaRayonExecutor,
                 Rg,
-            >(
-                cnv_offset,
-                &mut base_big_mut::<Rg>(res),
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                b_coeff,
-                tmp,
-            )
+            >(cnv_offset, &mut base_big_mut::<Rg>(res), res_col, a, a_col, b, b_col, tmp)
         }
     }
 

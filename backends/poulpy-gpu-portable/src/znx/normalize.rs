@@ -463,9 +463,9 @@ enum Source<'a, RT: GpuRuntime> {
         addend: Option<&'a Column>,
         tables: RingTables<'a, RT>,
     },
-    /// The sum of constant products `(a, b, coefficient of b, offset)`, over `size` limbs.
+    /// The sum of constant products `(a, b, offset)`, over `size` limbs.
     Products {
-        terms: &'a [(Column, Column, usize, usize)],
+        terms: &'a [(Column, Column, usize)],
         size: usize,
     },
 }
@@ -534,25 +534,24 @@ fn normalize_big_on_host<RT: GpuRuntime>(
 }
 
 /// Normalizes every limb of `res` from the `size` limbs
-/// `sum_t sum_{u + v = j + offset_t} a_t[u] * b_t[v][coeff_t]`, the sum of
+/// `sum_t sum_{u + v = j + offset_t} a_t[u] * b_t[v]`, the sum of
 /// [`convolution_by_const`](super::convolution_by_const) over one to
-/// [`CONST_TERMS`](super::CONST_TERMS) terms `(a_t, b_t, coeff_t, offset_t)`, without storing it. `res` overlaps no operand.
+/// [`CONST_TERMS`](super::CONST_TERMS) terms `(a_t, b_t, offset_t)`, without storing it. `res` overlaps no operand.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn normalize_products<RT: GpuRuntime>(
     res: &Column,
     res_base2k: usize,
     res_k: usize,
-    terms: &[(Column, Column, usize, usize)],
+    terms: &[(Column, Column, usize)],
     size: usize,
     a_base2k: usize,
 ) {
     assert!((1..=super::CONST_TERMS).contains(&terms.len()), "one to four products");
-    for (a, b, b_coeff, _) in terms {
+    for (a, b, _) in terms {
         assert!(
-            a.words == 1 && b.words == 1 && a.n == res.n,
-            "constant products take one-word operands of the destination degree"
+            a.words == 1 && b.words == 1 && a.n == res.n && b.n == 1,
+            "constant products take one-word operands of the destination degree and constants of degree 1"
         );
-        assert!(*b_coeff < b.n || b.size == 0, "constant coefficient out of range");
     }
     launch::<RT>(res, res_base2k, res_k, 0, Source::Products { terms, size }, a_base2k);
 }
@@ -629,11 +628,11 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
     // Products beyond the last repeat it: the kernel does not read them.
     let term = |index: usize| terms.get(index.min(terms.len().saturating_sub(1)));
     let scalars = |index: usize| match term(index) {
-        Some((a, b, b_coeff, offset)) => [
+        Some((a, b, offset)) => [
             a.base,
             a.stride,
             a.size as u32,
-            b.base + *b_coeff as u32,
+            b.base,
             b.stride,
             b.size as u32,
             (*offset).min(a.size + b.size) as u32,
@@ -652,7 +651,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
     let drop = (source_bits - res_k as i128 - offset as i128).clamp(-(res_k as i128) - 64, source_bits + 192);
     let (drop, insert) = (drop.max(0) as u32, (-drop).max(0) as u32);
     let source_bytes = match dft {
-        _ if !terms.is_empty() => terms.iter().map(|(a, b, _, _)| 8 * a.size.min(a_size + b.size)).sum(),
+        _ if !terms.is_empty() => terms.iter().map(|(a, b, _)| 8 * a.size.min(a_size + b.size)).sum(),
         Some(dft) => dft.size * 16 + a_size * 8,
         None => a_size * 8 * a.words as usize,
     };

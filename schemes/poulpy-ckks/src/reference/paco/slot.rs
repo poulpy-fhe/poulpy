@@ -114,11 +114,7 @@ where
         let key = rotation_key(OP, module, n, keys, rotation, width)?;
         let tensor_key = tsk
             .get_tensor_key(width)
-            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-                op: OP,
-                k: width.into(),
-                source,
-            })?;
+            .map_err(|source| CKKSCompositionError::tensor_key_lookup(OP, width.into(), source))?;
         bytes = bytes.max(ckks_slot_product_assign_tmp_bytes(module, &*ct, &key, &tensor_key));
         let (log_budget, product_log_delta, _) = mul_ct_params_raw(OP, k, log_delta, k, log_delta, k)?;
         k = log_budget + product_log_delta;
@@ -150,15 +146,7 @@ where
 {
     let order = operand_cyclotomic_order::<_, Standard>(op, module, n)?;
     keys.get_automorphism_key(galois_element(rotation, order), k)
-        .map_err(|source| {
-            CKKSCompositionError::MissingAutomorphismKey {
-                op,
-                rotation,
-                k: k.into(),
-                source,
-            }
-            .into()
-        })
+        .map_err(|source| CKKSCompositionError::automorphism_key_lookup(op, rotation, k.into(), source).into())
 }
 
 /// Validates the fold bounds against the slot count of a ciphertext of degree `n` and returns the

@@ -90,8 +90,7 @@ macro_rules! declare_unary_op {
             P: poulpy_core::layouts::GLWEToBackendRef<BE, Rg>
                 + poulpy_ckks::CKKSCtBounds
                 + poulpy_core::layouts::BSGSMeta
-                + poulpy_core::layouts::IntPolyInfos
-                + poulpy_ckks::layouts::CKKSMaskedConstants<BE, Rg>,
+                + poulpy_core::layouts::IntPolyInfos,
             H: poulpy_core::layouts::GetTensorKey<BE, Rg>;
     };
 }
@@ -125,8 +124,7 @@ macro_rules! impl_unary_op {
             P: poulpy_core::layouts::GLWEToBackendRef<BE, Rg>
                 + poulpy_ckks::CKKSCtBounds
                 + poulpy_core::layouts::BSGSMeta
-                + poulpy_core::layouts::IntPolyInfos
-                + poulpy_ckks::layouts::CKKSMaskedConstants<BE, Rg>,
+                + poulpy_core::layouts::IntPolyInfos,
             H: poulpy_core::layouts::GetTensorKey<BE, Rg>,
         {
             anyhow::Context::context(

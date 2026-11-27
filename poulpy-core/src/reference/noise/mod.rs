@@ -413,11 +413,11 @@ pub(crate) fn var_noise_relinearize_d2<K: GGLWEInfos, Rg: Ring>(
 /// one_pass = shared + 2^{2*lo} * Var_relin(d2_k)
 /// ```
 ///
-/// The two-step path normalizes the tensor at `tensor_k` before relinearizing `d2`. The one-pass path relinearizes
-/// `d2` as the convolution leaves it, `d2_k` bits wide and `lo = cnv_offset mod base2k` bits under the result, which
-/// lifts its relinearization by `2^lo`. `var_operands` is the operands' term of
-/// [`var_noise_glwe_tensor_operands`], or what the caller knows of the product's own noise. Ring products weigh
-/// `Rg::product_moments(n).weight` in place of `n`.
+/// The two-step path normalizes the tensor at `tensor_k` before relinearizing `d2`, without rounding when
+/// `tensor_exact`, a tensor holding the product whole. The one-pass path relinearizes `d2` as the convolution leaves
+/// it, `d2_k` bits wide and `lo = cnv_offset mod base2k` bits under the result, which lifts its relinearization by
+/// `2^lo`. `var_operands` is the operands' term of [`var_noise_glwe_tensor_operands`], or what the caller knows of the
+/// product's own noise. Ring products weigh `Rg::product_moments(n).weight` in place of `n`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos, Rg: Ring>(
     tsk: &K,
@@ -427,14 +427,19 @@ pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos, Rg: Ring>(
     var_operands: f64,
     lo: usize,
     tensor_k: usize,
+    tensor_exact: bool,
     d2_k: usize,
     res_k: usize,
 ) -> (f64, f64) {
     let w: f64 = Rg::product_moments(tsk.n().as_usize()).weight;
     let shared: f64 = var_operands + var_rounding(res_k, 1.0 + w * var_xs);
-    let two_step: f64 = shared
-        + var_rounding(tensor_k, var_tensor_key(w, 1.0, var_xs))
-        + var_noise_relinearize_d2::<_, Rg>(tsk, tensor_k, var_xs, var_key_err_body, var_key_err_mask);
+    let round_tensor = if tensor_exact {
+        0.0
+    } else {
+        var_rounding(tensor_k, var_tensor_key(w, 1.0, var_xs))
+    };
+    let two_step: f64 =
+        shared + round_tensor + var_noise_relinearize_d2::<_, Rg>(tsk, tensor_k, var_xs, var_key_err_body, var_key_err_mask);
     let one_pass: f64 = shared
         + ((2 * lo) as f64).exp2() * var_noise_relinearize_d2::<_, Rg>(tsk, d2_k, var_xs, var_key_err_body, var_key_err_mask);
     (one_pass, two_step)

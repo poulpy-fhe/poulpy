@@ -4,28 +4,23 @@
 //!
 //! | Function | Path exercised |
 //! |----------|----------------|
-//! | [`test_affine_pt_const_into_aligned`] | scalar affine op with aligned output |
-//! | [`test_affine_pt_const_zero_bias_matches_mul`] | zero offset preserves multiply result metadata |
-//! | [`test_affine_pt_const_assign_aligned`] | assign variant of scalar affine op |
-//! | [`test_affine_pt_vec_into_aligned`] | full-vector affine op into a fresh destination |
-//! | [`test_affine_pt_vec_assign_aligned`] | full-vector affine assign in-place |
+//! | [`test_affine_pt_into_const_aligned`] | affine op by constants of degree 1 with aligned output |
+//! | [`test_affine_pt_into_const_zero_bias_matches_mul`] | zero offset preserves multiply result metadata |
+//! | [`test_affine_pt_assign_const_aligned`] | assign variant of the affine op by constants |
+//! | [`test_affine_pt_into_aligned`] | full-vector affine op into a fresh destination |
+//! | [`test_affine_pt_assign_aligned`] | full-vector affine assign in-place |
 
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Ring, Standard},
+    layouts::{HostBytesBackend, Module, Standard},
 };
 
-use crate::layouts::CKKSPlaintextOwned;
-use crate::{
-    CKKSInfos, CKKSLayout, SetCKKSInfos,
-    api::CKKSAffineOps,
-    layouts::{CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
-};
-use poulpy_core::layouts::LWEInfos;
+use crate::{CKKSInfos, api::CKKSAffineOps};
 
 use super::helpers::{
     ADD_SUB_CONST, MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch,
-    assert_ct_meta, assert_decrypt_precision, ckks_encrypt, ckks_pt_cst_full, gen_sk, quantized_const, test_vector_1,
+    assert_ct_meta, assert_decrypt_precision, ckks_encrypt, ckks_pt_cst, ckks_pt_cst_full, gen_sk, quantized_const,
+    test_vector_1,
 };
 use super::parity::helpers::with_scratch;
 
@@ -35,20 +30,7 @@ fn scaled<F: TestScalar>(v: &[F], scale: F) -> Vec<F> {
     v.iter().copied().map(|x| x * scale).collect()
 }
 
-fn encode_affine_const<F: TestScalar, Rg: Ring>(
-    host_module: &Module<HostBytesBackend>,
-    base2k: poulpy_core::layouts::Base2K,
-    offset: F,
-    scale: F,
-    prec: CKKSLayout,
-) -> CKKSPlaintextOwned<HostBytesBackend, Rg> {
-    let mut pt = host_module.ckks_plaintext_alloc(2usize.into(), base2k, prec.k());
-    pt.set_meta(prec.meta());
-    pt.encode_host_floats(&[offset, scale]).unwrap();
-    pt
-}
-
-pub fn test_affine_pt_const_into_aligned<BE, F, E>(
+pub fn test_affine_pt_into_const_aligned<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -88,15 +70,16 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let affine_const = encode_affine_const::<F, Standard>(host_module, params.base2k.into(), offset, scale, PT_PREC);
+    let [offset_pt, scale_pt] = [offset_f64, scale_f64]
+        .map(|value| ckks_pt_cst::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, Some(value), None));
     let mut dst = alloc_ct(&params, module, params.k);
 
-    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
-        module.ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, s)
+    with_scratch::<BE, _>(module.ckks_affine_pt_tmp_bytes(&dst, &a, &scale_pt), |s| {
+        module.ckks_affine_pt_into(&mut dst, &a, &scale_pt, &offset_pt, s)
     })
     .unwrap();
     assert_decrypt_precision(
-        "affine_pt_const_into_aligned",
+        "affine_pt_into_const_aligned",
         &params,
         module,
         &encoder,
@@ -108,7 +91,7 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
     );
 }
 
-pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
+pub fn test_affine_pt_into_const_zero_bias_matches_mul<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -146,22 +129,23 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let affine_const = encode_affine_const::<F, Standard>(host_module, params.base2k.into(), F::zero(), scale, PT_PREC);
+    let [offset_pt, scale_pt] = [0.0, scale_f64]
+        .map(|value| ckks_pt_cst::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, Some(value), None));
     let mut dst = alloc_ct(&params, module, params.k);
 
-    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
-        module.ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, s)
+    with_scratch::<BE, _>(module.ckks_affine_pt_tmp_bytes(&dst, &a, &scale_pt), |s| {
+        module.ckks_affine_pt_into(&mut dst, &a, &scale_pt, &offset_pt, s)
     })
     .unwrap();
 
     assert_ct_meta(
-        "affine_pt_const_zero_bias",
+        "affine_const_zero_bias",
         &dst,
         a.log_delta(),
         a.log_budget() - PT_PREC.log_delta(),
     );
     assert_decrypt_precision(
-        "affine_pt_const_zero_bias",
+        "affine_const_zero_bias",
         &params,
         module,
         &encoder,
@@ -173,7 +157,7 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
     );
 }
 
-pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
+pub fn test_affine_pt_assign_const_aligned<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -213,14 +197,15 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let affine_const = encode_affine_const::<F, Standard>(host_module, params.base2k.into(), offset, scale, PT_PREC);
+    let [offset_pt, scale_pt] = [offset_f64, scale_f64]
+        .map(|value| ckks_pt_cst::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, Some(value), None));
 
-    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&ct, &ct, &affine_const), |s| {
-        module.ckks_affine_pt_const_assign(&mut ct, &affine_const, 0, 1, s)
+    with_scratch::<BE, _>(module.ckks_affine_pt_tmp_bytes(&ct, &ct, &scale_pt), |s| {
+        module.ckks_affine_pt_assign(&mut ct, &scale_pt, &offset_pt, s)
     })
     .unwrap();
     assert_decrypt_precision(
-        "affine_pt_const_assign_aligned",
+        "affine_pt_assign_const_aligned",
         &params,
         module,
         &encoder,
@@ -232,11 +217,8 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
     );
 }
 
-pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
+pub fn test_affine_pt_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -278,12 +260,12 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
         ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&dst, &a, &scale_pt), |s| {
-        module.ckks_affine_pt_vec_into(&mut dst, &a, &scale_pt, &offset_pt, s)
+    with_scratch::<BE, _>(module.ckks_affine_pt_tmp_bytes(&dst, &a, &scale_pt), |s| {
+        module.ckks_affine_pt_into(&mut dst, &a, &scale_pt, &offset_pt, s)
     })
     .unwrap();
     assert_decrypt_precision(
-        "affine_pt_vec_into_aligned",
+        "affine_pt_into_aligned",
         &params,
         module,
         &encoder,
@@ -295,7 +277,7 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
     );
 }
 
-pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
+pub fn test_affine_pt_assign_aligned<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -340,12 +322,12 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
     let offset_pt =
         ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
 
-    with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&ct, &ct, &scale_pt), |s| {
-        module.ckks_affine_pt_vec_assign(&mut ct, &scale_pt, &offset_pt, s)
+    with_scratch::<BE, _>(module.ckks_affine_pt_tmp_bytes(&ct, &ct, &scale_pt), |s| {
+        module.ckks_affine_pt_assign(&mut ct, &scale_pt, &offset_pt, s)
     })
     .unwrap();
     assert_decrypt_precision(
-        "affine_pt_vec_assign_aligned",
+        "affine_pt_assign_aligned",
         &params,
         module,
         &encoder,
@@ -357,64 +339,9 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
     );
 }
 
-/// An offset coefficient past the constant's degree is `PlaintextCoefficientOutOfRange` of the affine form, before the
-/// product writes `dst`, on an empty arena and on the query, out of place and in place.
-pub fn test_affine_pt_const_into_rejects_offset_coeff_out_of_range<BE, F, E>(
-    params: crate::test_suite::CKKSTestParams,
-    module: &poulpy_hal::layouts::Module<BE>,
-    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
-) where
-    BE: crate::test_suite::helpers::TestContextBackend,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
-    F: crate::test_suite::helpers::TestScalar,
-    E: ReimNew<F>,
-{
-    use crate::test_suite::{
-        helpers::assert_ckks_error,
-        parity::{
-            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
-            layout,
-        },
-    };
-    use crate::{CKKSCompositionError, SlotsKind};
-    use poulpy_core::layouts::LWEInfos;
-    let b = params.base2k;
-    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
-    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
-    use crate::api::CKKSAffineOps;
-    let a = fixture_ciphertext(module, &ct_layout, 41);
-    let cst = fixture_plaintext(module, &pt_layout, 43);
-    let n = cst.n().as_usize();
-    let mut res = fixture_ciphertext(module, &ct_layout, 31);
-    let query = module.ckks_affine_pt_const_tmp_bytes(&res, &a, &cst);
-    for bytes in [0, query] {
-        let before = snapshot::<BE, _, Standard>(&res);
-        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_const_into(&mut res, &a, &cst, n, 0, s)).unwrap_err();
-        let want = |op| CKKSCompositionError::PlaintextCoefficientOutOfRange {
-            op,
-            role: "plaintext",
-            coeff: n,
-            n,
-        };
-        assert_ckks_error(
-            "affine_pt_const_into: offset past the constant",
-            &err,
-            want("ckks_affine_pt_const_into"),
-        );
-        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
-        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_const_assign(&mut res, &cst, n, 0, s)).unwrap_err();
-        assert_ckks_error(
-            "affine_pt_const_assign: offset past the constant",
-            &err,
-            want("ckks_affine_pt_const_assign"),
-        );
-        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
-    }
-}
-
 /// An offset of another radix is `PlaintextBase2KMismatch` of the affine form, before the product writes `dst`, on an
 /// empty arena and on the query, out of place and in place.
-pub fn test_affine_pt_vec_into_rejects_offset_base2k_mismatch<BE, F, E>(
+pub fn test_affine_pt_into_rejects_offset_base2k_mismatch<BE, F, E>(
     params: crate::test_suite::CKKSTestParams,
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
@@ -447,7 +374,7 @@ pub fn test_affine_pt_vec_into_rejects_offset_base2k_mismatch<BE, F, E>(
     let scale = fixture_plaintext(module, &pt_layout, 43);
     let offset = fixture_plaintext(module, &other_radix, 44);
     let mut res = fixture_ciphertext(module, &ct_layout, 31);
-    let query = module.ckks_affine_pt_vec_tmp_bytes(&res, &a, &scale);
+    let query = module.ckks_affine_pt_tmp_bytes(&res, &a, &scale);
     let want = |op| CKKSCompositionError::PlaintextBase2KMismatch {
         op,
         ct_base2k: b,
@@ -455,18 +382,14 @@ pub fn test_affine_pt_vec_into_rejects_offset_base2k_mismatch<BE, F, E>(
     };
     for bytes in [0, query] {
         let before = snapshot::<BE, _, Standard>(&res);
-        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_vec_into(&mut res, &a, &scale, &offset, s)).unwrap_err();
-        assert_ckks_error(
-            "affine_pt_vec_into: offset of another radix",
-            &err,
-            want("ckks_affine_pt_vec_into"),
-        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_into(&mut res, &a, &scale, &offset, s)).unwrap_err();
+        assert_ckks_error("affine_pt_into: offset of another radix", &err, want("ckks_affine_pt_into"));
         assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
-        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_vec_assign(&mut res, &scale, &offset, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_assign(&mut res, &scale, &offset, s)).unwrap_err();
         assert_ckks_error(
-            "affine_pt_vec_assign: offset of another radix",
+            "affine_pt_assign: offset of another radix",
             &err,
-            want("ckks_affine_pt_vec_assign"),
+            want("ckks_affine_pt_assign"),
         );
         assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
     }

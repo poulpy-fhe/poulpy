@@ -168,7 +168,7 @@ where
             log_sparsity: 0,
             slot_layout: SlotLayout::Full,
         })?;
-        module.ckks_add_pt_vec_assign(&mut leaf0, pt0, scratch)?;
+        module.ckks_add_assign(&mut leaf0, pt0, scratch)?;
         let mut half_leaves = Vec::with_capacity(plan.sparse_hamming_weight() + 1);
         half_leaves.push(leaf0);
         leaves.push(half_leaves);

@@ -579,6 +579,10 @@ pub enum Rejection {
     MissingKey,
     /// `CKKSCompositionError::MissingRelinearizationKey`.
     MissingTensorKey,
+    /// `CKKSCompositionError::AutomorphismKeyTooNarrow`.
+    NarrowKey,
+    /// `CKKSCompositionError::RelinearizationKeyTooNarrow`.
+    NarrowTensorKey,
     /// A poulpy-ckks budget error, `InsufficientHomomorphicCapacity` or `MultiplicationPrecisionUnderflow`, raised by
     /// the poulpy-ckks operation named in its place, inside the implementation.
     Budget,
@@ -629,6 +633,8 @@ pub fn assert_rejected<T>(label: &str, op: &str, rejection: Rejection, result: C
         Some(CKKSCompositionError::InvalidOperand { op, .. }) => Some((Rejection::InvalidOperand, *op)),
         Some(CKKSCompositionError::MissingAutomorphismKey { op, .. }) => Some((Rejection::MissingKey, *op)),
         Some(CKKSCompositionError::MissingRelinearizationKey { op, .. }) => Some((Rejection::MissingTensorKey, *op)),
+        Some(CKKSCompositionError::AutomorphismKeyTooNarrow { op, .. }) => Some((Rejection::NarrowKey, *op)),
+        Some(CKKSCompositionError::RelinearizationKeyTooNarrow { op, .. }) => Some((Rejection::NarrowTensorKey, *op)),
         Some(
             CKKSCompositionError::InsufficientHomomorphicCapacity { op, .. }
             | CKKSCompositionError::MultiplicationPrecisionUnderflow { op, .. },

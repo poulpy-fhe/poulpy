@@ -124,10 +124,10 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
     /// holding the scratch the call needs) refuses before any write. Then branch 0 into `output`, and each later
     /// branch, in increasing order, into one branch output carved once and added to `output` with `ckks_add_assign`,
     /// the recombined sparsity recorded last. A branch is the selected `ckks_paco_coeff_encodings` of the input, the
-    /// blind rotation (`ckks_mul_pt_vec_into` of the first bootstrapping ciphertext, `ckks_mul_pt_vec_into` and
+    /// blind rotation (`ckks_mul_pt_into` of the first bootstrapping ciphertext, `ckks_mul_pt_into` and
     /// `ckks_add_assign` of the other three), the selected `ckks_slot_trace_assign`, each CoeffsToSlots factor by
     /// `ckks_linear_transformation_eval_self_assign`, the psi tail (conjugation and two transforms added, or
-    /// conjugate-rotate added and masked with `ckks_mul_pt_vec_assign`), the selected `ckks_slot_product_assign`, the
+    /// conjugate-rotate added and masked with `ckks_mul_pt_assign`), the selected `ckks_slot_product_assign`, the
     /// imaginary-part extraction (`ckks_conjugate_into`, `ckks_sub_assign`), each SlotsToCoeffs factor, the scale
     /// relabel, and `ckks_copy` into the destination. A shifted branch runs on a `ckks_copy` of the input rotated by
     /// poulpy-core's `glwe_rotate_assign`, and its result is rotated back.
@@ -292,7 +292,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
     }
 
     /// A fold that is not a pair of powers of two with `b <= a` at most the slot count is `InvalidOperand`. Then the
-    /// automorphism key of every rotation of the fold schedule at `ct.k()` (`MissingAutomorphismKey`) and an arena of
+    /// automorphism key of every rotation of the fold schedule at `ct.k()` (`MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`) and an arena of
     /// [`Self::ckks_slot_trace_assign_tmp_bytes_reference`] at the widest key layout are checked before any write, and,
     /// for each rotation, poulpy-core's `glwe_automorphism_add_assign`. This is `Tr_{a→b}` in place, slot `i` becoming
     /// `Σ_j ct[i + j·b]` for `j ∈ [0, a/b)`, consuming no budget. The caller records metadata.
@@ -326,8 +326,8 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
 
     /// A fold that is not a pair of powers of two with `b <= a` at most the slot count is `InvalidOperand`, and
     /// `a == b` leaves `ct` unchanged. Then, for every rotation of the fold schedule, its automorphism key and the
-    /// tensor key at the width the products before it leave `ct` at (`MissingAutomorphismKey`,
-    /// `MissingRelinearizationKey`), the budget of every product (`MultiplicationPrecisionUnderflow`) and an arena of
+    /// tensor key at the width the products before it leave `ct` at (`MissingAutomorphismKey` or `AutomorphismKeyTooNarrow`,
+    /// `MissingRelinearizationKey` or `RelinearizationKeyTooNarrow`), the budget of every product (`MultiplicationPrecisionUnderflow`) and an arena of
     /// [`Self::ckks_slot_product_assign_tmp_bytes_reference`] at the widest key layouts are checked before any write.
     /// Then, for each rotation `k`, the selected `ckks_rotate_into` of `ct` into a `ct`-shaped scratch temporary and
     /// `ckks_mul_assign` of the temporary into `ct` under `tsk`. This is `Pr_{a→b}` in place, slot `i` becoming

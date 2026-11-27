@@ -27,7 +27,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, Module, ScratchOwned},
 };
 
 use crate::{
@@ -293,9 +293,9 @@ impl Server {
         };
         let relu = Relu::new(
             &module,
+            &Module::<HostBytesBackend>::new(preset.n() as u64),
             preset.base2k().into(),
             preset.log_delta(),
-            &mut encoder.host.borrow(),
         )?;
         drop(encoder);
 
@@ -456,7 +456,7 @@ impl Server {
         if matches!(skip, Skip::Add) {
             module.ckks_add_assign(level0, &*saved, &mut scratch.borrow())?;
         }
-        module.ckks_add_pt_vec_assign(level0, &product.bias, &mut scratch.borrow())?;
+        module.ckks_add_assign(level0, &product.bias, &mut scratch.borrow())?;
         Ok(())
     }
 

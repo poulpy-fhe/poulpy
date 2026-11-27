@@ -33,8 +33,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
-    SlotLayout, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout,
+    SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory,
         CKKSDFTOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
@@ -44,11 +44,15 @@ use crate::{
         BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
         BootstrappingPipeline, BootstrappingPlan, CIConversion, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSDFTFactors,
         CKKSModRaiseInfos, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSRightOperandPrepared, CoeffsMaskPrepared, DFTOutputFormat,
-        DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalModRing, ModRaisePlan, ModRaisePrepared, Split,
+        DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalModPlan, EvalModRing, ModRaisePlan, ModRaisePrepared, Split,
     },
     oep::CKKSModUpFirstFactorImpl,
     polynomial::SplitStrategy,
-    presets::bootstrapping::{BootstrappingPreset, PresetScales, all},
+    presets::bootstrapping::{
+        BootstrappingPreset, PresetScales, PresetSpec, all, build, insecure_n11_d35_k180_p20_s2c, n14_d20_k109_p21_s2c,
+        n15_d20_k389_p21_s2c, n16_d20_k763_p22_s2c_factored, paper_eval_mod_spec, paper_spec,
+    },
+    shaping::ShapingUnit,
     test_suite::bootstrapping::{assert_eval_mod_refuses, assert_mod_raise_refuses},
     test_suite::helpers::{
         LoggedBootstrappingKeys, PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule,
@@ -210,11 +214,10 @@ where
         let (plan, keys_layout) = (preset.plan(), preset.keys_layout());
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
         let client_scratch = ScratchOwned::<BC>::alloc(bootstrap_setup_tmp_bytes(&client, &layout, plan, keys_layout));
-        let (plan, log_n, label) = (plan.clone(), preset.log_n(), preset_label(&preset));
+        let widths = plan.key_widths(preset.log_n(), preset.bootstrap_k(), preset.input_k(), preset.log_delta());
+        let label = preset_label(&preset);
         let bytes = module.ckks_bootstrap_tmp_bytes(&layout, &input_layout, &context, keys_layout);
         let bootstrap: Bootstrap<BE> = Box::new(move |module, output, input, scratch| {
-            // The bootstrap lowers the output's width to its result.
-            let widths = plan.key_widths(log_n, output.k().as_usize(), input.k().as_usize(), input.log_delta());
             let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
             module.ckks_bootstrap(output, input, &context, &logged, scratch)?;
             Ok(logged.assert_lookups_at(&widths, &label))
@@ -319,7 +322,11 @@ where
         bootstrap: Bootstrap<BE>,
     ) -> Self {
         let (input_layout, bootstrap_layout) = (preset.input_layout(), preset.bootstrap_layout());
-        let (want_re, want_im) = test_vector_1::<f64>(preset.n() / 2);
+        let values = match preset.input_layout().meta.slot_layout {
+            SlotLayout::Full => preset.n() / 2,
+            SlotLayout::Replicated(layout) => 1 << layout.log_k(),
+        };
+        let (want_re, want_im) = test_vector_1::<f64>(values);
         let input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
 
@@ -353,8 +360,13 @@ where
     /// with slots of kind `slots`, on the client, and moves it to the evaluated backend.
     fn encrypt_input(&mut self, slots: SlotsKind) {
         let (n, base2k, input_layout) = (self.preset.n(), self.preset.base2k(), self.preset.input_layout());
+        // A replicated plaintext rounds with shaping within `i128`: it takes the precision budget, not the input's `k`.
+        let k = match input_layout.meta.slot_layout {
+            SlotLayout::Full => input_layout.k(),
+            SlotLayout::Replicated(_) => (self.preset.log_delta() + PRECISION_LOG_BUDGET).into(),
+        };
         let client = &self.client;
-        let mut input_pt = client.ckks_plaintext_alloc_from_slots(n / 2, base2k.into(), input_layout.k());
+        let mut input_pt = client.ckks_plaintext_alloc_from_slots(n >> (1 + input_layout.meta.log_sparsity), base2k.into(), k);
         input_pt.set_meta(GLWEPlaintextMeta {
             slots,
             ..input_layout.meta()
@@ -416,7 +428,7 @@ where
     /// backend that queues its work, the bootstrap may still be running when
     /// this returns. [`Self::synchronize`] waits for it.
     pub fn bootstrap_queued(&mut self) {
-        self.output.set_k(self.preset.bootstrap_k().into());
+        self.output.set_k(self.preset.bootstrap_layout().k());
         self.tensor_lookups = (self.bootstrap)(&self.module, &mut self.output, &self.input, &mut self.scratch.borrow()).unwrap();
     }
 
@@ -429,7 +441,7 @@ where
     /// its precision against the reference vector, as `(real, imaginary)`
     /// statistics.
     pub fn precision(&mut self) -> (PrecisionStats, PrecisionStats) {
-        // The allocation keeps the bootstrap width; the bootstrap narrowed `k`.
+        // On the full layout the allocation keeps the bootstrap width; the bootstrap narrowed `k`.
         let mut output = self
             .client
             .ckks_ciphertext_alloc_from_glwe_infos(&self.preset.bootstrap_layout());
@@ -447,16 +459,14 @@ where
             (output.log_delta() + log_budget).into(),
         );
         output_pt.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
-            slot_layout: SlotLayout::Full,
+            ..output.meta()
         });
         self.client
             .ckks_decrypt(&mut output_pt, &output, &self.sk, &mut self.client_scratch.borrow())
             .unwrap();
-        let n = self.preset.n();
-        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
+        let (mut got_re, mut got_im) = (vec![0.0; self.want_re.len()], vec![0.0; self.want_im.len()]);
         self.client
             .ckks_decode_slots_host_into(&output_pt, &mut got_re, &mut got_im, &mut self.client_scratch.borrow())
             .unwrap();
@@ -477,7 +487,7 @@ where
         let mut output = self.module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         let err = (self.bootstrap)(&self.module, &mut output, &self.input, &mut self.scratch.borrow()).unwrap_err();
         assert!(
-            matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. })),
+            matches!(err.composition(), Some(CKKSCompositionError::AutomorphismKeyTooNarrow { .. })),
             "{}: expected a key refused at entry, got: {err}",
             preset_label(&self.preset)
         );
@@ -578,7 +588,8 @@ where
 /// The preset's name, marked with the variants that keep it: `+erp` with
 /// EvalRound+ ([`BootstrappingPreset::with_eval_round_plus`]), `+fold_u` with
 /// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]), `+pow2` with the
-/// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]).
+/// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]), and on a replicated layout
+/// its maps, batch size, period and output `k`.
 pub fn preset_label(preset: &BootstrappingPreset) -> String {
     let mut label = preset.name().unwrap_or("derived").to_string();
     if preset.plan().coeffs_to_slots_bypass().is_some() {
@@ -594,13 +605,136 @@ pub fn preset_label(preset: &BootstrappingPreset) -> String {
     if preset.plan().coeffs_to_slots().power_of_two_keys() {
         label.push_str("+pow2");
     }
+    let s2c = preset.plan().slots_to_coeffs();
+    if let SlotLayout::Replicated(layout) = s2c.slot_layout() {
+        let maps = if s2c.placement_factors == 0 { "dense" } else { "factored" };
+        let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+        label.push_str(&format!("[{maps},k={k},R={r},output_k={}]", preset.output_k()));
+    }
     label
+}
+
+/// Every replicated preset, in a stable order.
+const REPLICATED: [fn(ReplicatedLayout) -> anyhow::Result<BootstrappingPreset>; 3] =
+    [n14_d20_k109_p21_s2c, n15_d20_k389_p21_s2c, n16_d20_k763_p22_s2c_factored];
+
+/// Every replicated preset, for `layout`, in a stable order.
+fn all_replicated(layout: ReplicatedLayout) -> anyhow::Result<Vec<BootstrappingPreset>> {
+    REPLICATED.iter().map(|build| build(layout)).collect()
+}
+
+/// `preset`, a replicated preset, re-derived with dense maps at the same levels, each transform one factor merged with
+/// the placement, CoeffsToSlots at the scale of its last factor: the output `k` moves with the bits SlotsToCoeffs
+/// consumes, without a name or an advertised precision. Fails on a preset of the full layout.
+fn with_dense_maps(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
+    anyhow::ensure!(
+        preset.spec.slot_layout != SlotLayout::Full,
+        "only a replicated preset selects its maps"
+    );
+    let spec = PresetSpec {
+        derived: true,
+        transform_factors: 1,
+        placement_factors: 0,
+        c2s_log_delta: preset.spec.c2s_last_log_delta.unwrap_or(preset.spec.c2s_log_delta),
+        c2s_last_log_delta: None,
+        ..preset.spec
+    };
+    let s2c_bits = build("with_dense_maps", spec)?.plan().slots_to_coeffs().consumed_bits();
+    build(
+        "with_dense_maps",
+        PresetSpec {
+            output_k: spec.output_k + s2c_bits - preset.plan().slots_to_coeffs().consumed_bits(),
+            ..spec
+        },
+    )
+}
+
+/// The levels of `n16_d20_k763_p22_s2c_factored` with dense maps ([`with_dense_maps`]): outputs of 673 bits, at least 23
+/// bits of precision. It measures 23.00 bits at least, on `2^10` values of `U32_45`.
+fn n16_d20_k673_p23_s2c(layout: ReplicatedLayout) -> anyhow::Result<BootstrappingPreset> {
+    let dense = with_dense_maps(&n16_d20_k763_p22_s2c_factored(layout)?)?;
+    build(
+        "n16_d20_k673_p23_s2c",
+        PresetSpec {
+            name: "n16_d20_k673_p23_s2c",
+            derived: false,
+            log2_precision: 23,
+            ..dense.spec
+        },
+    )
+}
+
+/// The EvalMod plan of the replicated presets for `layout`, at their message ratio `2^13`.
+pub(crate) fn paper_eval_mod(layout: &ReplicatedLayout) -> EvalModPlan {
+    paper_eval_mod_spec(layout).plan(13)
+}
+
+/// Insecure replicated preset at `N = 2^11`: the circuit of `n14_d20_k109_p21_s2c` on a ring small enough for a default
+/// test run, under the placeholder secret bounds of `insecure_n11_d35_k180_p20_s2c`. It measures 23.28 bits on 8 values
+/// of `U16_40` at radix 52, 0.28 bit above the 23 it advertises.
+fn insecure_n11_d20_k109_p23_s2c(layout: ReplicatedLayout) -> anyhow::Result<BootstrappingPreset> {
+    let s2c = insecure_n11_d35_k180_p20_s2c()?.spec;
+    build(
+        "insecure_n11_d20_k109_p23_s2c",
+        PresetSpec {
+            dense_hamming_weight: s2c.dense_hamming_weight,
+            sparse_hamming_weight: s2c.sparse_hamming_weight,
+            bounds: s2c.bounds,
+            ..paper_spec("insecure_n11_d20_k109_p23_s2c", 11, 109, 23, layout)
+        },
+    )
+}
+
+/// The replicated presets the precision test and the benchmark run, at most at the radix `fixture_base2k`
+/// ([`preset_with_max_base2k`]), for batches of `U32_45`: every preset on 16 and 64 values, then the logN16 preset on 256
+/// and 1024 values, with its factored maps and with dense ones at the same levels (`n16_d20_k673_p23_s2c`).
+pub fn replicated_presets(fixture_base2k: usize) -> Vec<BootstrappingPreset> {
+    let layout = |log_k| ShapingUnit::U32_45.layout(log_k).unwrap();
+    let mut presets = [4, 6].map(|log_k| all_replicated(layout(log_k)).unwrap()).concat();
+    for log_k in [8, 10] {
+        let factored = n16_d20_k763_p22_s2c_factored(layout(log_k)).unwrap();
+        presets.extend([factored, n16_d20_k673_p23_s2c(layout(log_k)).unwrap()]);
+    }
+    let capped = presets.iter().map(|p| preset_with_max_base2k(p, fixture_base2k).unwrap());
+    capped.collect()
+}
+
+/// Runs every preset of [`replicated_presets`] on `BE`, with the keys generated, the batch encrypted and the output
+/// decrypted on the client `BC`, which a host backend plays for itself, and checks the precision of the data values
+/// against the one the preset advertises, with the preset's keys and with a full-width key back from the ephemeral
+/// secret; then every preset on 64 values of `U8_40`, whose guards widen the EvalMod scale. Full-size bootstraps are
+/// slow, so backends register this as an ignored test, on the NTT types whose radix takes the presets' 52 bits.
+pub fn test_ckks_bootstrap_replicated_presets_with_client<BE, BC>(fixture_base2k: usize)
+where
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSEncodingOps<BE, f64, ConjugateInvariant> + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
+    Module<BC>: TestContextSharedModule<BC, ConjugateInvariant>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+{
+    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    for preset in replicated_presets(fixture_base2k) {
+        BootstrappingPresetRun::<BE, BC>::setup(preset.clone()).check(backend);
+        let mut full = preset.clone();
+        let wide = full.keys_layout.tensor_key;
+        let encapsulation = full.keys_layout.encapsulation.as_mut().unwrap();
+        let return_key = encapsulation.sparse_to_dense.as_mut().unwrap();
+        (return_key.k_offset, return_key.k_digit, return_key.k_aux) = (0usize.into(), wide.k_digit, wide.k_aux);
+        return_key.dnum = preset.bootstrap_k().div_ceil(wide.k_digit.as_usize()).into();
+        BootstrappingPresetRun::<BE, BC>::setup(full).check(&format!("{backend} full-width"));
+    }
+    for preset in all_replicated(ShapingUnit::U8_40.layout(6).unwrap()).unwrap() {
+        BootstrappingPresetRun::<BE, BC>::setup(preset_with_max_base2k(&preset, fixture_base2k).unwrap()).check(backend);
+    }
 }
 
 /// Runs the insecure `N = 2^11` S2C-first preset on `BE` and checks its key
 /// shapes and output precision, on complex and on real slots, then the same
 /// preset with EvalRound+, with EvalMod on the conjugate-invariant ring, and with
-/// the keys of power-of-two rotations. Unlike
+/// the keys of power-of-two rotations, and the insecure replicated preset on 8 values of `U16_40`. Unlike
 /// [`bootstrapping_presets_meet_precision`], it is small enough for a default
 /// test run, so the narrow conjugation and SlotsToCoeffs keys the presets derive
 /// run end to end. Backends register it when their radix takes the preset's 52 bits.
@@ -682,6 +816,17 @@ where
     };
     let preset = powers_of_two.with_eval_mod_ring(ci).unwrap();
     BootstrappingPresetRun::<BE>::setup(preset).check(backend);
+    // The radix model does not cover the maps of a replicated layout.
+    let layout = ShapingUnit::U16_40.layout(3).unwrap();
+    let replicated = insecure_n11_d20_k109_p23_s2c(layout).unwrap();
+    assert_eq!(replicated.max_backend_base2k::<BE>(BOOTSTRAP_FAILURE_BITS), 0);
+    let err = replicated.with_backend_base2k::<BE>(BOOTSTRAP_FAILURE_BITS).unwrap_err();
+    assert!(
+        err.to_string()
+            .ends_with(": a replicated preset has no backend radix model, take its radix with with_base2k"),
+        "{err}"
+    );
+    BootstrappingPresetRun::<BE>::setup(replicated).check(backend);
 }
 
 /// Runs the insecure `N = 2^11` C2S-first preset on `BE` and checks its key shapes
@@ -730,8 +875,9 @@ where
     BootstrappingPresetRun::<BE>::setup(preset.with_eval_round_plus(30, 51).unwrap()).check(backend);
 }
 
-/// The run of the insecure `N = 2^11` S2C-first preset on the standard ring, for a backend that records its bootstrap.
-pub fn small_s2c_preset_run_with_client<BE, BC>() -> BootstrappingPresetRun<BE, BC>
+/// The run of the insecure `N = 2^11` S2C-first preset on the standard ring for a full `slot_layout`, or of the insecure
+/// replicated preset on a replicated one, for a backend that records its bootstrap.
+pub fn small_preset_run_with_client<BE, BC>(slot_layout: SlotLayout) -> BootstrappingPresetRun<BE, BC>
 where
     BE: Backend<ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
     BC: TestContextBackend,
@@ -748,7 +894,11 @@ where
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    BootstrappingPresetRun::<BE, BC>::setup(crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap())
+    let preset = match slot_layout {
+        SlotLayout::Full => crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c(),
+        SlotLayout::Replicated(layout) => insecure_n11_d20_k109_p23_s2c(layout),
+    };
+    BootstrappingPresetRun::<BE, BC>::setup(preset.unwrap())
 }
 
 /// The insecure `N = 2^11` S2C-first preset of [`small_s2c_preset_meets_precision`] on an
@@ -1855,7 +2005,7 @@ where
 }
 
 /// Pins a setup refusal: [`CKKSCompositionError::InvalidOperand`] of `op` for `reason`.
-fn assert_refused<T>(label: &str, result: anyhow::Result<T>, op: &str, reason: &str) {
+pub(crate) fn assert_refused<T>(label: &str, result: anyhow::Result<T>, op: &str, reason: &str) {
     let err = result.err().unwrap_or_else(|| panic!("{label}: not refused"));
     assert!(
         matches!(err.downcast_ref::<CKKSCompositionError>(),
@@ -2293,4 +2443,166 @@ where
         bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &coeffs, &keys.tensor_key, atk));
     }
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_core::layouts::GGLWEInfos;
+
+    use super::*;
+    use crate::{
+        CKKSCompositionError::InvalidOperand, layouts::validation::check_offset_raise,
+        presets::bootstrapping::n15_d35_k180_p18_c2s,
+    };
+
+    #[test]
+    fn paper_eval_mod_scale_covers_the_guards() {
+        for (unit, log_delta) in [
+            (ShapingUnit::U4_10, 28),
+            (ShapingUnit::U4_15, 31),
+            (ShapingUnit::U8_30, 28),
+            (ShapingUnit::U8_40, 30),
+            (ShapingUnit::U16_60, 28),
+            (ShapingUnit::U32_45, 28),
+        ] {
+            let eval_mod = paper_eval_mod(&unit.layout(4).unwrap());
+            assert_eq!(eval_mod.f_mod_log_delta, log_delta, "{unit:?}");
+        }
+    }
+
+    /// The replicated presets for a batch of 64 values of `unit`.
+    fn replicated(unit: ShapingUnit) -> Vec<BootstrappingPreset> {
+        all_replicated(unit.layout(6).unwrap()).unwrap()
+    }
+
+    /// The widths of the replicated presets (the input at the leveled scale, the input of the raise, the output, the
+    /// raised width), the gadgets `(dnum, k_digit, k_aux)` of the widest rotation key, of the tensor key,
+    /// of the key to the ephemeral secret and of the key back, and the bits SlotsToCoeffs, EvalMod and CoeffsToSlots
+    /// consume, for a unit at the default EvalMod scale and for `U8_40`,
+    /// whose EvalMod runs two bits wider: the digits of fewest rows under the modulus bounds, off a limb boundary where
+    /// no whole limb fits.
+    #[test]
+    fn replicated_presets_pin_their_widths_and_key_gadgets() {
+        let gadget = |key: &dyn GGLWEInfos| {
+            let layout = key.gglwe_layout();
+            (layout.dnum.0, layout.k_digit.0, layout.k_aux.0)
+        };
+        let widths = [[59, 51, 109], [59, 51, 389], [153, 51, 763]];
+        for (unit, pins) in [
+            (
+                ShapingUnit::U32_45,
+                [
+                    (391, [(14, 28, 32), (7, 52, 60), (3, 17, 26), (2, 29, 33)], [26, 224, 34]),
+                    (671, [(7, 104, 119), (7, 104, 119), (1, 52, 67), (1, 104, 119)], [26, 224, 34]),
+                    (
+                        1207,
+                        [(3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 104, 120)],
+                        [120, 224, 196],
+                    ),
+                ],
+            ),
+            (
+                ShapingUnit::U8_40,
+                [
+                    (407, [(34, 12, 16), (7, 53, 53), (3, 17, 26), (4, 15, 17)], [26, 240, 34]),
+                    (687, [(7, 104, 119), (7, 104, 119), (1, 52, 67), (1, 104, 119)], [26, 240, 34]),
+                    (
+                        1223,
+                        [(3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 104, 120)],
+                        [120, 240, 196],
+                    ),
+                ],
+            ),
+        ] {
+            for ((preset, (raised, gadgets, consumed)), widths) in replicated(unit).iter().zip(pins).zip(widths) {
+                let (keys, at_raise) = (preset.keys_layout(), preset.log_modulus());
+                let encapsulation = keys.encapsulation.unwrap();
+                let got = [
+                    gadget(preset.widest_rotation_key()),
+                    gadget(&keys.tensor_key),
+                    gadget(&encapsulation.dense_to_sparse),
+                    gadget(&encapsulation.sparse_to_dense.unwrap()),
+                ];
+                let plan = preset.plan();
+                let stages = [
+                    plan.slots_to_coeffs().consumed_bits(),
+                    plan.eval_mod().consumed_bits(),
+                    plan.coeffs_to_slots().consumed_bits(),
+                ];
+                let w = ([preset.input_k(), at_raise, preset.output_k()], preset.bootstrap_k());
+                assert_eq!(
+                    (w, got, stages),
+                    ((widths, raised), gadgets, consumed),
+                    "{:?} {unit:?}",
+                    preset.name()
+                );
+            }
+        }
+    }
+
+    /// Every replicated preset takes the units of at least 30 bits of suppression and refuses those of `R = 2` and those
+    /// targeting 20 bits, stating the suppression it needs. A setting it does not re-derive is refused, and so are
+    /// maps for a preset of the full layout.
+    #[test]
+    fn replicated_presets_refuse_weak_units_and_other_settings() {
+        for unit in ShapingUnit::ALL {
+            let strong = unit.log_r > 1 && unit.target_bits >= 30;
+            for build in REPLICATED {
+                match build(unit.layout(6).unwrap()) {
+                    Ok(_) => assert!(strong, "{unit:?} accepted"),
+                    Err(err) => assert!(!strong && err.to_string().contains("which needs a unit suppressing"), "{err}"),
+                }
+            }
+        }
+        let preset = &replicated(ShapingUnit::U32_45)[1];
+        assert!(preset.with_dsizes(7, 1).is_ok() && preset.with_output_k(preset.output_k() - 20).is_ok());
+        for err in [preset.with_power_of_two_keys(), preset.with_eval_round_plus(30, 50)].map(Result::unwrap_err) {
+            let reason = "a replicated preset re-derives its radix, its key digits and its output width only";
+            assert_eq!(err.to_string(), reason);
+        }
+        let err = with_dense_maps(&n15_d35_k180_p18_c2s().unwrap());
+        assert_eq!(err.unwrap_err().to_string(), "only a replicated preset selects its maps");
+    }
+
+    /// With dense maps, the logN16 replicated preset on `2^10` values keeps its levels on a narrower input: 69 rotation
+    /// keys and a raised width of 955 bits, against 83 and 1207 factored, without a name or an advertised precision
+    /// unless named as `n16_d20_k673_p23_s2c`.
+    #[test]
+    fn dense_maps_keep_the_levels_of_n16_d20_k763_p22_s2c_factored() {
+        let layout = ShapingUnit::U32_45.layout(10).unwrap();
+        let factored = n16_d20_k763_p22_s2c_factored(layout).unwrap();
+        let derived = with_dense_maps(&factored).unwrap();
+        let named = n16_d20_k673_p23_s2c(layout).unwrap();
+        for (preset, rotation_keys, raised, precision) in [
+            (&factored, 83, 1207, Some(22)),
+            (&derived, 69, 955, None),
+            (&named, 69, 955, Some(23)),
+        ] {
+            assert_eq!(preset.keys_layout().rotation_keys.len(), rotation_keys);
+            assert_eq!((preset.bootstrap_k(), preset.log2_precision()), (raised, precision));
+            assert_eq!(preset.output_k() - preset.input_k(), 610);
+        }
+    }
+
+    /// At every radix, the key back to the dense secret of a replicated preset has a row offset and ends its rows at the
+    /// raised width: the raise of the preset takes it, and a raise one bit wider does not.
+    #[test]
+    fn replicated_offset_keys_cover_the_raise() {
+        for preset in [ShapingUnit::U32_45, ShapingUnit::U8_40].into_iter().flat_map(replicated) {
+            for base2k in [18, 19, 28, 52, 54] {
+                let preset = preset.with_base2k(base2k).unwrap();
+                let return_key = preset.keys_layout().encapsulation.unwrap().sparse_to_dense.unwrap();
+                let (raised, lift) = (preset.bootstrap_k(), preset.plan().mod_raise().c2s_guard_bits());
+                assert!(return_key.k_offset.0 > 0);
+                assert_eq!(
+                    return_key.k_offset.as_usize() + return_key.gglwe_layout().gadget_k().as_usize(),
+                    raised
+                );
+                let raise = |k| check_offset_raise("preset", k, preset.log_modulus(), lift, &return_key);
+                raise(raised).unwrap();
+                let err = raise(raised + 1).unwrap_err();
+                assert!(matches!(err.composition(), Some(InvalidOperand { op: "preset", .. })));
+            }
+        }
+    }
 }

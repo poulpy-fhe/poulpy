@@ -4,7 +4,6 @@
 //! leaves them unchanged.
 
 use anyhow::{Result, ensure};
-use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{
@@ -218,7 +217,7 @@ pub trait CKKSInverseDomainOps<BE: Backend, Rg: Ring = Standard> {
     ) -> Result<()>
     where
         C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
         K: GetAutomorphismKey<BE, Rg>;
 }
@@ -370,7 +369,7 @@ where
         // The compressed copy, the factor and five terms, each with the layout of `ct`.
         7 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
             + self
-                .ckks_mul_pt_const_tmp_bytes(ct, ct, &params.consts)
+                .ckks_mul_pt_tmp_bytes(ct, ct, &params.consts[0])
                 .max(self.ckks_square_tmp_bytes(ct, ct, tsk))
                 .max(self.ckks_mul_tmp_bytes(ct, ct, ct, tsk))
                 .max(self.ckks_copy_tmp_bytes(ct, ct))
@@ -411,8 +410,8 @@ where
             let (mut z0z2, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
             self.ckks_copy(&mut x, &*ct, &mut scratch_local)?;
 
-            for i in 0..params.n {
-                self.ckks_mul_pt_const_into(&mut z0, &x, &params.consts, i, &mut scratch_local)?;
+            for (i, c) in params.consts.iter().enumerate() {
+                self.ckks_mul_pt_into(&mut z0, &x, c, &mut scratch_local)?;
                 self.ckks_square_into(&mut z1, &x, tsk, &mut scratch_local)?;
                 self.ckks_mul_into(&mut z0z1, &z0, &z1, tsk, &mut scratch_local)?;
                 if i == 0 {
@@ -498,7 +497,7 @@ where
     ) -> Result<()>
     where
         C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE, Rg>,
         K: GetAutomorphismKey<BE, Rg>,
     {

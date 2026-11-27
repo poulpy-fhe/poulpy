@@ -6,13 +6,18 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Ciphertext and plaintext addition.
 ///
+/// The operand `b` (`a` in the assign forms) is a ciphertext or a plaintext:
+/// the operations dispatch on its rank, a metadata read. Rank 0 takes the
+/// plaintext route, any other rank the ciphertext route. `dst` and the `a` of
+/// the `_into` forms are ciphertexts, of rank at least 1.
+///
 /// The sum is not normalized: the destination's canonical flag is cleared and
 /// the next operation that reads it through a DFT normalizes it first. An
 /// operand aligned by a shift is normalized by that shift.
 ///
 /// # Metadata
 ///
-/// ## Ciphertext–ciphertext addition (`ckks_add_into` / `ckks_add_assign`)
+/// ## Ciphertext operand
 ///
 /// Both operands are automatically shifted to the same torus level before
 /// addition, so different `log_budget` values are accepted without manual
@@ -21,64 +26,103 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// For `_into` variants the destination capacity can reduce the result:
 ///
 /// ```text
-/// offset         = max(0, min(a.k(), b.k()) − dst.k())
+/// offset           = max(0, min(a.k(), b.k()) − dst.k())
 ///
-/// log_delta_out  = min(a.log_delta,  b.log_delta)
-/// log_budget_out = min(a.log_budget, b.log_budget) − offset
+/// log_delta_out    = min(a.log_delta,  b.log_delta)
+/// log_budget_out   = min(a.log_budget, b.log_budget) − offset
+/// log_sparsity_out = min(a.log_sparsity, b.log_sparsity)
+/// slots_out        = a.slots.join(b.slots)
 /// ```
 ///
 /// For `_assign` variants `dst` is already the buffer being operated on so
 /// `offset = 0` and the formula reduces to:
 ///
 /// ```text
-/// log_delta_out  = min(dst.log_delta, a.log_delta)
-/// log_budget_out = min(dst.log_budget, a.log_budget)
+/// log_delta_out    = min(dst.log_delta, a.log_delta)
+/// log_budget_out   = min(dst.log_budget, a.log_budget)
+/// log_sparsity_out = min(dst.log_sparsity, a.log_sparsity)
+/// slots_out        = dst.slots.join(a.slots)
 /// ```
 ///
 /// Addition does not consume homomorphic capacity beyond the offset.
 ///
-/// ## Ciphertext–plaintext-vector addition (`ckks_add_pt_vec_*`)
+/// ## Plaintext operand
 ///
-/// The full plaintext polynomial is added coefficient-wise in the ZNX domain.
+/// The plaintext `b`, of any power-of-two degree `n` dividing the ciphertext's
+/// `N`, is broadcast through `X -> X^(N/n)` and added coefficient-wise in the
+/// ZNX domain, a plaintext of degree 1 adding an integer to coefficient `0`.
+/// It is aligned to the ciphertext's budget, without the ciphertext moving.
 ///
 /// ```text
-/// offset         = max(0, a.k() − dst.k())
+/// offset           = max(0, a.k() − dst.k())          (_assign: 0, dst for a)
 ///
-/// log_delta_out  = a.log_delta
-/// log_budget_out = a.log_budget − offset
+/// log_delta_out    = a.log_delta
+/// log_budget_out   = a.log_budget − offset
+/// log_sparsity_out = min(a.log_sparsity, log2(N / n))
+/// slots_out        = a.slots.join(b.slots)
 /// ```
 ///
-/// **Precondition**: `a.log_budget + pt.log_delta >= pt.k()`.
+/// **Precondition**: `log_budget_out + b.log_delta >= b.k()`.
 /// Returns `PlaintextAlignmentImpossible` otherwise.
 ///
-/// ## Ciphertext–plaintext-constant addition (`ckks_add_pt_const_*`)
-///
-/// Adds a single quantized constant (one ZNX coefficient of a plaintext) to
-/// one coefficient slot of the ciphertext.  Metadata follows the same rule as
-/// the `pt_vec` variants above.
+/// A constant is a plaintext of its natural degree: a real constant of degree
+/// 1, a complex one `[re, im]` of degree 2 (`i = X^(N/2)`), or `c·π_S` of
+/// degree `2R` on a replicated layout.
 ///
 /// ## Slot layouts
 ///
-/// Ciphertext operands, and a plaintext vector operand, must share one slot
-/// layout, which the sum carries. A constant reaches every slot, so it is
-/// rejected on a [`SlotLayout::Replicated`](crate::SlotLayout::Replicated)
-/// layout, whose guards it would shift.
+/// Both operands must share one slot layout, which the sum carries.
 pub trait CKKSAddOps<BE: Backend, Rg: Ring = Standard> {
+    /// Scratch bytes for [`Self::ckks_add_into`] and [`Self::ckks_add_assign`]:
+    /// the maximum over the ciphertext and plaintext routes, as it takes only sizes.
     fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize;
 
-    /// Computes `dst = a + b`.
+    /// Computes `dst = a + b`, `b` a ciphertext or a plaintext.
     ///
-    /// Operands with differing `log_budget` are aligned automatically.
+    /// Ciphertext operands with differing `log_budget` are aligned automatically.
     /// See the trait-level documentation for the full metadata rule.
+    ///
+    /// # Errors
+    ///
+    /// Before any write to `dst`, in this order.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `dst`
+    /// or an `a` of rank 0. A ciphertext `b`:
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for an
+    /// operand above the module's degree, for slot layouts that differ and, on a
+    /// replicated layout, for scales that differ, then
+    /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity)
+    /// for an `offset` above the operands' budget. A plaintext `b`: `InvalidOperand`
+    /// for slot layouts that differ, for a plaintext of a finer scale than `a` on a
+    /// replicated layout and for `dst` or `a` above the module's degree,
+    /// `InsufficientHomomorphicCapacity` for an `offset` above `a`'s budget, then
+    /// [`PlaintextBase2KMismatch`](crate::CKKSCompositionError::PlaintextBase2KMismatch),
+    /// [`PlaintextDegreeMismatch`](crate::CKKSCompositionError::PlaintextDegreeMismatch)
+    /// for a degree that does not divide the ciphertext's and
+    /// [`PlaintextAlignmentImpossible`](crate::CKKSCompositionError::PlaintextAlignmentImpossible).
     fn ckks_add_into<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
-    /// Computes `dst += a` in-place.
+    /// Computes `dst += a` in-place, `a` a ciphertext or a plaintext.
     ///
-    /// `dst` and `a` are aligned automatically if their `log_budget` differs.
+    /// A ciphertext `a` and `dst` are aligned automatically if their `log_budget` differs.
+    ///
+    /// # Errors
+    ///
+    /// Before any write to `dst`, in this order.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `dst`
+    /// of rank 0. A ciphertext `a`:
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for an
+    /// operand above the module's degree, for slot layouts that differ and, on a
+    /// replicated layout, for scales that differ. A plaintext `a`: `InvalidOperand`
+    /// for `dst` above the module's degree, for slot layouts that differ and for a
+    /// plaintext of a finer scale than `dst` on a replicated layout, then
+    /// [`PlaintextBase2KMismatch`](crate::CKKSCompositionError::PlaintextBase2KMismatch),
+    /// [`PlaintextDegreeMismatch`](crate::CKKSCompositionError::PlaintextDegreeMismatch)
+    /// for a degree that does not divide `dst`'s and
+    /// [`PlaintextAlignmentImpossible`](crate::CKKSCompositionError::PlaintextAlignmentImpossible).
     fn ckks_add_assign<Dst, A>(&self, dst: &mut Dst, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
@@ -96,71 +140,4 @@ pub trait CKKSAddOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
-
-    fn ckks_add_pt_vec_tmp_bytes(&self, res_size: usize) -> usize;
-
-    /// Computes `dst = a + pt` where `pt` is a full plaintext polynomial.
-    ///
-    /// `pt` is added coefficient-wise after being aligned to the ciphertext's
-    /// torus level. CKKS layout and scale metadata is inherited from `a` with the
-    /// capacity offset applied (see trait-level doc). Component noise metadata is cleared.
-    ///
-    /// # Errors
-    /// Returns [`crate::CKKSCompositionError::InvalidOperand`] before changing
-    /// `dst` when slot layouts differ or a replicated plaintext has a finer
-    /// scale than the ciphertext.
-    fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    /// Computes `dst += pt` in-place, where `pt` is a full plaintext polynomial.
-    fn ckks_add_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    fn ckks_add_pt_const_tmp_bytes(&self, res_size: usize) -> usize;
-
-    /// Computes `dst = a + pt[pt_coeff]`, adding one quantized constant to
-    /// a single coefficient slot of the ciphertext.
-    ///
-    /// - `dst_coeff`: target ZNX coefficient of `dst`.  Use `0` for the
-    ///   real-slot constant term and `n/2` for the imaginary-slot constant
-    ///   term (standard CKKS real/imaginary packing split).
-    /// - `pt_coeff`: source coefficient index in `pt`. It indexes the
-    ///   coefficients of the plaintext as stored, whatever its degree.
-    ///
-    /// Metadata is inherited from `a` with the capacity offset applied.
-    fn ckks_add_pt_const_into<Dst, A, P>(
-        &self,
-        dst: &mut Dst,
-        dst_coeff: usize,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    /// Computes `dst += pt[pt_coeff]` in-place.
-    ///
-    /// See [`Self::ckks_add_pt_const_into`] for the semantics of `dst_coeff`
-    /// and `pt_coeff`. `pt_coeff` indexes the coefficients of the plaintext as
-    /// stored, whatever its degree.
-    fn ckks_add_pt_const_assign<Dst, P>(
-        &self,
-        dst: &mut Dst,
-        dst_coeff: usize,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 }

@@ -113,43 +113,6 @@ pub trait GLWEPack<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 }
 
-/// Multiplication of a GLWE ciphertext by one coefficient of a plaintext.
-///
-/// The ciphertext operand is read canonical at its `k` (see the normalized
-/// form on [`crate::layouts::GLWE`]): the product reads every bit of its live
-/// limbs, so an operand whose canonical flag is clear is normalized first.
-pub trait GLWEMulConst<BE: Backend, Rg: Ring = Standard> {
-    fn glwe_mul_const_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos;
-
-    fn glwe_mul_const<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
-        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
-
-    fn glwe_mul_const_assign<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
-        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
-}
-
 /// Multiplication of a GLWE ciphertext by a **plaintext** operand.
 ///
 /// The plain operand, `b` in [`Self::glwe_mul_plain`], `a` in
@@ -456,8 +419,8 @@ pub trait GLWETensoring<BE: Backend, Rg: Ring = Standard> {
         B: GGLWEInfos;
 
     /// Scratch bytes of [`Self::glwe_mul_relinearize`], [`Self::glwe_square_relinearize`],
-    /// [`Self::glwe_mul_prepared_relinearize`] and their `_assign` forms, for a result as wide as `res`, operands of
-    /// `a_size` and `b_size` limbs and a product of width `tensor_k`, the larger of the two operand widths.
+    /// [`Self::glwe_mul_prepared_relinearize`] and their `_assign` forms, for a result at the `k` of `res`, operands of
+    /// `a_size` and `b_size` limbs and `k` up to `tensor_k`, the larger operand `k`.
     fn glwe_mul_relinearize_tmp_bytes<R, B>(
         &self,
         res: &R,
@@ -480,14 +443,18 @@ pub trait GLWETensoring<BE: Backend, Rg: Ring = Standard> {
     /// [`Self::glwe_tensor_relinearize`] transforms and normalizes them first.
     /// The two paths agree up to rounding, not bit for bit.
     ///
+    /// The key of `tsk` at the larger operand `k` serves the product, which is resolved at that `k`, or at `res_k`
+    /// where that is larger, at most that key's `max_input_k`.
+    ///
     /// The key switch runs on `d2 = a1 * b1` `cnv_offset mod base2k` bits under the result. When that offset is
-    /// not zero and `d2` spans digits past the gadget of `tsk`, the one-pass path is kept only if its modeled
-    /// variance exceeds the two-step path's by at most `2^-4` of it, with the secret's second moment and the key
-    /// error read from the noise metadata of `tsk` and the operands' errors floored at their rounding.
-    /// Otherwise the columns are normalized into a tensor and relinearized with [`Self::glwe_tensor_relinearize`]:
-    /// the result is then that of the two-step path bit for bit if and only if `cnv_offset >= min(a.k(), b.k())`,
-    /// and agrees with it up to rounding otherwise. A key without noise metadata, or with a secret of unknown law,
-    /// takes the tensor path there.
+    /// not zero and `d2` spans digits past the gadget of `tsk` or `res_k` is wider than both operands, the one-pass
+    /// path is kept only if its modeled variance exceeds the two-step path's by at most `2^-4` of it, with the
+    /// secret's second moment and the key error read from the noise metadata of `tsk` and the operands' errors
+    /// floored at their rounding.
+    /// Otherwise the columns are normalized into a tensor at the product's `k` and relinearized with
+    /// [`Self::glwe_tensor_relinearize`]: the result is then that of the two-step path through a tensor at that `k`
+    /// bit for bit if and only if `cnv_offset >= min(a.k(), b.k())`, and agrees with it up to rounding otherwise. A
+    /// key without noise metadata, or with a secret of unknown law, takes the tensor path there.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_relinearize<R, A, B, H>(
         &self,
@@ -601,7 +568,7 @@ pub trait GLWEMulRelinearizeSum<BE: Backend, Rg: Ring = Standard> {
     /// `res = relinearize(Σ_i a[i] * b[i])`, in one pass, under the conditions of
     /// [`GLWETensoring::glwe_mul_relinearize`]: rank 1, one `base2k` across `res`, the operands and the tensor key,
     /// and `cnv_offset >= base2k`. Every pair shares the first one's layouts; the tensor key is looked up at the
-    /// larger of the two operand widths.
+    /// larger operand `k` and the product resolved as in [`GLWETensoring::glwe_mul_relinearize`].
     ///
     /// The result is written at width `res_k`, canonical: the caller sets the width of `res` afterwards.
     ///
@@ -620,7 +587,7 @@ pub trait GLWEMulRelinearizeSum<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Before writing `res`, if `a` is empty or `b` is not as long, if a pair does not share the first one's
     /// layouts, if `res` or an operand is not of rank 1 or of `res`'s `base2k`, if `cnv_offset < base2k`, if `tsk`
-    /// has no key at the tensor width or one of another `base2k`, or if `scratch` holds less than the call needs.
+    /// has no key at the larger operand `k` or one of another `base2k`, or if `scratch` holds less than the call needs.
     #[expect(
         clippy::too_many_arguments,
         reason = "the two operand slices of a sum beside the product's operands"

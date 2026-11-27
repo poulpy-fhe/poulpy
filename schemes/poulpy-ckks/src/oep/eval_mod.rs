@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
@@ -39,7 +38,7 @@ pub unsafe trait CKKSEvalModImpl<Rg: Ring = Standard>: Backend {
     where
         R: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<Self, Rg>,
+        P: IntPolyInfos + CKKSCtBounds + BSGSMeta + GLWEToBackendRef<Self, Rg>,
         H: GetTensorKey<Self, Rg>;
 }
 
@@ -86,11 +85,10 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 C: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
                     + ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
                     + $crate::CKKSCtBounds,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
-                    + ::poulpy_core::layouts::IntPolyInfos
+                P: ::poulpy_core::layouts::IntPolyInfos
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::layouts::BSGSMeta
-                    + $crate::layouts::CKKSMaskedConstants<Self, $ring>,
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>,
                 H: ::poulpy_core::layouts::GetTensorKey<Self, $ring>,
             {
                 $crate::reference::eval_mod::CKKSEvalModReference::<Self, $ring>::ckks_eval_mod_reference(

@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
@@ -29,7 +28,7 @@ impl<BE: Backend + CKKSEvalModImpl<Rg>, Rg: Ring> CKKSEvalModOps<BE, Rg> for Mod
     where
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        P: IntPolyInfos + CKKSCtBounds + BSGSMeta + GLWEToBackendRef<BE, Rg>,
         H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_eval_mod::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)

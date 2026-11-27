@@ -10,6 +10,7 @@
 use core::marker::PhantomData;
 use poulpy_core::layouts::Base2K;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
@@ -20,7 +21,11 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, galois_element};
 
-use crate::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, api::LtDiagonalMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
+use crate::layouts::replicated::{factor_schedule, gather_offsets, placement_indexes};
+use crate::{
+    CKKSCompositionError, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, SetCKKSInfos, SlotLayout, api::LtDiagonalMeta,
+    layouts::CKKSPlaintextOwned, numerics::CKKSFloat,
+};
 use num_traits::FloatConst;
 
 /// Real scalar used for plaintext DFT-matrix generation, with platform-independent
@@ -80,6 +85,8 @@ pub enum DFTOutputFormat {
 /// (`s` read right-to-left) — that reversal is the caller's, not the library's.
 /// (Symmetric schedules such as `vec![(1, g); log_slots]` are their own reverse,
 /// so the same schedule round-trips.)
+///
+/// The transform runs on the full layout, or on a replicated one ([`Self::with_slot_layout`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct DFTPlan {
     /// Encode (IDFT) or Decode (DFT).
@@ -101,8 +108,14 @@ pub struct DFTPlan {
     pub(crate) bit_reversed: bool,
     /// Per-factor coefficient metadata: the torus width the factor plaintexts
     /// are allocated with, and the scale (`log_delta` — the `log_budget` bits
-    /// each factor consumes) they are encoded at.
+    /// each factor consumes) they are encoded at. Its slot layout is the one
+    /// the transform runs on ([`Self::with_slot_layout`]).
     pub(crate) coeffs_meta: CoeffsMeta,
+    /// Factors of the placement of a replicated layout, `0` to merge it into the one factor of the transform. Set via
+    /// [`Self::with_placement_factors`].
+    pub(crate) placement_factors: usize,
+    /// Scale of the last evaluated factor, the others' when `None`. Set via [`Self::with_last_factor_log_delta`].
+    pub(crate) last_factor_log_delta: Option<usize>,
     /// The first factor is applied by the modulus raise, on the raised
     /// ciphertext while it is still small. Set via
     /// [`Self::with_first_factor_on_raise`].
@@ -110,6 +123,8 @@ pub struct DFTPlan {
     /// The factors switch with the keys of power-of-two rotations only. Set via
     /// [`Self::with_power_of_two_keys`].
     pub(crate) power_of_two_keys: bool,
+    /// The factors of a replicated layout fit their giant steps to their diagonals. Set via [`Self::with_optimal_bsgs`].
+    pub(crate) fitted_giant_steps: bool,
 }
 
 /// Single source of truth for the radix-2 merge geometry, shared by the factor
@@ -299,8 +314,11 @@ impl DFTPlan {
             scaling: None,
             bit_reversed: false,
             coeffs_meta,
+            placement_factors: 0,
+            last_factor_log_delta: None,
             first_factor_on_raise: false,
             power_of_two_keys: false,
+            fitted_giant_steps: false,
         };
         plan.schedule.check("DFTPlan")?;
         if plan.num_factors().checked_mul(plan.coeffs_meta.log_delta()).is_none() {
@@ -369,6 +387,189 @@ impl DFTPlan {
         self.power_of_two_keys
     }
 
+    /// Runs the transform on `slot_layout`, the slot layout of [`Self::coeffs_meta`], [`SlotLayout::Full`] by default.
+    /// On a [replicated layout](SlotLayout::Replicated) of `k` values of period `R`, the transform acts on the `k` points
+    /// of the subring of degree `2k` (`k/2` for an `Encode` writing two batches, the second times `-i`), and its
+    /// evaluation starts with the normalized trace, at the ciphertext's degree, onto the period its first factor reads:
+    /// `kR` for `Decode`, the points for `Encode`. `Decode` moves the data slots onto the points, weighted `R` for the
+    /// trace onto the points that completes the map after the raise, then applies the blockwise DFT of the schedule;
+    /// `Encode` applies that DFT, then moves the points onto the data slots. The move takes
+    /// [`Self::with_placement_factors`] factors or merges into the one factor of the transform. The DFT factors take the
+    /// giant steps of the schedule and the others a square-root one, unless [`Self::with_optimal_bsgs`] fits every
+    /// factor's to its diagonals. The last `Encode` factor is quantized with the layout's shaping.
+    ///
+    /// The compilation refuses with `InvalidPlan` a replicated plan on another number of points, with the sparse
+    /// repack, a first factor on the raise, a bit reversal or the keys of power-of-two rotations, and the placement and
+    /// last-factor settings on the full layout.
+    pub fn with_slot_layout(mut self, slot_layout: SlotLayout) -> Self {
+        self.coeffs_meta.meta.slot_layout = slot_layout;
+        self
+    }
+
+    /// Moves the values of a replicated layout between its data slots and the points of the transform in
+    /// `placement_factors` factors of about `k^(1/placement_factors)` 0/1 mask diagonals, at most `log2(k)`. `0`, the
+    /// default, merges the move into the transform's one factor, which reads only the data slots: `R <= k` on
+    /// `Decode`.
+    pub fn with_placement_factors(mut self, placement_factors: usize) -> Self {
+        self.placement_factors = placement_factors;
+        self
+    }
+
+    /// Encodes the last evaluated factor of a replicated plan at scale `2^log_delta`, the others at the plan's.
+    pub fn with_last_factor_log_delta(mut self, log_delta: usize) -> Self {
+        self.last_factor_log_delta = Some(log_delta);
+        self
+    }
+
+    /// The slot layout the transform runs on ([`Self::with_slot_layout`]).
+    pub(crate) fn slot_layout(&self) -> SlotLayout {
+        self.coeffs_meta.meta.slot_layout
+    }
+
+    /// `InvalidPlan` for the settings [`Self::with_slot_layout`] refuses.
+    pub(crate) fn check_slot_layout(&self) -> crate::CKKSResult<()> {
+        let invalid = |reason: String| -> crate::CKKSResult<()> {
+            Err(CKKSCompositionError::InvalidPlan { plan: "DFTPlan", reason }.into())
+        };
+        let SlotLayout::Replicated(layout) = self.slot_layout() else {
+            if self.placement_factors > 0 || self.last_factor_log_delta.is_some() {
+                return invalid("placement factors and a last-factor scale take a replicated layout".into());
+            }
+            return Ok(());
+        };
+        let (log_slots, log_k) = (self.log_slots(), layout.log_k());
+        if log_slots != log_k && !(self.kind == DFTType::Encode && log_slots + 1 == log_k) {
+            return invalid(format!(
+                "a transform on 2^{log_slots} points takes a replicated layout of as many values, or Encode of twice as many, got 2^{log_k}"
+            ));
+        }
+        if self.format == DFTOutputFormat::RepackImagAsReal
+            || self.first_factor_on_raise
+            || self.bit_reversed
+            || self.power_of_two_keys
+        {
+            return invalid(
+                "a replicated layout takes no repack, no first factor on the raise, no bit reversal and a key per rotation"
+                    .into(),
+            );
+        }
+        if self.placement_factors > log_slots {
+            return invalid(format!("the placement takes at most log2(k) = {log_slots} factors"));
+        }
+        if self.placement_factors == 0 && self.num_factors() > 1 {
+            return invalid("a placement merged into the transform takes a schedule of one factor".into());
+        }
+        if self.placement_factors == 0 && self.kind == DFTType::Decode && layout.log_r() > log_slots {
+            return invalid(format!(
+                "a merged placement reads a period of at most the 2^{log_slots} points"
+            ));
+        }
+        let scale = self.coeffs_meta.log_delta();
+        let head = (self.num_evaluated_factors() - 1).checked_mul(scale);
+        if head
+            .and_then(|head| head.checked_add(self.last_factor_log_delta.unwrap_or(scale)))
+            .is_none()
+        {
+            return invalid("the scales of the factors overflow the consumed-bit count".into());
+        }
+        let widest = scale.max(self.last_factor_log_delta.unwrap_or(scale));
+        match widest
+            .checked_add(super::replicated::MAX_DIAGONAL_HEADROOM)
+            .and_then(|k| u32::try_from(k).ok())
+        {
+            Some(_) => Ok(()),
+            None => invalid(format!(
+                "a factor scale of 2^{widest} with its headroom does not fit a torus width"
+            )),
+        }
+    }
+
+    /// The levels of the normalized trace that starts the transform at degree `2^log_n`, onto the period its first
+    /// factor reads, `None` on the full layout.
+    pub(crate) fn trace_levels(&self, log_n: usize) -> Option<Range<usize>> {
+        let SlotLayout::Replicated(layout) = self.slot_layout() else {
+            return None;
+        };
+        let period = self.log_slots() + if self.kind == DFTType::Decode { layout.log_r() } else { 0 };
+        Some(period + 1..log_n.max(period + 1))
+    }
+
+    /// The chain the compiled matrix evaluates at degree `2^log_n`, replayed without generating any diagonal: on the
+    /// full layout the factors of the schedule but one left to the raise, on a replicated layout the trace, then the
+    /// factors [`Self::with_slot_layout`] orders. Each factor consumes the plan's scale, the last
+    /// [`Self::with_last_factor_log_delta`]'s.
+    fn steps(&self, log_n: usize) -> Vec<DFTStep> {
+        let factors = match self.slot_layout() {
+            SlotLayout::Full => {
+                let slots = self.factor_slots(log_n);
+                let rotations = self.full_rotations(log_n).into_iter().zip(&self.schedule.steps);
+                rotations
+                    .skip(usize::from(self.first_factor_on_raise))
+                    .map(|(rotations, step)| LinearTransformationLayout {
+                        galois: rotations.into_iter().map(galois_of_rotation).collect(),
+                        slots,
+                        strategy: self.factor_strategy(step.giant_step),
+                    })
+                    .collect()
+            }
+            SlotLayout::Replicated(layout) => self.replicated_factors(layout),
+        };
+        let (scale, last) = (self.coeffs_meta.log_delta(), factors.len().saturating_sub(1));
+        let factors = factors.into_iter().enumerate().map(|(i, layout)| DFTStep::Factor {
+            layout,
+            log_delta: self.last_factor_log_delta.filter(|_| i == last).unwrap_or(scale),
+        });
+        let trace = self.trace_levels(log_n).map(|levels| DFTStep::Trace { levels });
+        trace.into_iter().chain(factors).collect()
+    }
+
+    /// The schedule strategy and scale of each factor the generator gives, in evaluation order: every factor of the
+    /// schedule on the full layout, the one left to the raise included, and those of [`Self::steps`] on a replicated
+    /// layout.
+    pub(crate) fn factor_encodings(&self, log_n: usize) -> Vec<(LinearTransformationStrategy, usize)> {
+        let scale = self.coeffs_meta.log_delta();
+        let SlotLayout::Replicated(_) = self.slot_layout() else {
+            let steps = self.schedule.steps.iter();
+            return steps.map(|step| (self.factor_strategy(step.giant_step), scale)).collect();
+        };
+        let factors = self.steps(log_n).into_iter().filter_map(|step| match step {
+            DFTStep::Factor { layout, log_delta } => Some((layout.strategy, log_delta)),
+            DFTStep::Trace { .. } => None,
+        });
+        factors.collect()
+    }
+
+    /// The schedule of each factor of the plan on `layout`, in evaluation order.
+    fn replicated_factors(&self, layout: ReplicatedLayout) -> Vec<LinearTransformationLayout> {
+        let (k, m, r) = (1usize << self.log_slots(), 1usize << layout.log_k(), 1usize << layout.log_r());
+        let fitted = self.fitted_giant_steps;
+        let replay = |tile: usize| {
+            let maps = self
+                .replay_diagonals(0, Some(tile as i64))
+                .into_iter()
+                .zip(&self.schedule.steps);
+            maps.map(move |(map, step)| {
+                factor_schedule(map.into_keys().map(galois_of_rotation), tile, fitted, Some(step.giant_step))
+            })
+        };
+        let placement = |values: usize, compress| {
+            let moves = placement_indexes(values, r, self.placement_factors, compress).into_iter();
+            moves.map(move |rotations| factor_schedule(rotations.into_iter().map(galois_of_rotation), values * r, fitted, None))
+        };
+        match (self.kind, self.placement_factors) {
+            (DFTType::Decode, 0) => {
+                let offsets = (0..k)
+                    .flat_map(|c| gather_offsets(k, r, c))
+                    .map(|(_, o)| galois_of_rotation(o as i64));
+                vec![factor_schedule(offsets, k * r, fitted, None)]
+            }
+            // The map from the points reads their first `k` offsets.
+            (DFTType::Encode, 0) => vec![factor_schedule((0..k as i64).map(galois_of_rotation), m * r, fitted, None)],
+            (DFTType::Decode, _) => placement(k, true).chain(replay(k * r)).collect(),
+            (DFTType::Encode, _) => replay(k).chain(placement(m, false)).collect(),
+        }
+    }
+
     /// The schedule strategy of a factor with giant step `giant_step`: a direct
     /// factor reads one key per diagonal either way.
     pub(crate) fn factor_strategy(&self, giant_step: usize) -> LinearTransformationStrategy {
@@ -386,9 +587,16 @@ impl DFTPlan {
     }
 
     /// Factors the compiled matrix evaluates: all of them, or all but the
-    /// first when it is left to the modulus raise.
+    /// first when it is left to the modulus raise, and the placement factors
+    /// of a replicated layout ([`Self::with_placement_factors`]).
+    ///
+    /// # Panics
+    ///
+    /// For a count of placement factors that overflows `usize`.
     pub fn num_evaluated_factors(&self) -> usize {
-        self.num_factors() - usize::from(self.first_factor_on_raise)
+        (self.num_factors() - usize::from(self.first_factor_on_raise))
+            .checked_add(self.placement_factors)
+            .expect("DFTPlan::num_evaluated_factors: the placement factors overflow the factor count")
     }
 
     /// Galois elements of the first factor's diagonals, by increasing rotation, on a
@@ -418,8 +626,14 @@ impl DFTPlan {
     /// rather than part of [`Self::new`]. Call this after
     /// [`Self::with_bit_reversed`], since bit reversal changes the diagonal
     /// geometry. Sparse repack doubles only the boundary factor (last `Encode`,
-    /// first `Decode`). Depths, scale, and budget consumption are unchanged.
+    /// first `Decode`). Depths, scale, and budget consumption are unchanged. On a
+    /// replicated layout, set before or after [`Self::with_slot_layout`], every
+    /// factor fits its giant step to its diagonals when the plan is compiled.
     pub fn with_optimal_bsgs(mut self, log_n: usize) -> Self {
+        self.fitted_giant_steps = true;
+        if self.slot_layout() != SlotLayout::Full {
+            return self;
+        }
         let sparse = self.is_sparse_repack(log_n);
         let slots = 1usize << self.log_slots();
         let last_factor = self.num_factors() - 1;
@@ -501,9 +715,17 @@ impl DFTPlan {
     }
 
     /// `log_budget` bits the transform consumes: one factor scale per
-    /// evaluated factor ([`Self::num_evaluated_factors`]).
+    /// evaluated factor ([`Self::num_evaluated_factors`]), the last at
+    /// [`Self::with_last_factor_log_delta`].
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::num_evaluated_factors`], for a count of placement factors that overflows `usize`.
     pub fn consumed_bits(&self) -> usize {
-        self.num_evaluated_factors() * self.coeffs_meta.log_delta()
+        let scale = self.coeffs_meta.log_delta();
+        let last = self.last_factor_log_delta.unwrap_or(scale);
+        let head = self.num_evaluated_factors().checked_sub(1);
+        head.map_or(0, |head| head.saturating_mul(scale).saturating_add(last))
     }
 
     /// Whether this plan resolves to the sparse `RepackImagAsReal` path on a ring
@@ -516,8 +738,9 @@ impl DFTPlan {
 
     /// Replays the radix-2 merges of every factor without generating any
     /// diagonal value: per factor, the map from a non-zero diagonal index to
-    /// the slot count that diagonal repeats over (its period).
-    fn replay_diagonals(&self, log_n: usize) -> Vec<BTreeMap<i64, usize>> {
+    /// the slot count that diagonal repeats over (its period). With a `tile`, the
+    /// merges of `ckks_dft_matrices_gen_blockwise` on tiles of that many slots.
+    pub(crate) fn replay_diagonals(&self, log_n: usize, tile: Option<i64>) -> Vec<BTreeMap<i64, usize>> {
         let log_slots = self.log_slots();
         let slots = 1i64 << log_slots;
         let sparse = self.is_sparse_repack(log_n);
@@ -531,7 +754,7 @@ impl DFTPlan {
             // Only the sparse-repack first Decode factor starts from the repack
             // matrix ({0, slots}) and wraps its rotations modulo 2·slots.
             let repack_first = sparse && self.kind == DFTType::Decode && i == 0;
-            let merge_n = if repack_first { slots << 1 } else { slots };
+            let merge_n = tile.unwrap_or(if repack_first { slots << 1 } else { slots });
             let mask = merge_n - 1;
 
             // The identity seed is constant (period 1); the repack seed `(1 | i)`
@@ -582,18 +805,35 @@ impl DFTPlan {
     /// sparse-repack path (which prepends the `{0, slots}` repack diagonals and
     /// widens the first `Decode` factor to `2·slots`).
     ///
-    /// Infallible: every `DFTPlan` is shape-valid by construction
-    /// ([`Self::new`]).
+    /// Infallible: the full layout's shape is valid by construction ([`Self::new`]). On a replicated layout, the
+    /// factors [`Self::with_slot_layout`] orders, whose settings the plan's compilation checks, not this query.
     pub fn diagonal_galois(&self, log_n: usize) -> Vec<Vec<i64>> {
-        self.diagonal_rotations(log_n)
-            .into_iter()
-            .map(|rotations| rotations.into_iter().map(galois_of_rotation).collect())
-            .collect()
+        match self.slot_layout() {
+            SlotLayout::Full => self
+                .full_rotations(log_n)
+                .into_iter()
+                .map(|rotations| rotations.into_iter().map(galois_of_rotation).collect())
+                .collect(),
+            SlotLayout::Replicated(layout) => self.replicated_factors(layout).into_iter().map(|f| f.galois).collect(),
+        }
     }
 
-    /// The rotations of [`Self::diagonal_galois`], by increasing value.
+    /// The rotations of [`Self::diagonal_galois`], by increasing value on the full layout, each in its factor's slots
+    /// on a replicated layout.
     fn diagonal_rotations(&self, log_n: usize) -> Vec<Vec<i64>> {
-        self.replay_diagonals(log_n)
+        match self.slot_layout() {
+            SlotLayout::Full => self.full_rotations(log_n),
+            SlotLayout::Replicated(layout) => self
+                .replicated_factors(layout)
+                .into_iter()
+                .map(|f| f.galois.iter().map(|&p| galois_rotation(p, f.slots)).collect())
+                .collect(),
+        }
+    }
+
+    /// [`Self::diagonal_rotations`] of the radix-2 merges of the full layout.
+    fn full_rotations(&self, log_n: usize) -> Vec<Vec<i64>> {
+        self.replay_diagonals(log_n, None)
             .iter()
             .map(|map| map.keys().copied().collect())
             .collect()
@@ -635,10 +875,15 @@ impl DFTPlan {
     /// BSGS pre-rotation of a diagonal keeps its period, so the value holds
     /// for the encoded transformation under any strategy.
     ///
-    /// Infallible: every `DFTPlan` is shape-valid by construction
-    /// ([`Self::new`]).
+    /// # Panics
+    ///
+    /// On a replicated plan, whose compiled factors (placement, tiles and fitted points) are not the schedule's merges.
     pub fn diagonal_log_sparsity(&self, log_n: usize) -> Vec<Vec<(i64, usize)>> {
-        self.replay_diagonals(log_n)
+        assert!(
+            self.slot_layout() == SlotLayout::Full,
+            "DFTPlan::diagonal_log_sparsity: a replicated plan's factors are not the schedule's merges"
+        );
+        self.replay_diagonals(log_n, None)
             .iter()
             .map(|map| {
                 map.iter()
@@ -651,6 +896,10 @@ impl DFTPlan {
     /// The sparsity every diagonal of each factor matrix has, in evaluation
     /// order: the minimum of [`Self::diagonal_log_sparsity`] over the factor,
     /// which is the value to store and prepare the factor's diagonals at.
+    ///
+    /// # Panics
+    ///
+    /// On a replicated plan, as [`Self::diagonal_log_sparsity`].
     pub fn factor_log_sparsity(&self, log_n: usize) -> Vec<usize> {
         self.diagonal_log_sparsity(log_n)
             .iter()
@@ -669,18 +918,21 @@ impl DFTPlan {
     ///
     /// Derived from the per-factor [`diagonal_galois`](Self::diagonal_galois) and
     /// per-factor BSGS `giant_steps` (plus the `slots` repack rotation on the
-    /// sparse path), without generating any diagonal. Equals
-    /// [`DFTMatrix::galois_elements`] on the compiled matrix. The conjugation key
-    /// used by the split forward transform is separate and not included here.
+    /// sparse path, and the trace of a replicated layout), without generating any
+    /// diagonal. Equals [`DFTMatrix::galois_elements`] on the compiled matrix, but
+    /// for the trace. The conjugation key used by the split forward transform is
+    /// separate and not included here.
     ///
-    /// Infallible: every `DFTPlan` is shape-valid by construction
-    /// ([`Self::new`]).
+    /// Infallible: the full layout's shape is valid by construction ([`Self::new`]); the replicated settings are
+    /// checked when the plan is compiled, not by this query.
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: BTreeSet<i64> = self
             .galois_elements_per_factor(log_n, cyclotomic_order)
             .into_iter()
             .flatten()
             .collect();
+        let trace = self.trace_levels(log_n).into_iter().flatten();
+        set.extend(trace.map(|level| trace_galois_element(level, cyclotomic_order)));
         if self.is_sparse_repack(log_n) {
             set.insert(galois_element(1i64 << self.log_slots(), cyclotomic_order));
         }
@@ -689,63 +941,51 @@ impl DFTPlan {
         set.into_iter().collect()
     }
 
-    /// The Galois elements of each factor, in evaluation order.
+    /// The Galois elements of each factor, in evaluation order, none for a first factor left to the
+    /// modulus raise, which rotates with keys of its own.
     ///
     /// Their union is [`Self::galois_elements`] less the repack rotation of the
-    /// sparse path, which belongs to no factor. An element can serve several
-    /// factors.
+    /// sparse path and the trace of a replicated layout, which belong to no factor.
+    /// An element can serve several factors.
     pub fn galois_elements_per_factor(&self, log_n: usize, cyclotomic_order: i64) -> Vec<Vec<i64>> {
         let identity = galois_element(0, cyclotomic_order);
-        self.factor_schedules(log_n)
-            .into_iter()
-            .map(|schedule| {
-                let Some(schedule) = schedule else {
-                    return Vec::new();
-                };
-                let mut set: BTreeSet<i64> = schedule.galois_elements(cyclotomic_order).into_iter().collect();
+        let raised = (0..usize::from(self.first_factor_on_raise)).map(|_| Vec::new());
+        let factors = self.steps(log_n).into_iter().filter_map(|step| match step {
+            DFTStep::Factor { layout, .. } => {
+                let mut set: BTreeSet<i64> = layout.index().galois_elements(cyclotomic_order).into_iter().collect();
                 set.remove(&identity);
-                set.into_iter().collect()
-            })
-            .collect()
-    }
-
-    /// The BSGS schedule of each factor, in evaluation order, `None` for a first factor left to
-    /// the modulus raise, which rotates with keys of its own.
-    fn factor_schedules(&self, log_n: usize) -> Vec<Option<LinearTransformationPlan>> {
-        let slot_count = self.factor_slots(log_n);
-        self.diagonal_galois(log_n)
-            .into_iter()
-            .zip(&self.schedule.steps)
-            .enumerate()
-            .map(|(factor, (galois, step))| {
-                (factor != 0 || !self.first_factor_on_raise).then(|| {
-                    LinearTransformationLayout {
-                        galois,
-                        slots: slot_count,
-                        strategy: self.factor_strategy(step.giant_step),
-                    }
-                    .index()
-                })
-            })
-            .collect()
+                Some(set.into_iter().collect())
+            }
+            DFTStep::Trace { .. } => None,
+        });
+        raised.chain(factors).collect()
     }
 
     /// Every rotation key of this transform, by Galois element, with the bits between the
-    /// transform's input and the widest ciphertext the key switches: evaluated factor `i` starts
-    /// `i` factor scales down, its baby rotations switch there, and its giant rotations switch
-    /// the product, one factor scale lower. The repack rotation of the sparse path switches
-    /// what the factors leave.
+    /// transform's input and the widest ciphertext the key switches: the trace of a replicated
+    /// layout switches the input, each factor starts the scales of those before it down, its
+    /// baby rotations switch there, and its giant rotations switch the product, one factor scale
+    /// lower. The repack rotation of the sparse path switches what the factors leave.
     pub(crate) fn key_offsets(&self, log_n: usize, cyclotomic_order: i64) -> BTreeMap<i64, usize> {
-        let scale = self.coeffs_meta.log_delta();
-        let mut offsets = BTreeMap::new();
-        for (factor, schedule) in self.factor_schedules(log_n).iter().flatten().enumerate() {
-            charge_factor_keys(&mut offsets, schedule, factor * scale, scale, cyclotomic_order);
+        let (mut offsets, mut below) = (BTreeMap::new(), 0);
+        for step in self.steps(log_n) {
+            match step {
+                DFTStep::Trace { levels } => {
+                    for level in levels {
+                        charge_key(&mut offsets, trace_galois_element(level, cyclotomic_order), below);
+                    }
+                }
+                DFTStep::Factor { layout, log_delta } => {
+                    charge_factor_keys(&mut offsets, &layout.index(), below, log_delta, cyclotomic_order);
+                    below += log_delta;
+                }
+            }
         }
         if self.is_sparse_repack(log_n) {
             charge_key(
                 &mut offsets,
                 galois_element(1i64 << self.log_slots(), cyclotomic_order),
-                self.consumed_bits(),
+                below,
             );
         }
         offsets.remove(&galois_element(0, cyclotomic_order));
@@ -808,14 +1048,31 @@ impl DFTPlan {
     }
 }
 
+/// A step of the chain a [`DFTPlan`] evaluates ([`DFTPlan::steps`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DFTStep {
+    /// The normalized trace over `levels`.
+    Trace { levels: Range<usize> },
+    /// A factor of the schedule `layout`, which consumes `log_delta` bits.
+    Factor {
+        layout: LinearTransformationLayout,
+        log_delta: usize,
+    },
+}
+
+/// The Galois element of the level `level` of a normalized trace.
+pub(crate) fn trace_galois_element(level: usize, cyclotomic_order: i64) -> i64 {
+    galois_element(1 << (level - 1), cyclotomic_order)
+}
+
 /// `below` bits for the key `p`, unless a wider use already took less.
-fn charge_key(offsets: &mut BTreeMap<i64, usize>, p: i64, below: usize) {
+pub(crate) fn charge_key(offsets: &mut BTreeMap<i64, usize>, p: i64, below: usize) {
     offsets.entry(p).and_modify(|seen| *seen = below.min(*seen)).or_insert(below);
 }
 
 /// The keys of a factor starting `below` bits down, with a product of `scale` bits between its
 /// baby and its giant rotations.
-fn charge_factor_keys(
+pub(crate) fn charge_factor_keys(
     offsets: &mut BTreeMap<i64, usize>,
     schedule: &LinearTransformationPlan,
     below: usize,
@@ -964,14 +1221,14 @@ pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
     /// factors.
     fn factor_plans(&self) -> &[LinearTransformationPlan];
 
-    /// Labels the output of a SlotsToCoeffs that ends a bootstrap.
-    fn stamp_transform_output<C: SetCKKSInfos>(&self, _ct: &mut C) {}
-
-    /// The replicated route of a bootstrap run, `None` otherwise: the step then wraps the factors in the trace, the
-    /// working bits and the rounding [`ReplicatedRoute`](crate::layouts::ReplicatedRoute) gives the transform.
-    fn replicated_stage(&self) -> Option<crate::layouts::ReplicatedStage<'_>> {
-        None
+    /// Scale bits the chain lifts its input by, after its checks: the S2C guard and working bits of a bootstrap run on a
+    /// replicated layout, which the input's allocation holds.
+    fn input_lift(&self) -> usize {
+        0
     }
+
+    /// Labels the output of the transform a bootstrap step ran.
+    fn stamp_transform_output<C: SetCKKSInfos>(&self, _ct: &mut C) {}
 }
 
 impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>
@@ -1116,8 +1373,8 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
         self.inner.plan.coeffs_meta.meta
     }
 
-    /// Total `log_budget` bits the whole transform consumes: `num_factors ×
-    /// factor_log_delta`. The input ciphertext must have at least this much.
+    /// Total `log_budget` bits the whole transform consumes ([`DFTPlan::consumed_bits`]). The input ciphertext must
+    /// have at least this much.
     pub fn consumed_bits(&self) -> usize {
         self.plan().consumed_bits()
     }
@@ -1157,46 +1414,58 @@ where
     }
 }
 
-/// `InvalidPlan` for a transform whose slots a ring of degree `2^log_n` does not hold.
+/// `InvalidPlan` for a transform whose slots, with their period on a replicated layout, a ring of degree `2^log_n` does
+/// not hold, and for a dense `RepackImagAsReal` plan.
 pub(crate) fn check_dft_fits(plan: &DFTPlan, log_n: usize) -> crate::CKKSResult<()> {
-    let invalid = |reason: &str| -> crate::CKKSResult<()> {
-        Err(crate::CKKSCompositionError::InvalidPlan {
-            plan: "DFTPlan",
-            reason: reason.into(),
-        }
-        .into())
+    let invalid = |reason: String| -> crate::CKKSResult<()> {
+        Err(crate::CKKSCompositionError::InvalidPlan { plan: "DFTPlan", reason }.into())
     };
-    if plan.log_slots() >= log_n {
-        return invalid("DFT exceeds module slot capacity");
+    let log_slots = match plan.slot_layout() {
+        SlotLayout::Full => plan.log_slots(),
+        SlotLayout::Replicated(layout) => layout.log_k() + layout.log_r(),
+    };
+    if log_slots >= log_n {
+        return invalid(format!(
+            "DFT has 2^{log_slots} slots, but a degree-2^{log_n} CKKS ring supports at most 2^{} slots",
+            log_n.saturating_sub(1)
+        ));
     }
     if plan.format() == DFTOutputFormat::RepackImagAsReal && plan.log_slots() + 1 >= log_n {
-        return invalid("dense DFT requires Split instead of Repack");
+        return invalid("dense DFT requires Split instead of Repack".into());
     }
     Ok(())
 }
 
-/// `InvalidOperand` for `op` unless `factors` are the evaluated factors of `plan` on `module`, after `plan`'s own fit.
+/// `InvalidOperand` for `op` unless `factors` are the evaluated factors of `plan` on `module`, after `plan`'s own
+/// checks and fit: each diagonal at the plan's width and scale on the full layout, and on a replicated layout at the
+/// scale of its factor, the factor's diagonals sharing one width within the headroom a factor encoding takes.
 fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta>(
     op: &'static str,
     module: &Module<BE>,
     plan: &DFTPlan,
     factors: &[LinearTransformation<P>],
 ) -> crate::CKKSResult<()> {
+    plan.check_slot_layout()?;
     check_dft_fits(plan, module.log_n())?;
     crate::ckks_ensure_operand!(
         op,
         factors.len() == plan.num_evaluated_factors(),
         "DFT factor count does not match its plan"
     );
+    let scales: Vec<usize> = plan
+        .factor_encodings(module.log_n())
+        .into_iter()
+        .map(|(_, log_delta)| log_delta)
+        .collect();
     let mut base2k = None;
-    for factor in factors {
+    for (index, factor) in factors.iter().enumerate() {
         let first = factor.first_diagonal_plaintext();
         crate::ckks_ensure_operand!(op, first.is_some(), "DFT factor has no diagonals");
         let first = first.unwrap();
         let n = first.n().as_usize();
         crate::ckks_ensure_operand!(
             op,
-            n.is_power_of_two() && n >= BE::MIN_DEGREE && n <= module.n(),
+            n.is_power_of_two() && n <= module.n(),
             "DFT diagonal degree does not embed in the module"
         );
         let expected_base2k = *base2k.get_or_insert(first.base2k());
@@ -1218,13 +1487,17 @@ fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::
                     giant.galois,
                     diagonal.baby_galois
                 );
+                let encoding = match plan.slot_layout() {
+                    SlotLayout::Full => pt.k() == plan.coeffs_meta().k && pt.lt_log_scale() == plan.coeffs_meta().log_delta(),
+                    SlotLayout::Replicated(_) => scales.get(index).is_some_and(|&log_delta| {
+                        pt.k() == first.k()
+                            && pt.lt_log_scale() == log_delta
+                            && pt.k().as_usize() <= log_delta + super::replicated::MAX_DIAGONAL_HEADROOM
+                    }),
+                };
                 crate::ckks_ensure_operand!(
                     op,
-                    pt.n() == first.n()
-                        && pt.rank().as_usize() == 0
-                        && pt.base2k() == expected_base2k
-                        && pt.k() == plan.coeffs_meta().k
-                        && pt.lt_log_scale() == plan.coeffs_meta().log_delta(),
+                    pt.n() == first.n() && pt.rank().as_usize() == 0 && pt.base2k() == expected_base2k && encoding,
                     "DFT diagonal layout does not match its plan"
                 );
                 // Preparation stores `size()` whole limbs and reports their full bit width.
