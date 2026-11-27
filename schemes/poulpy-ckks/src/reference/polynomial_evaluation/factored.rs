@@ -364,14 +364,14 @@ where
     for &a in inputs {
         ckks_ensure_operand!(
             op,
-            a.n() == first.n() && a.rank() == first.rank() && a.slot_layout() == first.slot_layout(),
-            "input degree, rank or slot layout differs"
+            a.n() == first.n() && a.slot_layout() == first.slot_layout(),
+            "input degree or slot layout differs"
         );
         if standalone {
             ckks_ensure_operand!(
                 op,
-                a.base2k() == first.base2k() && a.log_delta() == first.log_delta(),
-                "input radix or scale differs"
+                a.rank() == first.rank() && a.base2k() == first.base2k() && a.log_delta() == first.log_delta(),
+                "input rank, radix or scale differs"
             );
         }
     }

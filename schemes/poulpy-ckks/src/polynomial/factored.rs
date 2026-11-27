@@ -13,59 +13,7 @@ use crate::{
     },
 };
 
-/// A value number refers to an input, then to the result of a preceding step.
-/// A prepared right operand can only be read by a prepared product.
-#[derive(Clone, Debug)]
-pub enum Factor {
-    /// Copy the value.
-    Value(usize),
-    /// Start a zero accumulator at the scale and budget of the given value.
-    Zero(usize),
-    Square(usize),
-    Product(usize, usize),
-    /// Prepare the value once for all its subsequent prepared products.
-    PrepareRight(usize),
-    /// Multiply the left ciphertext by the prepared right value.
-    PreparedProduct(usize, usize),
-    /// Sum terms in order. Each pair selects a value and a coefficient in `table`.
-    /// The last term is the seed. An optional constant is added in BSGS baby-step order.
-    WeightedSum {
-        table: usize,
-        terms: Vec<(usize, usize)>,
-        constant: Option<usize>,
-    },
-}
-
-/// An in-place update to the result of a factor. Constants are (table, coefficient) pairs.
-#[derive(Clone, Copy, Debug)]
-pub enum FactorUpdate {
-    Add(usize),
-    Sub(usize),
-    AddConstant((usize, usize)),
-    /// Add the product of a value and a coefficient in one operation.
-    MulAddConstant(usize, (usize, usize)),
-    /// Multiply the value by its real coefficient at accumulator width, multiply by i, and add.
-    MulAddImaginaryConstant(usize, (usize, usize)),
-    MulPow2(u32),
-    /// Multiply by the imaginary unit in the standard ring.
-    MulI,
-}
-
-/// A factor followed by its updates in evaluation order.
-#[derive(Clone, Debug)]
-pub struct FactorStep {
-    pub factor: Factor,
-    pub updates: Vec<FactorUpdate>,
-}
-
-impl FactorStep {
-    pub fn new(factor: Factor, updates: impl Into<Vec<FactorUpdate>>) -> Self {
-        Self {
-            factor,
-            updates: updates.into(),
-        }
-    }
-}
+pub use poulpy_core::layouts::{Factor, FactorStep, FactorUpdate};
 
 /// A ring-specific program. Values `0..inputs` are borrowed ciphertexts.
 /// Step `i` defines value `inputs + i`; the final ciphertext is the result.

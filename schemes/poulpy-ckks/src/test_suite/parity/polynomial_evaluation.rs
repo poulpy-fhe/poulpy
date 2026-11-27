@@ -5,7 +5,7 @@ use super::{
 };
 use crate::Scale;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSEvalModOps,
         CKKSPolynomialEvaluationOps,
@@ -16,13 +16,13 @@ use crate::{
     },
     oep::{CKKSEncodingImpl, CKKSImpl, CKKSPolynomialEvaluationImpl},
     polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
-    power_basis::{CKKSPowerBasisGen, PowerBasis},
+    power_basis::{CKKSPowerBasisGen, CKKSPowerBasisInsert, PowerBasis},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
     GLWEFill,
     api::GLWETensorKeyPreparedFactory,
-    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
+    layouts::{GGLWELayout, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module, Ring, Standard},
@@ -166,6 +166,29 @@ where
             "prepared and one-shot real evaluation differ"
         );
         results.push(snapshot::<BE, _, Rg>(&one_shot));
+        // A prepared evaluation must consume the caller's stored power.
+        let square = powers.take_power(2).unwrap();
+        let replacement_layout = CKKSLayout {
+            glwe_layout: square.glwe_layout(),
+            meta: square.meta(),
+        };
+        powers
+            .insert(2, fixture_ciphertext(module, &replacement_layout, 163))
+            .unwrap();
+        let mut replacement_out = fixture_ciphertext(module, &layout, 131);
+        with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_eval_poly_real_const_coeffs_from_power_basis(
+                &mut replacement_out,
+                &powers,
+                &encoded,
+                &prepared_key,
+                scratch,
+            )
+        })
+        .unwrap();
+        let with_replacement = snapshot::<BE, _, Rg>(&replacement_out);
+        assert_ne!(with_replacement, snapshot::<BE, _, Rg>(&one_shot));
+        results.push(with_replacement);
         // Exercise x², x²·x, T₂, and T₂·x input folds through production dispatch.
         for parity in [Parity::Even, Parity::Odd] {
             let encoded = folded::<F>(basis, parity)

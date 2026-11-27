@@ -7,6 +7,10 @@
 //! supplied by the scheme layer through the closure passed to
 //! [`Polynomial::decompose_bsgs_with`].
 
+mod factored;
+pub(crate) use factored::giant_runs;
+pub use factored::{Factor, FactorStep, FactorUpdate};
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -38,6 +42,17 @@ pub enum Parity {
     Even,
     /// Odd polynomial: only odd-degree coefficients are non-zero.
     Odd,
+}
+
+impl Parity {
+    pub(crate) fn baby_powers(self, degree: usize) -> impl Iterator<Item = usize> {
+        let (first, stride) = match self {
+            Self::Full => (1, 1),
+            Self::Even => (2, 2),
+            Self::Odd => (1, 2),
+        };
+        (first..=degree).step_by(stride)
+    }
 }
 
 /// Input rewrite attached to a decomposed polynomial.
