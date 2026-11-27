@@ -13,15 +13,13 @@ use std::cmp::Ordering;
 use poulpy_hal::layouts::MAX_RING_DEGREE;
 
 /// The cyclotomic order Galois elements are held at: `4 * MAX_RING_DEGREE`, a multiple of the
-/// order of every operand a module serves, on both rings.
+/// order of every operand a module serves, on both rings. 5 has order [`MAX_RING_DEGREE`] modulo
+/// it, so rotations are taken modulo [`MAX_RING_DEGREE`].
 pub const GALOIS_ORDER: i64 = 4 * MAX_RING_DEGREE as i64;
-
-/// The order of 5 modulo [`GALOIS_ORDER`]: rotations are taken modulo it.
-pub const GALOIS_ROTATIONS: i64 = GALOIS_ORDER / 4;
 
 /// The Galois element `(-1)^conjugate 5^rotation`, `rotation` of any sign.
 pub fn galois_from_parts(conjugate: bool, rotation: i64) -> i64 {
-    let power: i64 = pow5(rotation.rem_euclid(GALOIS_ROTATIONS));
+    let power: i64 = pow5(rotation.rem_euclid(MAX_RING_DEGREE as i64));
     if conjugate { -power } else { power }
 }
 
@@ -30,7 +28,7 @@ pub fn galois_of_rotation(rotation: i64) -> i64 {
     galois_from_parts(false, rotation)
 }
 
-/// The conjugation bit and the rotation, in `[0, GALOIS_ROTATIONS)`, of the Galois element `p`.
+/// The conjugation bit and the rotation, in `[0, MAX_RING_DEGREE)`, of the Galois element `p`.
 ///
 /// # Panics
 ///
@@ -41,7 +39,7 @@ pub fn galois_parts(p: i64) -> (bool, i64) {
     let (conjugate, x) = if q & 3 == 1 { (false, q) } else { (true, GALOIS_ORDER - q) };
     // Bit `k` of the rotation fixes the residue modulo `2^(k + 3)`, as `5^(2^k) = 1 + 2^(k + 2)` there.
     let (mut rotation, mut power): (i64, i64) = (0, 1);
-    for k in 0..GALOIS_ROTATIONS.trailing_zeros() {
+    for k in 0..MAX_RING_DEGREE.trailing_zeros() {
         let modulus: i64 = 1 << (k + 3);
         if (power - x).rem_euclid(modulus) != 0 {
             rotation |= 1 << k;
@@ -60,7 +58,7 @@ pub fn galois_is_identity(p: i64) -> bool {
 ///
 /// # Panics
 ///
-/// When `p` conjugates, or `slots` is not a power of two at most [`GALOIS_ROTATIONS`].
+/// When `p` conjugates, or `slots` is not a power of two at most [`MAX_RING_DEGREE`].
 pub fn galois_rotation(p: i64, slots: usize) -> i64 {
     let (conjugate, rotation) = galois_parts(p);
     assert!(!conjugate, "a slot rotation does not conjugate");
@@ -109,8 +107,8 @@ pub fn galois_cmp(p: &i64, q: &i64) -> Ordering {
 /// `slots` as the modulus of rotations.
 fn rotation_modulus(slots: usize) -> i64 {
     assert!(
-        slots.is_power_of_two() && slots as i64 <= GALOIS_ROTATIONS,
-        "the slot count must be a power of two at most GALOIS_ROTATIONS"
+        slots.is_power_of_two() && slots as u64 <= MAX_RING_DEGREE,
+        "the slot count must be a power of two at most MAX_RING_DEGREE"
     );
     slots as i64
 }
@@ -137,7 +135,7 @@ mod tests {
     #[test]
     fn galois_parts_invert_the_construction() {
         for conjugate in [false, true] {
-            for rotation in [0, 1, 2, 3, 100, 4095, GALOIS_ROTATIONS - 1] {
+            for rotation in [0, 1, 2, 3, 100, 4095, MAX_RING_DEGREE as i64 - 1] {
                 let p = galois_from_parts(conjugate, rotation);
                 assert_eq!(galois_parts(p), (conjugate, rotation));
                 assert_eq!(galois_parts(p + 4 * GALOIS_ORDER), (conjugate, rotation));
