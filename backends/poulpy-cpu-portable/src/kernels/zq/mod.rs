@@ -1,4 +1,6 @@
-//! Negacyclic number-theoretic transform over `Z/q` for a modulus of any size.
+//! Negacyclic number-theoretic transform over `Z/q` for a modulus of any size, on residues of
+//! `L` little-endian 64-bit words (`[u64; L]`, any odd `q < 2^(64 L)`): the butterflies
+//! multiply by Montgomery's method on the stack, with no allocation or division per call.
 //!
 //! The same structure as the FFT64 transform: a forward table [`ZqNTTTable`] and an
 //! inverse table [`ZqINTTTable`], an execute trait [`ZqDFTExecute`] that runs a table,

@@ -696,22 +696,23 @@ mod bin_fhe_tests {
 }
 
 mod zq {
+    use dashu_int::UBig;
     use poulpy_hal::test_suite::zq::{test_zq_new_rejects, test_zq_ntt, test_zq_ntt_rejects_wrong_length};
 
     use crate::ZqOracle;
 
     #[test]
     fn test_zq_ntt_oracle() {
-        test_zq_ntt::<ZqOracle>();
+        test_zq_ntt::<UBig, ZqOracle>();
     }
 
     #[test]
     fn test_zq_ntt_rejects_wrong_length_oracle() {
-        test_zq_ntt_rejects_wrong_length::<ZqOracle>();
+        test_zq_ntt_rejects_wrong_length::<UBig, ZqOracle>();
     }
 
     #[test]
     fn test_zq_new_rejects_oracle() {
-        test_zq_new_rejects::<ZqOracle>();
+        test_zq_new_rejects::<UBig, ZqOracle>();
     }
 }
