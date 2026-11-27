@@ -8,9 +8,7 @@
 //! [`galois_element`](poulpy_hal::layouts::galois_element) returns, and an element applies to an
 //! operand of order `M` as [`galois_at`] reduces it.
 
-use std::cmp::Ordering;
-
-use poulpy_hal::layouts::MAX_RING_DEGREE;
+use poulpy_hal::layouts::{MAX_RING_DEGREE, galois_element, mod_exp_u64};
 
 /// The cyclotomic order Galois elements are held at: `4 * MAX_RING_DEGREE`, a multiple of the
 /// order of every operand a module serves, on both rings. 5 has order [`MAX_RING_DEGREE`] modulo
@@ -19,7 +17,7 @@ pub const GALOIS_ORDER: i64 = 4 * MAX_RING_DEGREE as i64;
 
 /// The Galois element `(-1)^conjugate 5^rotation`, `rotation` of any sign.
 pub fn galois_from_parts(conjugate: bool, rotation: i64) -> i64 {
-    let power: i64 = pow5(rotation.rem_euclid(MAX_RING_DEGREE as i64));
+    let power: i64 = galois_element(rotation.rem_euclid(MAX_RING_DEGREE as i64), GALOIS_ORDER);
     if conjugate { -power } else { power }
 }
 
@@ -38,13 +36,13 @@ pub fn galois_parts(p: i64) -> (bool, i64) {
     let q: i64 = p.rem_euclid(GALOIS_ORDER);
     let (conjugate, x) = if q & 3 == 1 { (false, q) } else { (true, GALOIS_ORDER - q) };
     // Bit `k` of the rotation fixes the residue modulo `2^(k + 3)`, as `5^(2^k) = 1 + 2^(k + 2)` there.
-    let (mut rotation, mut power): (i64, i64) = (0, 1);
+    let (mut rotation, mut power, mut step): (i64, i64, i64) = (0, 1, 5);
     for k in 0..MAX_RING_DEGREE.trailing_zeros() {
-        let modulus: i64 = 1 << (k + 3);
-        if (power - x).rem_euclid(modulus) != 0 {
+        if (power - x).rem_euclid(1 << (k + 3)) != 0 {
             rotation |= 1 << k;
-            power = power * pow5(1 << k) % GALOIS_ORDER;
+            power = power * step % GALOIS_ORDER;
         }
+        step = step * step % GALOIS_ORDER;
     }
     (conjugate, rotation)
 }
@@ -54,76 +52,51 @@ pub fn galois_is_identity(p: i64) -> bool {
     p.rem_euclid(GALOIS_ORDER) == 1
 }
 
-/// The slot rotation of the Galois element `p`, in `[0, slots)`.
+/// The slot rotation of the Galois element `p` in a map over `slots` slots, in `[0, slots)`.
 ///
 /// # Panics
 ///
 /// When `p` conjugates, or `slots` is not a power of two at most [`MAX_RING_DEGREE`].
 pub fn galois_rotation(p: i64, slots: usize) -> i64 {
-    let (conjugate, rotation) = galois_parts(p);
-    assert!(!conjugate, "a slot rotation does not conjugate");
-    rotation % rotation_modulus(slots)
-}
-
-/// The Galois element `p` normalized for a map over `slots` slots: its rotation taken modulo
-/// `slots`, its conjugation kept.
-pub fn galois_mod_slots(p: i64, slots: usize) -> i64 {
-    let (conjugate, rotation) = galois_parts(p);
-    galois_from_parts(conjugate, rotation % rotation_modulus(slots))
-}
-
-/// The composition `X -> X^(p q)` over `slots` slots, normalized as [`galois_mod_slots`].
-pub fn galois_compose(p: i64, q: i64, slots: usize) -> i64 {
-    let ((cp, rp), (cq, rq)) = (galois_parts(p), galois_parts(q));
-    galois_from_parts(cp != cq, (rp + rq) % rotation_modulus(slots))
-}
-
-/// The inverse of `p` over `slots` slots, normalized as [`galois_mod_slots`].
-pub fn galois_inverse(p: i64, slots: usize) -> i64 {
-    let (conjugate, rotation) = galois_parts(p);
-    let slots: i64 = rotation_modulus(slots);
-    galois_from_parts(conjugate, (slots - rotation % slots) % slots)
-}
-
-/// The Galois element `p` at the cyclotomic order of an operand, a power of two dividing
-/// [`GALOIS_ORDER`]: the automorphism it applies there, in the form of
-/// [`galois_element`](poulpy_hal::layouts::galois_element).
-pub fn galois_at(p: i64, cyclotomic_order: i64) -> i64 {
-    assert!(
-        cyclotomic_order > 0 && GALOIS_ORDER % cyclotomic_order == 0,
-        "the cyclotomic order must be a power of two dividing GALOIS_ORDER"
-    );
-    let (conjugate, rotation) = galois_parts(p);
-    let power: i64 = pow5(rotation) % cyclotomic_order;
-    if conjugate { -power } else { power }
-}
-
-/// The order of Galois elements by conjugation bit, then rotation: the order of the slot rotations
-/// they replace.
-pub fn galois_cmp(p: &i64, q: &i64) -> Ordering {
-    galois_parts(*p).cmp(&galois_parts(*q))
-}
-
-/// `slots` as the modulus of rotations.
-fn rotation_modulus(slots: usize) -> i64 {
     assert!(
         slots.is_power_of_two() && slots as u64 <= MAX_RING_DEGREE,
         "the slot count must be a power of two at most MAX_RING_DEGREE"
     );
-    slots as i64
+    let (conjugate, rotation) = galois_parts(p);
+    assert!(!conjugate, "a slot rotation does not conjugate");
+    rotation % slots as i64
 }
 
-/// `5^e mod GALOIS_ORDER`.
-fn pow5(e: i64) -> i64 {
-    let (mut result, mut base, mut e): (i64, i64, i64) = (1, 5, e);
-    while e > 0 {
-        if e & 1 == 1 {
-            result = result * base % GALOIS_ORDER;
-        }
-        base = base * base % GALOIS_ORDER;
-        e >>= 1;
+/// The composition `X -> X^(p q)`: the product modulo [`GALOIS_ORDER`].
+pub fn galois_compose(p: i64, q: i64) -> i64 {
+    galois_at(p.wrapping_mul(q), GALOIS_ORDER)
+}
+
+/// The inverse of `p` modulo [`GALOIS_ORDER`].
+pub fn galois_inverse(p: i64) -> i64 {
+    // The group has exponent `MAX_RING_DEGREE`: the inverse is the power just below it.
+    galois_at(mod_exp_u64(p as u64, MAX_RING_DEGREE as usize - 1) as i64, GALOIS_ORDER)
+}
+
+/// The Galois element `p` at the cyclotomic order of an operand, a power of two dividing
+/// [`GALOIS_ORDER`]: `p` modulo that order, in the form of
+/// [`galois_element`](poulpy_hal::layouts::galois_element).
+///
+/// # Panics
+///
+/// When `p` is even.
+pub fn galois_at(p: i64, cyclotomic_order: i64) -> i64 {
+    assert!(p & 1 == 1, "a Galois element is odd");
+    assert!(
+        cyclotomic_order > 0 && GALOIS_ORDER % cyclotomic_order == 0,
+        "the cyclotomic order must be a power of two dividing GALOIS_ORDER"
+    );
+    // The conjugating elements are those equal to 3 modulo 4, as 5 is 1 there.
+    if p & 3 == 3 {
+        -(-p).rem_euclid(cyclotomic_order)
+    } else {
+        p.rem_euclid(cyclotomic_order)
     }
-    result
 }
 
 #[cfg(test)]
@@ -146,8 +119,8 @@ mod tests {
 
     #[test]
     fn galois_at_matches_galois_element() {
-        for order in [16_i64, 1024, 1 << 18, GALOIS_ORDER] {
-            for rotation in [0_i64, 1, 5, 77, (order / 4) - 1] {
+        for order in [2_i64, 4, 16, 1024, 1 << 18, GALOIS_ORDER] {
+            for rotation in [0_i64, 1, 5, 77, (order / 4).max(1) - 1] {
                 assert_eq!(
                     galois_at(galois_of_rotation(rotation), order),
                     galois_element(rotation, order)
@@ -162,10 +135,25 @@ mod tests {
     fn galois_arithmetic_follows_the_rotations() {
         let slots = 64;
         let (p, q) = (galois_of_rotation(40), galois_of_rotation(30));
-        assert_eq!(galois_compose(p, q, slots), galois_of_rotation(6));
-        assert_eq!(galois_inverse(p, slots), galois_of_rotation(24));
+        assert_eq!(galois_compose(p, q), galois_of_rotation(70));
+        assert_eq!(galois_rotation(galois_compose(p, q), slots), 6);
+        assert_eq!(galois_compose(p, galois_inverse(p)), 1);
+        assert_eq!(galois_rotation(galois_inverse(p), slots), 24);
         assert_eq!(galois_rotation(galois_of_rotation(-3), slots), 61);
-        assert_eq!(galois_mod_slots(galois_of_rotation(70), slots), galois_of_rotation(6));
-        assert_eq!(galois_compose(GALOIS_CONJUGATION, p, slots), galois_from_parts(true, 40));
+        let conjugated = galois_from_parts(true, 40);
+        assert_eq!(galois_compose(GALOIS_CONJUGATION, p), conjugated);
+        assert_eq!(galois_inverse(conjugated), galois_from_parts(true, -40));
+        assert_eq!(galois_compose(conjugated, galois_inverse(conjugated)), 1);
+    }
+
+    #[test]
+    fn galois_arithmetic_matches_the_parts() {
+        for (cp, rp) in [(false, 0_i64), (false, 3), (true, 77), (true, MAX_RING_DEGREE as i64 - 1)] {
+            for (cq, rq) in [(false, 1_i64), (true, 0), (false, 4095), (true, 12_345)] {
+                let (p, q) = (galois_from_parts(cp, rp), galois_from_parts(cq, rq));
+                assert_eq!(galois_compose(p, q), galois_from_parts(cp != cq, rp + rq));
+                assert_eq!(galois_inverse(p), galois_from_parts(cp, -rp));
+            }
+        }
     }
 }

@@ -203,7 +203,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
             let shift_a = galois_rotation(ia, ta as usize);
             for ib in rhs.galois() {
                 let period_b = rhs.diagonal_period(ib).expect("indexed diagonal present");
-                let idx = galois_compose(ia, ib, t as usize);
+                let idx = galois_compose(ia, ib);
                 let len = out.diagonal_period(idx).unwrap_or(1).max(period_a).max(period_b) as i64;
                 let mut re: Vec<T> = (0..len).map(|j| read(&out.re, idx, j)).collect();
                 let mut im: Vec<T> = (0..len).map(|j| read(&out.im, idx, j)).collect();
@@ -259,10 +259,10 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
 
         let mut giant_steps = Vec::with_capacity(index.giant_galois.len());
         for (g, &giant) in index.giant_galois.iter().enumerate() {
-            let inverse = galois_inverse(giant, slots);
+            let inverse = galois_inverse(giant);
             let mut diagonals = Vec::with_capacity(index.index[g].len());
             for &baby in &index.index[g] {
-                let d = galois_compose(giant, baby, slots);
+                let d = galois_compose(giant, baby);
                 let dre = self.re.get(d).map_or(&zero_block[..], |v| v.as_slice());
                 let dim = self.im.get(d).map_or(&zero_block[..], |v| v.as_slice());
                 Diagonals::rotate_slots_into(dre, inverse, &mut pre_re);

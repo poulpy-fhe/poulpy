@@ -311,10 +311,10 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
             buff.iter_mut().for_each(|x| *x = T::zero());
             for &baby in &index.index[g] {
                 let diag = self
-                    .get(galois_compose(giant, baby, slots))
+                    .get(galois_compose(giant, baby))
                     .expect("schedule references a missing diagonal");
                 Self::rotate_slots_into(input, baby, &mut rot_in);
-                Self::rotate_slots_into(diag, galois_inverse(giant, slots), &mut rot_diag);
+                Self::rotate_slots_into(diag, galois_inverse(giant), &mut rot_diag);
                 for j in 0..slots {
                     let mut p = rot_in[j].clone();
                     p = p.mul(&rot_diag[j]);

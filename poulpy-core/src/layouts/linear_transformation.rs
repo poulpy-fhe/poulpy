@@ -17,7 +17,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::layouts::{galois_at, galois_from_parts, galois_is_identity, galois_mod_slots, galois_of_rotation, galois_parts};
+use poulpy_hal::layouts::MAX_RING_DEGREE;
+
+use crate::layouts::{galois_at, galois_from_parts, galois_is_identity, galois_of_rotation, galois_parts};
 
 // ===================================================================
 // Unprepared transform
@@ -80,7 +82,7 @@ impl<P> LinearTransformation<P> {
     /// cache directly from an unprepared transform.
     ///
     /// The output is canonical, giant steps sorted and per-giant baby steps
-    /// sorted and de-duplicated in the order of [`galois_cmp`](crate::layouts::galois_cmp), so it matches the schedule
+    /// sorted and de-duplicated in the order of their [`galois_parts`](crate::layouts::galois_parts), so it matches the schedule
     /// [`LinearTransformationLayout::index`] would derive from the same diagonal
     /// set. Only baby steps actually referenced by at least one non-empty
     /// giant step are included; the field `self.baby_galois` may declare more
@@ -179,7 +181,7 @@ pub(crate) struct GiantTreeLevel {
 impl BsgsRotations {
     /// The baby steps the cache holds for the needed baby steps `babies`: themselves and,
     /// with [`Self::PowersOfTwo`], every non-identity step a doubling reads; sorted by
-    /// [`galois_cmp`](crate::layouts::galois_cmp).
+    /// their [`galois_parts`](crate::layouts::galois_parts).
     pub(crate) fn baby_closure(&self, babies: impl IntoIterator<Item = i64>) -> Vec<i64> {
         let mut closure: BTreeSet<(bool, i64)> = babies.into_iter().map(galois_parts).collect();
         if let Self::PowersOfTwo { baby_step, .. } = *self {
@@ -372,7 +374,7 @@ pub enum LinearTransformationStrategy {
     /// the square root of the product of their costs; a dimension that steps both ways steps
     /// back by giants. When those dimensions do not cover every diagonal, the whole group is
     /// split: one dimension of the powers of 5 and `X -> X^-1` when needed. Each diagonal goes
-    /// to the first baby, then giant, in the order of [`galois_cmp`](crate::layouts::galois_cmp), that covers it.
+    /// to the first baby, then giant, in the order of their [`galois_parts`](crate::layouts::galois_parts), that covers it.
     /// Evaluated with [`BsgsRotations::PerRotation`].
     Hypercube,
 }
@@ -450,7 +452,12 @@ impl LinearTransformationPlan {
 /// The conjugation bit and the rotation, in `[0, slots)`, of a diagonal.
 fn diagonal_parts(galois: i64, slots: usize) -> (bool, i64) {
     assert!(slots > 0, "linear transformation slot count must be non-zero");
-    galois_parts(galois_mod_slots(galois, slots))
+    assert!(
+        slots.is_power_of_two() && slots as u64 <= MAX_RING_DEGREE,
+        "the slot count must be a power of two at most MAX_RING_DEGREE"
+    );
+    let (conjugate, rotation) = galois_parts(galois);
+    (conjugate, rotation % slots as i64)
 }
 
 /// Returns a BSGS schedule for the provided non-zero diagonals.
@@ -797,7 +804,8 @@ mod hypercube_tests {
     use poulpy_hal::GALOIS_CONJUGATION;
 
     use super::{
-        HypercubeCoordinate, HypercubeSchedule, LinearTransformationLayout, LinearTransformationStrategy, hypercube_bsgs_schedule,
+        HypercubeCoordinate, HypercubeSchedule, LinearTransformationLayout, LinearTransformationStrategy, diagonal_parts,
+        hypercube_bsgs_schedule,
     };
     use crate::layouts::{galois_compose, galois_from_parts};
 
@@ -833,14 +841,18 @@ mod hypercube_tests {
             strategy: LinearTransformationStrategy::Hypercube,
         }
         .index();
-        let mut covered: Vec<i64> = plan
+        let mut covered: Vec<(bool, i64)> = plan
             .giant_galois
             .iter()
             .zip(&plan.index)
-            .flat_map(|(&giant, babies)| babies.iter().map(move |&baby| galois_compose(giant, baby, slots)))
+            .flat_map(|(&giant, babies)| {
+                babies
+                    .iter()
+                    .map(move |&baby| diagonal_parts(galois_compose(giant, baby), slots))
+            })
             .collect();
         covered.sort_unstable();
-        let mut want = galois;
+        let mut want: Vec<(bool, i64)> = galois.iter().map(|&p| diagonal_parts(p, slots)).collect();
         want.sort_unstable();
         assert_eq!(covered, want);
         assert!(plan.giant_galois.contains(&GALOIS_CONJUGATION) || plan.baby_galois.contains(&GALOIS_CONJUGATION));

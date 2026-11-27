@@ -46,7 +46,7 @@ use crate::{
 };
 
 use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPlan};
-use crate::layouts::{ModuleCoreAlloc, digits_aligned, galois_cmp, galois_is_identity, galois_of_rotation, operand_galois};
+use crate::layouts::{ModuleCoreAlloc, digits_aligned, galois_is_identity, galois_of_rotation, galois_parts, operand_galois};
 
 const BABY_ROTATION_WORKERS: usize = 4;
 
@@ -450,7 +450,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L, Rg: Ring>(
     let a_size = a.size();
     // By rotation, so that a doubling's source precedes its target.
     let mut rotations: Vec<i64> = cache.values.keys().copied().collect();
-    rotations.sort_by(galois_cmp);
+    rotations.sort_by_key(|&p| galois_parts(p));
     let passes = cache.rotations.baby_passes(rotations.iter().copied());
     let pass_keys: Vec<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> = passes
         .iter()
@@ -512,7 +512,11 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L, Rg: Ring>(
         ),
         &'h GLWEBackendRef<'h, BE, Rg>,
     )> = Vec::new();
-    let index = |galois: i64| rotations.binary_search_by(|x| galois_cmp(x, &galois)).unwrap();
+    let index = |galois: i64| {
+        rotations
+            .binary_search_by_key(&galois_parts(galois), |&p| galois_parts(p))
+            .unwrap()
+    };
     for ((_, pairs), key) in passes.iter().zip(&pass_keys) {
         if !hoisted(key) {
             for &(source, target) in pairs {

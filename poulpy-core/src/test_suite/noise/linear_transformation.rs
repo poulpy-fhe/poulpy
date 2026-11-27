@@ -35,7 +35,7 @@ use crate::{
         GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
         GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
         LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationStrategy,
-        ModuleCoreAlloc, SetK, TorusPrecision, galois_at, galois_cmp, galois_is_identity, galois_of_rotation, k_digit_of,
+        ModuleCoreAlloc, SetK, TorusPrecision, galois_at, galois_is_identity, galois_of_rotation, galois_parts, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPrepared, PreparedDiagonal,
@@ -342,7 +342,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend<Rg>, K:
     let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_galois, ct);
     module.glwe_linear_transformation_baby_steps_prepare(&mut prepared_babies, ct, keys, &mut prep_scratch.borrow());
     let mut held: Vec<i64> = prepared_babies.baby_galois().collect();
-    held.sort_by(galois_cmp);
+    held.sort_by_key(|&p| galois_parts(p));
     assert_eq!(held, baby_galois);
 
     let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
@@ -895,7 +895,7 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
             "the carve took {taken} bytes of {cache_bytes}"
         );
         let mut held: Vec<i64> = carved.baby_galois().collect();
-        held.sort_by(galois_cmp);
+        held.sort_by_key(|&p| galois_parts(p));
         assert_eq!(held, plan.baby_galois);
         module.glwe_linear_transformation_baby_steps_prepare(&mut carved, &ct, &keys, &mut rest);
         let mut from_carved: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);

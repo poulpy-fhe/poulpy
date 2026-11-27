@@ -4,8 +4,8 @@
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
     Base2K, Degree, Diagonals, GLWEInfos, GLWELayout, GetDegree, LinearTransformation, LinearTransformationBabySteps,
-    LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, Rank, TorusPrecision, galois_cmp,
-    galois_is_identity, galois_of_rotation, galois_rotation, optimal_bsgs_giant_step,
+    LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, Rank, TorusPrecision,
+    galois_is_identity, galois_of_rotation, galois_parts, galois_rotation, optimal_bsgs_giant_step,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -228,7 +228,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         let mut galois = self.to.galois();
         galois.extend(self.from.iter().flat_map(ReplicatedTransform::galois));
         galois.extend(self.trace.iter().map(|&rotation| galois_of_rotation(rotation)));
-        galois.sort_by(galois_cmp);
+        galois.sort_by_key(|&p| galois_parts(p));
         galois.dedup();
         galois
     }
@@ -433,7 +433,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         });
         let giants = lts().flat_map(|lt| lt.giant_steps.iter().map(|gs| gs.galois));
         let mut galois: Vec<i64> = babies.chain(giants).filter(|&p| !galois_is_identity(p)).collect();
-        galois.sort_by(galois_cmp);
+        galois.sort_by_key(|&p| galois_parts(p));
         galois.dedup();
         galois
     }
